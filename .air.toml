@@ -1,0 +1,69 @@
+# Config file for Air - https://github.com/cosmtrek/air
+#
+# Create a `.air.toml` file in your project root to configure Air.
+#
+# This file is a TOML file.
+
+# The root directory of your project.
+root = "."
+
+# A temporary directory where Air will store its files.
+tmp_dir = "tmp"
+
+[build]
+  # The command to build your application.
+  cmd = "go build -o ./tmp/clai ./cmd/clai"
+
+  # The path to the binary to run.
+  bin = "tmp/clai"
+
+  # A command to run the binary.
+  full_bin = "./tmp/clai"
+
+  # A list of file extensions to watch.
+  include_ext = ["go", "tpl", "tmpl", "html"]
+
+  # A list of directories to exclude from watching.
+  exclude_dir = ["assets", "tmp", "vendor"]
+
+  # A list of directories to include for watching.
+  include_dir = []
+
+  # A list of files to exclude from watching.
+  exclude_file = []
+
+  # The name of the log file.
+  log = "air.log"
+
+  # The delay in milliseconds before rebuilding.
+  delay = 1000
+
+  # Stop the running application on a build error.
+  stop_on_error = true
+
+  # Send an interrupt signal to the running application before killing it.
+  send_interrupt = false
+
+  # The delay in milliseconds before killing the application.
+  kill_delay = 500
+
+[log]
+  # Show the time in the log.
+  time = false
+
+[color]
+  # The color of the main output.
+  main = "yellow"
+
+  # The color of the watcher output.
+  watcher = "cyan"
+
+  # The color of the build output.
+  build = "green"
+
+  # The color of the runner output.
+  runner = "magenta"
+
+[misc]
+  # Clean up the temporary directory on exit.
+  clean_on_exit = true

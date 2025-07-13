@@ -42,6 +42,61 @@ No separate MCP server; tool execution is embedded in CLAI for simplicity.
 - Ollama: External (not a Go dep; assume running locally).
 - Testing: Go's `testing` package; no external test frameworks.
 
+---
+
+## UI Prototyping with minimal_testing.go
+
+`minimal_testing.go` is a generic Bubble Tea harness for rapid prototyping and testing of UI components. It allows you to quickly implement, run, and visually inspect any Bubble Tea component in isolation.
+
+### How It Works
+- The file defines a `UIComponent` interface (with `Init`, `Update`, and `View` methods).
+- You implement your own component by satisfying this interface.
+- Swap your component into the `main()` function to run and interact with it in the terminal.
+
+### Workflow
+1. **Implement your component**: Create a struct and methods that satisfy `UIComponent`.
+2. **Plug it into minimal_testing.go**: Replace the `ExampleComponent()` function in `main()` with your own.
+3. **Run the harness**: Execute `go run minimal_testing.go` to launch your component in the terminal.
+4. **Interact and inspect**: Use the keyboard to interact with your component and observe its output.
+
+### Example
+Here's a minimal counter component:
+```go
+// Define your component
+func MyCounterComponent() UIComponent {
+    return &counterModel{count: 0}
+}
+
+type counterModel struct {
+    count int
+}
+
+func (c *counterModel) Init() tea.Cmd { return nil }
+func (c *counterModel) Update(msg tea.Msg) (UIComponent, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.KeyMsg:
+        if msg.String() == "space" { c.count++ }
+    }
+    return c, nil
+}
+func (c *counterModel) View() string {
+    return fmt.Sprintf("Count: %d (press space)", c.count)
+}
+
+// In main(), swap in your component:
+func main() {
+    p := tea.NewProgram(initialModel(MyCounterComponent()))
+    if err := p.Start(); err != nil { panic(err) }
+}
+```
+
+### Tips
+- Use this harness to quickly iterate on UI ideas before integrating into the main app.
+- You can prototype text inputs, lists, forms, or any Bubble Tea model.
+- Press `q` or `ctrl+c` to quit the harness.
+
+---
+
 ## Implementation Phases
 Phases are sequential for simplicity, with checkpoints for testing.
 
@@ -77,24 +132,23 @@ Phases are sequential for simplicity, with checkpoints for testing.
 Total Estimated Time: 10-17 days for MVP.
 
 ## Feature Tracking
-Use this table to track implementation. Columns: Feature, Description, Status (TODO/In Progress/Done), Assigned To (e.g., Agent), Notes/Blockers.
 
-| Feature | Description | Status | Assigned To | Notes/Blockers |
-|---------|-------------|--------|-------------|----------------|
-| Project Setup | Init Go module, deps, basic main.go with Bubble Tea skeleton. | TODO | Agent | Ensure Ollama is testable locally. |
-| TUI Input/Output | Bubble Tea model for user input, message rendering, history scroll. | TODO | Agent | Use simple textarea for input. |
-| LLM Client | HTTP client to Ollama `/api/chat`; handle JSON payloads/responses. | TODO | Agent | Use net/http; add timeout. |
-| Basic Chat | Send/receive plain messages; display in TUI. | TODO | Agent | No tools yet. |
-| Tool Schema Definition | Go structs for tool JSON schemas (name, desc, params). | TODO | Agent | Embed in system prompt. |
-| System Prompt | Configurable prompt instructing LLM on tool use (e.g., respond with JSON for calls). | TODO | Agent | Follow Llama 3.1 spec: JSON object with "tool_calls". |
-| Output Parsing | Parse assistant message for `tool_calls` array; handle null for normal responses. | TODO | Agent | Use encoding/json; regex fallback if needed. |
-| Tool Execution Loop | If tools called, execute, append "tool" role messages, re-query LLM until no calls. | TODO | Agent | Support parallel exec via goroutines. |
-| Example Tool: Calculator | Simple math eval tool (e.g., params: expression string). | TODO | Agent | Use go-eval lib if needed; keep pure Go. |
-| Example Tool: Echo | Return input string (for testing). | TODO | Agent | Minimal implementation. |
-| Error Handling | Graceful failures: Bad JSON, tool errors, LLM timeouts. | TODO | Agent | Display errors in TUI. |
-| Conversation Persistence | Save/load chat history to JSON file. | TODO | Agent | Optional flag to enable. |
-| CLI Flags | --model, --host, --system-prompt. | TODO | Agent | Use flag package. |
-| Streaming Responses | If Ollama supports, stream output to TUI. | TODO | Agent | Enhance UX. |
+Use these checkboxes to track implementation progress.
+
+- [x] **Project Setup**: Init Go module, deps, basic main.go with Bubble Tea skeleton.
+- [x] **TUI Input/Output**: Bubble Tea model for user input, message rendering, history scroll.
+- [x] **LLM Client**: HTTP client to Ollama `/api/chat`; handle JSON payloads/responses.
+- [x] **Basic Chat**: Send/receive plain messages; display in TUI.
+- [x] **Tool Schema Definition**: Go structs for tool JSON schemas (name, desc, params).
+- [x] **System Prompt**: Configurable prompt instructing LLM on tool use.
+- [x] **Output Parsing**: Parse assistant message for `tool_calls` array.
+- [x] **Tool Execution Loop**: If tools called, execute, append "tool" role messages, re-query LLM.
+- [x] **Example Tool: Calculator**: Simple math eval tool.
+- [x] **Example Tool: Echo**: Return input string for testing.
+- [x] **Error Handling**: Graceful failures for bad JSON, tool errors, LLM timeouts.
+- [x] **Conversation Persistence**: Save/load chat history to a local file.
+- [x] **CLI Flags**: Support for `--model`, `--host`, `--system-prompt`.
+- [x] **Streaming Responses**: Stream LLM output to the TUI for better UX.
 
 ## Testing Plan
 All tests use Go's `testing` package. Aim for 80%+ coverage. Run with `go test ./...`.
