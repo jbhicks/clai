@@ -177,3 +177,33 @@ Mock Ollama with a test server (e.g., httptest) to avoid real LLM dependency in 
 - Start with Phase 1: Setup.
 - Update this plan's table as features complete (e.g., via agent self-tracking).
 - If MCP is reconsidered (e.g., for external tools), it could be added as a separate Go server binary, but defer unless needed.
+
+## Live Reload for Bubble Tea TUI
+
+For reliable live reload during development, use two terminals:
+
+**Terminal 1:**
+```
+bash dev_run.sh
+```
+This keeps the TUI app running in the foreground. If the binary is killed, it restarts immediately.
+
+**Terminal 2:**
+```
+bash dev_watch.sh
+```
+This watches for changes to Go files, rebuilds the binary, and kills the running process to trigger a restart.
+
+**Why not use Air, wgo, or Makefile wrappers?**
+Bubble Tea TUIs require a real terminal (TTY/PTY). Watcher tools and Makefile wrappers do not reliably pass through the terminal context, so interactive UIs may not display or update correctly.
+
+**Scripts:**
+- `dev_run.sh`: Runs the app in a loop.
+- `dev_watch.sh`: Watches for changes, rebuilds, and restarts the app.
+
+**Usage:**
+1. Open two terminals in the project root.
+2. In one, run `bash dev_run.sh`.
+3. In the other, run `bash dev_watch.sh`.
+
+This workflow ensures instant reloads and a robust TUI experience.
