@@ -1,12 +1,13 @@
 package llm
 
 import (
-	"bufio"
-	"bytes"
-	"clai/internal/tools"
-	"encoding/json"
-	"fmt"
-	"net/http"
+"bufio"
+"bytes"
+"clai/internal/tools"
+"encoding/json"
+"fmt"
+"net/http"
+"log"
 )
 
 const (
@@ -15,13 +16,13 @@ When a user asks a question, you can use the available tools to help you answer.
 To use a tool, respond with a JSON object in the following format:
 {
   "tool_calls": [
-    {
-      "name": "tool_name",
-      "parameters": {
-        "param1": "value1",
-        "param2": "value2"
-      }
-    }
+	{
+	  "name": "tool_name",
+	  "parameters": {
+		"param1": "value1",
+		"param2": "value2"
+	  }
+	}
   ]
 }
 If you don't need to use a tool, just respond with a normal message.`
@@ -111,6 +112,10 @@ func (c *Client) SendMessageStream(messages []Message, streamChan chan<- string)
 		return Response{}, err
 	}
 
+	// Pretty print the outgoing request JSON
+	prettyReq, _ := json.MarshalIndent(reqBody, "", "  ")
+	log.Printf("[LLM-REQ] %s", string(prettyReq))
+
 	resp, err := http.Post(c.host+"/api/chat", "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return Response{}, err
@@ -121,9 +126,13 @@ func (c *Client) SendMessageStream(messages []Message, streamChan chan<- string)
 		defer close(streamChan)
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
+			raw := scanner.Bytes()
+			// Log the raw JSON response for debugging
+		   // log.Printf("[LLM-RAW] %s", string(raw)) // Disabled to prevent log flooding
 			var llmResp Response
-			if err := json.Unmarshal(scanner.Bytes(), &llmResp); err != nil {
+			if err := json.Unmarshal(raw, &llmResp); err != nil {
 				// handle error, maybe send to a different channel
+				log.Printf("[LLM-RAW-ERROR] %v", err)
 				return
 			}
 			streamChan <- llmResp.Message.Content
@@ -154,7 +163,7 @@ func (c *Client) HealthCheck() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Ollama health check failed with status: %s", resp.Status)
+		return fmt.Errorf("ollama health check failed with status: %s", resp.Status)
 	}
 	return nil
 }

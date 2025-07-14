@@ -1,4 +1,11 @@
+.PHONY: dev
+# Live reload development
+dev:
+	wgo -verbose go run ./cmd/clai/main.go
 # Makefile for the clai project
+#
+# Additional targets:
+# minimal_testing_air: Runs minimal_testing.go with air for live prototyping
 
 # Go parameters
 GOCMD=go
@@ -25,10 +32,6 @@ clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_NAME)
 
-install:
-	$(GOINSTALL) ./cmd/clai
 
-dev: build
-	DEBUG=true ./$(BINARY_NAME)
-
-.PHONY: all build run test clean install dev
+prototype:
+	$(GORUN) ./minimal_testing.go
