@@ -6,9 +6,9 @@ import (
 )
 
 type Tool struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	Parameters  interface{} `json:"parameters"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Parameters  any    `json:"parameters"`
 }
 
 type CalculatorParams struct {

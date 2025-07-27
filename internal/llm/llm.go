@@ -1,13 +1,14 @@
 package llm
 
 import (
-"bufio"
-"bytes"
-"clai/internal/tools"
-"encoding/json"
-"fmt"
-"net/http"
-"log"
+	"bufio"
+	"bytes"
+	"clai/internal/tools"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
 )
 
 const (
@@ -69,12 +70,17 @@ type Response struct {
 }
 
 func (c *Client) SendMessage(messages []Message) (Response, error) {
+	return c.SendMessageWithTools(messages, tools.GetAvailableTools())
+}
+
+// SendMessageWithTools allows specifying which tools to include in the request.
+func (c *Client) SendMessageWithTools(messages []Message, toolList []tools.Tool) (Response, error) {
 	allMessages := append([]Message{{Role: "system", Content: c.systemPrompt}}, messages...)
 
 	reqBody := Request{
 		Model:    c.model,
 		Messages: allMessages,
-		Tools:    tools.GetAvailableTools(),
+		Tools:    toolList,
 		Stream:   false,
 	}
 
@@ -89,12 +95,65 @@ func (c *Client) SendMessage(messages []Message) (Response, error) {
 	}
 	defer resp.Body.Close()
 
-	var llmResp Response
-	if err := json.NewDecoder(resp.Body).Decode(&llmResp); err != nil {
-		return Response{}, err
+	// Log HTTP status and headers
+	log.Printf("Ollama response status: %s", resp.Status)
+	for k, v := range resp.Header {
+		log.Printf("Header: %s: %v", k, v)
 	}
 
+	// Limit response size to 1MB
+	const maxResponseSize = 1 << 20 // 1MB
+	limited := io.LimitReader(resp.Body, maxResponseSize)
+
+	var llmResp Response
+	if err := json.NewDecoder(limited).Decode(&llmResp); err != nil {
+		return Response{}, fmt.Errorf("error decoding LLM response (possibly too large or malformed): %w", err)
+	}
+
+	// Log the LLM response for debugging
+	prettyResp, _ := json.MarshalIndent(llmResp, "", "  ")
+	log.Printf("[LLM-RESP] %s", string(prettyResp))
+
 	return llmResp, nil
+}
+
+// ClassifyIntent asks the LLM if the query requires a tool call, and which tool.
+func (c *Client) ClassifyIntent(query string) (string, error) {
+	// Build a system prompt listing available tools
+	availableTools := []string{"calculator", "echo", "web_search"}
+	prompt := "Does this query require a tool call? If yes, which tool? Respond with the tool name or 'none'. Available tools: " +
+		fmt.Sprintf("%v", availableTools)
+
+	messages := []Message{
+		{Role: "system", Content: prompt},
+		{Role: "user", Content: query},
+	}
+
+	// Send to LLM without any tools
+	request := Request{
+		Model:    c.model,
+		Messages: messages,
+		Stream:   false,
+	}
+	jsonBody, err := json.Marshal(request)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := http.Post(c.host+"/api/chat", "application/json", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var llmResp Response
+	if err := json.NewDecoder(resp.Body).Decode(&llmResp); err != nil {
+		return "", err
+	}
+
+	// Parse the tool name from the response
+	toolName := llmResp.Message.Content
+	return toolName, nil
 }
 
 func (c *Client) SendMessageStream(messages []Message, streamChan chan<- string) (Response, error) {
@@ -128,13 +187,16 @@ func (c *Client) SendMessageStream(messages []Message, streamChan chan<- string)
 		for scanner.Scan() {
 			raw := scanner.Bytes()
 			// Log the raw JSON response for debugging
-		   // log.Printf("[LLM-RAW] %s", string(raw)) // Disabled to prevent log flooding
+			// log.Printf("[LLM-RAW] %s", string(raw)) // Disabled to prevent log flooding
 			var llmResp Response
 			if err := json.Unmarshal(raw, &llmResp); err != nil {
 				// handle error, maybe send to a different channel
 				log.Printf("[LLM-RAW-ERROR] %v", err)
 				return
 			}
+			// Log the parsed LLM response message for debugging
+			prettyResp, _ := json.MarshalIndent(llmResp, "", "  ")
+			log.Printf("[LLM-RESP-STREAM] %s", string(prettyResp))
 			streamChan <- llmResp.Message.Content
 			if llmResp.Done {
 				return

@@ -1,8 +1,196 @@
-2025/07/14 06:29:51 [Test] clai app started
-2025/07/14 06:31:39 [Test] clai app started
-2025/07/14 06:31:40 [Test] clai app started
-2025/07/14 06:31:41 [Test] clai app started
-2025/07/14 06:31:41 [Test] clai app started
-2025/07/14 06:31:57 [Test] clai app started
-2025/07/14 06:32:01 [Test] clai app started
-2025/07/14 06:32:08 [Test] clai app started
+2025/07/22 22:59:34 model.View called: Width=0, Height=0
+2025/07/22 22:59:34 model.View: chatPaneWidth=0, logPaneWidth=0
+2025/07/22 22:59:34 model.View: contentHeight (after status bar): 0
+2025/07/22 22:59:34 model.View: m.Chat.Width=10, m.Chat.Height=3, m.Log.Width=10, m.Log.Height=3
+2025/07/22 22:59:34 model.View: chatPaneStyle.GetHorizontalFrameSize()=6, chatPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:34 model.View: logPaneStyle.GetHorizontalFrameSize()=6, logPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:34 ChatModel.View called: Width=10, Height=3
+2025/07/22 22:59:34 ChatModel.View: inputFieldRendered height: 3
+2025/07/22 22:59:34 ChatModel.View: spinnerView height: 1, inputFieldRendered height: 3, remainingHeight for list: 3
+2025/07/22 22:59:34 ChatModel.View: listView rendered height: 9
+2025/07/22 22:59:34 ChatModel.View: spinnerView rendered height: 1
+2025/07/22 22:59:34 ChatModel.View: inputFieldRendered rendered height: 3
+2025/07/22 22:59:34 ChatModel.View: joined rendered height: 13
+2025/07/22 22:59:34 model.View: chatView rendered height: 15
+2025/07/22 22:59:34 model.View: logView rendered height: 5
+2025/07/22 22:59:34 model.View: mainView rendered height: 15
+2025/07/22 22:59:34 model.View: statusBarRendered height: 1
+2025/07/22 22:59:34 model.View: layout rendered height (before error/help): 16
+2025/07/22 22:59:34 model.View: final layout rendered height: 16
+2025/07/22 22:59:34 model.Update called with msg type: tea.Cmd
+2025/07/22 22:59:34 ChatModel.Update called with msg type: tea.Cmd
+2025/07/22 22:59:34 model.View called: Width=0, Height=0
+2025/07/22 22:59:34 model.View: chatPaneWidth=0, logPaneWidth=0
+2025/07/22 22:59:34 model.View: contentHeight (after status bar): 0
+2025/07/22 22:59:34 model.View: m.Chat.Width=10, m.Chat.Height=3, m.Log.Width=10, m.Log.Height=3
+2025/07/22 22:59:34 model.View: chatPaneStyle.GetHorizontalFrameSize()=6, chatPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:34 model.View: logPaneStyle.GetHorizontalFrameSize()=6, logPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:34 ChatModel.View called: Width=10, Height=3
+2025/07/22 22:59:34 ChatModel.View: inputFieldRendered height: 3
+2025/07/22 22:59:34 ChatModel.View: spinnerView height: 1, inputFieldRendered height: 3, remainingHeight for list: 3
+2025/07/22 22:59:34 ChatModel.View: listView rendered height: 9
+2025/07/22 22:59:34 ChatModel.View: spinnerView rendered height: 1
+2025/07/22 22:59:34 ChatModel.View: inputFieldRendered rendered height: 3
+2025/07/22 22:59:34 ChatModel.View: joined rendered height: 13
+2025/07/22 22:59:34 model.View: chatView rendered height: 15
+2025/07/22 22:59:34 model.View: logView rendered height: 5
+2025/07/22 22:59:34 model.View: mainView rendered height: 15
+2025/07/22 22:59:34 model.View: statusBarRendered height: 1
+2025/07/22 22:59:34 model.View: layout rendered height (before error/help): 16
+2025/07/22 22:59:34 model.View: final layout rendered height: 16
+2025/07/22 22:59:34 model.Update called with msg type: tea.WindowSizeMsg
+2025/07/22 22:59:34 handleWindowSizeMsg: WindowSizeMsg received - Width: 155, Height: 41
+2025/07/22 22:59:34 handleWindowSizeMsg: Initial contentHeight (after status bar): 20
+2025/07/22 22:59:34 handleWindowSizeMsg: m.Chat.Width: 149, m.Chat.Height: 20
+2025/07/22 22:59:34 model.View called: Width=155, Height=41
+2025/07/22 22:59:34 model.View: chatPaneWidth=108, logPaneWidth=47
+2025/07/22 22:59:34 model.View: contentHeight (after status bar): 20
+2025/07/22 22:59:34 model.View: m.Chat.Width=102, m.Chat.Height=20, m.Log.Width=41, m.Log.Height=20
+2025/07/22 22:59:34 model.View: chatPaneStyle.GetHorizontalFrameSize()=6, chatPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:34 model.View: logPaneStyle.GetHorizontalFrameSize()=6, logPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:34 ChatModel.View called: Width=102, Height=20
+2025/07/22 22:59:34 ChatModel.View: inputFieldRendered height: 3
+2025/07/22 22:59:34 ChatModel.View: spinnerView height: 1, inputFieldRendered height: 3, remainingHeight for list: 16
+2025/07/22 22:59:34 ChatModel.View: listView rendered height: 16
+2025/07/22 22:59:34 ChatModel.View: spinnerView rendered height: 1
+2025/07/22 22:59:34 ChatModel.View: inputFieldRendered rendered height: 3
+2025/07/22 22:59:34 ChatModel.View: joined rendered height: 20
+2025/07/22 22:59:34 model.View: chatView rendered height: 22
+2025/07/22 22:59:34 model.View: logView rendered height: 22
+2025/07/22 22:59:34 model.View: mainView rendered height: 22
+2025/07/22 22:59:34 model.View: statusBarRendered height: 1
+2025/07/22 22:59:34 model.View: layout rendered height (before error/help): 23
+2025/07/22 22:59:34 model.View: final layout rendered height: 23
+2025/07/22 22:59:47 model.Update called with msg type: tea.MouseMsg
+2025/07/22 22:59:47 ChatModel.Update called with msg type: tea.MouseMsg
+2025/07/22 22:59:47 model.View called: Width=155, Height=41
+2025/07/22 22:59:47 model.View: chatPaneWidth=108, logPaneWidth=47
+2025/07/22 22:59:47 model.View: contentHeight (after status bar): 20
+2025/07/22 22:59:47 model.View: m.Chat.Width=102, m.Chat.Height=20, m.Log.Width=41, m.Log.Height=20
+2025/07/22 22:59:47 model.View: chatPaneStyle.GetHorizontalFrameSize()=6, chatPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:47 model.View: logPaneStyle.GetHorizontalFrameSize()=6, logPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:47 ChatModel.View called: Width=102, Height=20
+2025/07/22 22:59:47 ChatModel.View: inputFieldRendered height: 3
+2025/07/22 22:59:47 ChatModel.View: spinnerView height: 1, inputFieldRendered height: 3, remainingHeight for list: 16
+2025/07/22 22:59:47 ChatModel.View: listView rendered height: 16
+2025/07/22 22:59:47 ChatModel.View: spinnerView rendered height: 1
+2025/07/22 22:59:47 ChatModel.View: inputFieldRendered rendered height: 3
+2025/07/22 22:59:47 ChatModel.View: joined rendered height: 20
+2025/07/22 22:59:47 model.View: chatView rendered height: 22
+2025/07/22 22:59:47 model.View: logView rendered height: 22
+2025/07/22 22:59:47 model.View: mainView rendered height: 22
+2025/07/22 22:59:47 model.View: statusBarRendered height: 1
+2025/07/22 22:59:47 model.View: layout rendered height (before error/help): 23
+2025/07/22 22:59:47 model.View: final layout rendered height: 23
+2025/07/22 22:59:47 model.Update called with msg type: tea.MouseMsg
+2025/07/22 22:59:47 ChatModel.Update called with msg type: tea.MouseMsg
+2025/07/22 22:59:47 model.View called: Width=155, Height=41
+2025/07/22 22:59:47 model.View: chatPaneWidth=108, logPaneWidth=47
+2025/07/22 22:59:47 model.View: contentHeight (after status bar): 20
+2025/07/22 22:59:47 model.View: m.Chat.Width=102, m.Chat.Height=20, m.Log.Width=41, m.Log.Height=20
+2025/07/22 22:59:47 model.View: chatPaneStyle.GetHorizontalFrameSize()=6, chatPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:47 model.View: logPaneStyle.GetHorizontalFrameSize()=6, logPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:47 ChatModel.View called: Width=102, Height=20
+2025/07/22 22:59:47 ChatModel.View: inputFieldRendered height: 3
+2025/07/22 22:59:47 ChatModel.View: spinnerView height: 1, inputFieldRendered height: 3, remainingHeight for list: 16
+2025/07/22 22:59:47 ChatModel.View: listView rendered height: 16
+2025/07/22 22:59:47 ChatModel.View: spinnerView rendered height: 1
+2025/07/22 22:59:47 ChatModel.View: inputFieldRendered rendered height: 3
+2025/07/22 22:59:47 ChatModel.View: joined rendered height: 20
+2025/07/22 22:59:47 model.View: chatView rendered height: 22
+2025/07/22 22:59:47 model.View: logView rendered height: 22
+2025/07/22 22:59:47 model.View: mainView rendered height: 22
+2025/07/22 22:59:47 model.View: statusBarRendered height: 1
+2025/07/22 22:59:47 model.View: layout rendered height (before error/help): 23
+2025/07/22 22:59:47 model.View: final layout rendered height: 23
+2025/07/22 22:59:47 model.Update called with msg type: tea.MouseMsg
+2025/07/22 22:59:47 ChatModel.Update called with msg type: tea.MouseMsg
+2025/07/22 22:59:47 model.View called: Width=155, Height=41
+2025/07/22 22:59:47 model.View: chatPaneWidth=108, logPaneWidth=47
+2025/07/22 22:59:47 model.View: contentHeight (after status bar): 20
+2025/07/22 22:59:47 model.View: m.Chat.Width=102, m.Chat.Height=20, m.Log.Width=41, m.Log.Height=20
+2025/07/22 22:59:47 model.View: chatPaneStyle.GetHorizontalFrameSize()=6, chatPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:47 model.View: logPaneStyle.GetHorizontalFrameSize()=6, logPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:47 ChatModel.View called: Width=102, Height=20
+2025/07/22 22:59:47 ChatModel.View: inputFieldRendered height: 3
+2025/07/22 22:59:47 ChatModel.View: spinnerView height: 1, inputFieldRendered height: 3, remainingHeight for list: 16
+2025/07/22 22:59:47 ChatModel.View: listView rendered height: 16
+2025/07/22 22:59:47 ChatModel.View: spinnerView rendered height: 1
+2025/07/22 22:59:47 ChatModel.View: inputFieldRendered rendered height: 3
+2025/07/22 22:59:47 ChatModel.View: joined rendered height: 20
+2025/07/22 22:59:47 model.View: chatView rendered height: 22
+2025/07/22 22:59:47 model.View: logView rendered height: 22
+2025/07/22 22:59:47 model.View: mainView rendered height: 22
+2025/07/22 22:59:47 model.View: statusBarRendered height: 1
+2025/07/22 22:59:47 model.View: layout rendered height (before error/help): 23
+2025/07/22 22:59:47 model.View: final layout rendered height: 23
+2025/07/22 22:59:47 model.Update called with msg type: tea.MouseMsg
+2025/07/22 22:59:47 ChatModel.Update called with msg type: tea.MouseMsg
+2025/07/22 22:59:47 model.View called: Width=155, Height=41
+2025/07/22 22:59:47 model.View: chatPaneWidth=108, logPaneWidth=47
+2025/07/22 22:59:47 model.View: contentHeight (after status bar): 20
+2025/07/22 22:59:47 model.View: m.Chat.Width=102, m.Chat.Height=20, m.Log.Width=41, m.Log.Height=20
+2025/07/22 22:59:47 model.View: chatPaneStyle.GetHorizontalFrameSize()=6, chatPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:47 model.View: logPaneStyle.GetHorizontalFrameSize()=6, logPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:47 ChatModel.View called: Width=102, Height=20
+2025/07/22 22:59:47 ChatModel.View: inputFieldRendered height: 3
+2025/07/22 22:59:47 ChatModel.View: spinnerView height: 1, inputFieldRendered height: 3, remainingHeight for list: 16
+2025/07/22 22:59:47 ChatModel.View: listView rendered height: 16
+2025/07/22 22:59:47 ChatModel.View: spinnerView rendered height: 1
+2025/07/22 22:59:47 ChatModel.View: inputFieldRendered rendered height: 3
+2025/07/22 22:59:47 ChatModel.View: joined rendered height: 20
+2025/07/22 22:59:47 model.View: chatView rendered height: 22
+2025/07/22 22:59:47 model.View: logView rendered height: 22
+2025/07/22 22:59:47 model.View: mainView rendered height: 22
+2025/07/22 22:59:47 model.View: statusBarRendered height: 1
+2025/07/22 22:59:47 model.View: layout rendered height (before error/help): 23
+2025/07/22 22:59:47 model.View: final layout rendered height: 23
+2025/07/22 22:59:58 model.Update called with msg type: tea.WindowSizeMsg
+2025/07/22 22:59:58 handleWindowSizeMsg: WindowSizeMsg received - Width: 155, Height: 20
+2025/07/22 22:59:58 handleWindowSizeMsg: Initial contentHeight (after status bar): 10
+2025/07/22 22:59:58 handleWindowSizeMsg: m.Chat.Width: 149, m.Chat.Height: 10
+2025/07/22 22:59:58 model.View called: Width=155, Height=20
+2025/07/22 22:59:58 model.View: chatPaneWidth=108, logPaneWidth=47
+2025/07/22 22:59:58 model.View: contentHeight (after status bar): 10
+2025/07/22 22:59:58 model.View: m.Chat.Width=102, m.Chat.Height=10, m.Log.Width=41, m.Log.Height=10
+2025/07/22 22:59:58 model.View: chatPaneStyle.GetHorizontalFrameSize()=6, chatPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:58 model.View: logPaneStyle.GetHorizontalFrameSize()=6, logPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 22:59:58 ChatModel.View called: Width=102, Height=10
+2025/07/22 22:59:58 ChatModel.View: inputFieldRendered height: 3
+2025/07/22 22:59:58 ChatModel.View: spinnerView height: 1, inputFieldRendered height: 3, remainingHeight for list: 6
+2025/07/22 22:59:58 ChatModel.View: listView rendered height: 9
+2025/07/22 22:59:58 ChatModel.View: spinnerView rendered height: 1
+2025/07/22 22:59:58 ChatModel.View: inputFieldRendered rendered height: 3
+2025/07/22 22:59:58 ChatModel.View: joined rendered height: 13
+2025/07/22 22:59:58 model.View: chatView rendered height: 15
+2025/07/22 22:59:58 model.View: logView rendered height: 12
+2025/07/22 22:59:58 model.View: mainView rendered height: 15
+2025/07/22 22:59:58 model.View: statusBarRendered height: 1
+2025/07/22 22:59:58 model.View: layout rendered height (before error/help): 16
+2025/07/22 22:59:58 model.View: final layout rendered height: 16
+2025/07/22 23:11:41 model.Update called with msg type: tea.WindowSizeMsg
+2025/07/22 23:11:41 handleWindowSizeMsg: WindowSizeMsg received - Width: 155, Height: 21
+2025/07/22 23:11:41 handleWindowSizeMsg: Initial contentHeight (after status bar): 10
+2025/07/22 23:11:41 handleWindowSizeMsg: m.Chat.Width: 149, m.Chat.Height: 10
+2025/07/22 23:11:41 model.View called: Width=155, Height=21
+2025/07/22 23:11:41 model.View: chatPaneWidth=108, logPaneWidth=47
+2025/07/22 23:11:41 model.View: contentHeight (after status bar): 10
+2025/07/22 23:11:41 model.View: m.Chat.Width=102, m.Chat.Height=10, m.Log.Width=41, m.Log.Height=10
+2025/07/22 23:11:41 model.View: chatPaneStyle.GetHorizontalFrameSize()=6, chatPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 23:11:41 model.View: logPaneStyle.GetHorizontalFrameSize()=6, logPaneStyle.GetVerticalFrameSize()=2
+2025/07/22 23:11:41 ChatModel.View called: Width=102, Height=10
+2025/07/22 23:11:41 ChatModel.View: inputFieldRendered height: 3
+2025/07/22 23:11:41 ChatModel.View: spinnerView height: 1, inputFieldRendered height: 3, remainingHeight for list: 6
+2025/07/22 23:11:41 ChatModel.View: listView rendered height: 9
+2025/07/22 23:11:41 ChatModel.View: spinnerView rendered height: 1
+2025/07/22 23:11:41 ChatModel.View: inputFieldRendered rendered height: 3
+2025/07/22 23:11:41 ChatModel.View: joined rendered height: 13
+2025/07/22 23:11:41 model.View: chatView rendered height: 15
+2025/07/22 23:11:41 model.View: logView rendered height: 12
+2025/07/22 23:11:41 model.View: mainView rendered height: 15
+2025/07/22 23:11:41 model.View: statusBarRendered height: 1
+2025/07/22 23:11:41 model.View: layout rendered height (before error/help): 16
+2025/07/22 23:11:41 model.View: final layout rendered height: 16
+2025/07/22 23:12:08 model.View called: Width=155, Height=21
+2025/07/22 23:12:08 model.View: chatPaneWidth=108, logPaneWidth=47
+2025/07/22 23:12:08 model.View: contentHeight (after status bar): 10

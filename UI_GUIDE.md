@@ -86,3 +86,59 @@ func (m model) View() string {
 To let Bubble Tea dynamically size things for you, always handle terminal resize events, use Lip Gloss for layout, and set component sizes from your model’s stored terminal size. Compose your UI with Lip Gloss’s layout utilities and avoid hardcoding sizes.
 
 If you need more specific code examples or want guidance for a particular component, see this file or the official docs.
+
+---
+
+## Troubleshooting: UI Exceeds Terminal Window Bounds
+
+If your Bubble Tea UI is overflowing or not fitting within the terminal window, follow these steps:
+
+### Common Causes
+- **Not handling `tea.WindowSizeMsg`**: Your model must update its stored width/height on every terminal resize.
+- **Hardcoded sizes**: Avoid fixed widths/heights; use the terminal size from your model.
+- **Not passing terminal size to components**: Bubbles components (list, table, viewport, etc.) need their width/height set from your model’s terminal size.
+- **Custom layout logic**: Prefer Lip Gloss and Bubble Tea’s built-in layout utilities.
+- **Not running in a real TTY**: Bubble Tea TUIs require a real terminal (not a background process or captured output) for proper sizing and rendering.
+
+### Quick Fix Checklist
+1. **Handle `tea.WindowSizeMsg` in your Update function.**
+2. **Store `msg.Width` and `msg.Height` in your model.**
+3. **Use these values to size all components in your View function.**
+4. **Set Bubbles component sizes from your model’s width/height.**
+5. **Use Lip Gloss’s layout utilities (`JoinHorizontal`, `JoinVertical`, etc.) for composing layouts.**
+6. **Avoid hardcoding sizes.**
+7. **Use the recommended tmux-based dev workflow for live reload.**
+
+### Example Fix
+```go
+// In your Update:
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+    switch msg := msg.(type) {
+    case tea.WindowSizeMsg:
+        m.width = msg.Width
+        m.height = msg.Height
+        // Update Bubbles components:
+        m.list.SetSize(m.width, m.height)
+    }
+    return m, nil
+}
+
+// In your View:
+func (m model) View() string {
+    return lipgloss.NewStyle().
+        Width(m.width).
+        Height(m.height).
+        Render(m.list.View())
+}
+```
+
+### Advanced Tips
+- Use `MaxWidth`, `MaxHeight`, and Lip Gloss’s measuring functions to constrain or adapt layouts.
+- For complex UIs, break your layout into smaller components and size each from the model’s terminal size.
+
+### Still Having Issues?
+- Double-check that every component’s width/height is set from the model’s stored terminal size.
+- Make sure you are running the TUI in a real terminal (see the recommended tmux workflow in the README).
+- Review the official [Bubble Tea Examples](https://github.com/charmbracelet/bubbletea/tree/main/examples) for working patterns.
+- See [Lip Gloss README](https://github.com/charmbracelet/lipgloss) for layout utilities.
+

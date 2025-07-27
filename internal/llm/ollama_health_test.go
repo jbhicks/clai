@@ -1,7 +1,7 @@
 package llm
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -18,7 +18,7 @@ func TestOllamaHealth(t *testing.T) {
 		t.Fatalf("Expected status 200 OK, got %d", resp.StatusCode)
 	}
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("Failed to read response body: %v", err)
 	}
