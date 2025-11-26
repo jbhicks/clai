@@ -3,23 +3,23 @@ package ui
 import "github.com/charmbracelet/lipgloss"
 
 type Theme struct {
-	Name        string
-	Primary1    lipgloss.Color
-	Primary2    lipgloss.Color
-	Primary3    lipgloss.Color
-	Accent1     lipgloss.Color
-	Accent2     lipgloss.Color
-	BgDark      lipgloss.Color
-	BgLight     lipgloss.Color
-	BorderCol   lipgloss.Color
-	MainPane    lipgloss.Style
-	StatusBar   lipgloss.Style
-	UserMessage lipgloss.Style
+	Name             string
+	Primary1         lipgloss.Color
+	Primary2         lipgloss.Color
+	Primary3         lipgloss.Color
+	Accent1          lipgloss.Color
+	Accent2          lipgloss.Color
+	BgDark           lipgloss.Color
+	BgLight          lipgloss.Color
+	BorderCol        lipgloss.Color
+	MainPane         lipgloss.Style
+	StatusBar        lipgloss.Style
+	UserMessage      lipgloss.Style
 	AssistantMessage lipgloss.Style
-	ToolMessage lipgloss.Style
+	ToolMessage      lipgloss.Style
 }
 
-var ( 
+var (
 	DarkTheme = Theme{
 		Name:      "dark",
 		Primary1:  lipgloss.Color("#5D5D81"), // Muted Purple
@@ -49,8 +49,7 @@ func (t *Theme) ApplyStyles() {
 	t.MainPane = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(t.BorderCol).
-		Background(t.BgDark).
-		Padding(0, 2)
+		Background(t.BgDark)
 
 	t.StatusBar = lipgloss.NewStyle().
 		Background(t.Primary1).
@@ -58,7 +57,7 @@ func (t *Theme) ApplyStyles() {
 		Bold(true).
 		Padding(0, 2)
 
-	t.UserMessage = lipgloss.NewStyle().Background(t.BgLight).Foreground(t.BgDark).Bold(true).Padding(0, 1)
-	t.AssistantMessage = lipgloss.NewStyle().Background(t.Primary1).Foreground(t.Accent2).Padding(0, 1)
-	t.ToolMessage = lipgloss.NewStyle().Background(t.Primary3).Foreground(t.BgLight).Italic(true).Padding(0, 1)
+	t.UserMessage = lipgloss.NewStyle().Background(t.BgLight).Foreground(t.Accent2).Bold(true).Padding(0, 1)
+	t.AssistantMessage = lipgloss.NewStyle().Background(t.Primary1).Foreground(t.Accent2).Padding(0, 1).MarginLeft(2)
+	t.ToolMessage = lipgloss.NewStyle().Background(t.Primary3).Foreground(t.BgLight).Italic(true).Padding(0, 1).MarginLeft(2)
 }
