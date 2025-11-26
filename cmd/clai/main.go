@@ -1,6 +1,7 @@
 package main
 
 import (
+	"clai/internal/db"
 	"clai/internal/llm"
 	"clai/internal/ui"
 	"flag"
@@ -69,6 +70,14 @@ func main() {
 	flag.Parse()
 	llmClient := llm.NewClient(host, modelName, systemPrompt)
 
+	store, err := db.New()
+	if err != nil {
+		log.Printf("Failed to initialize database: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to initialize database: %v\n", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+
 	modelInfo, err := llmClient.GetModelInfo()
 	var assistantIntro string
 	if err != nil {
@@ -112,21 +121,44 @@ func main() {
 		StatusBarText: "",
 		ActivePane:    ui.ChatPane,
 		ErrorBanner:   lipgloss.NewStyle().Background(lipgloss.Color("9")).Foreground(lipgloss.Color("15")).Padding(0, 1),
-		Theme:         ui.DarkTheme,
+		Theme:         ui.AvailableThemes[0],
+		DB:            store,
 	}
-	m.Theme.ApplyStyles()
+
+	conv, err := store.GetLatestConversation()
+	if err != nil {
+		log.Printf("Failed to load latest conversation: %v", err)
+	}
+	if conv == nil {
+		conv = &db.Conversation{
+			Title:    "New Conversation",
+			Messages: []llm.Message{{Role: "assistant", Content: assistantIntro}},
+		}
+		log.Printf("[DB] Starting new conversation")
+	} else {
+		log.Printf("[DB] Loaded conversation %d with %d messages", conv.ID, len(conv.Messages))
+	}
+	m.Conversation = conv
+
 	chat := ui.ChatModel{
 		TextInput: chatInput,
 		LlmClient: llmClient,
 		Spinner:   spin,
-		Theme:     &m.Theme,
+		Theme:     m.Theme,
 	}
 	chat.AssistantName = "assistant"
-	chat.Messages = append(chat.Messages, llm.Message{Role: "assistant", Content: assistantIntro})
+	chat.Messages = conv.Messages
 	chat.ContentDirty = true
 	chat.Width = 80
 	chat.Height = 20
 	chat.Viewport = viewport.New(chat.Width, chat.Height)
+
+	for _, msg := range conv.Messages {
+		if msg.Role == "user" {
+			chat.QueryHistory = append(chat.QueryHistory, msg.Content)
+		}
+	}
+
 	m.Chat = chat
 	// Let Bubble Tea detect terminal size automatically via WindowSizeMsg
 	log.Printf("Starting app, Bubble Tea will detect terminal size...")
