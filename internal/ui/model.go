@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/brittonhayes/glitter/glitter"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -44,10 +45,12 @@ type Model struct {
 	ErrorBanner   lipgloss.Style
 	ErrorMessage  string
 	ShowError     bool
-	Theme         Theme
+	Theme         *glitter.UI
 	streamChan    chan string
 	toolCallChan  chan []llm.ToolCall
 	logChan       chan tea.Msg
+	DB            interface{}
+	Conversation  interface{}
 }
 
 type (
@@ -82,7 +85,7 @@ func executeToolCmd(toolCall llm.ToolCall) tea.Cmd {
 	}
 }
 
-func StreamLLMResponseCmd(llmClient *llm.Client, messages []llm.Message) tea.Cmd {
+func StreamLLMResponseCmd(llmClient llm.LLMClientInterface, messages []llm.Message) tea.Cmd {
 	return func() tea.Msg {
 		streamChan := make(chan string, 100)
 		toolCallChan := make(chan []llm.ToolCall, 1)
@@ -168,6 +171,15 @@ func StartsWithLLMError(s string) bool {
 	return len(s) >= 11 && s[:11] == "[LLM ERROR]"
 }
 
+func getThemeName(currentTheme *glitter.UI) string {
+	for i, theme := range AvailableThemes {
+		if theme == currentTheme {
+			return ThemeNames[i]
+		}
+	}
+	return "Unknown"
+}
+
 func (m *Model) Init() tea.Cmd {
 	return tea.Batch(TailLogFileCmd(m), m.Chat.Init(), tea.WindowSize())
 }
@@ -176,8 +188,9 @@ func (m *Model) updateDimensions() {
 	chatPaneWidth := int(float64(m.Width) * 0.8)
 	logPaneWidth := m.Width - chatPaneWidth
 
-	chatPaneStyle := m.Theme.MainPane
-	logPaneStyle := m.Theme.MainPane
+	themeStyles := GetThemeStyles(m.Theme)
+	chatPaneStyle := themeStyles.MainPane
+	logPaneStyle := themeStyles.MainPane
 
 	contentHeight := m.Height - 1
 	if m.ShowError && m.ErrorMessage != "" {
@@ -336,13 +349,16 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	case "ctrl+d":
-		if m.Theme.Name == DarkTheme.Name {
-			m.Theme = LightTheme
-		} else {
-			m.Theme = DarkTheme
+		currentIdx := 0
+		for i, theme := range AvailableThemes {
+			if theme == m.Theme {
+				currentIdx = i
+				break
+			}
 		}
-		m.Theme.ApplyStyles()
-		m.Chat.Theme = &m.Theme // Update ChatModel's theme pointer
+		nextIdx := (currentIdx + 1) % len(AvailableThemes)
+		m.Theme = AvailableThemes[nextIdx]
+		m.Chat.Theme = m.Theme
 		return nil
 	}
 
@@ -366,6 +382,8 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 		m.Height = msg.Height
 	}
 	log.Printf("handleWindowSizeMsg: Using Width: %d, Height: %d", m.Width, m.Height)
+
+	themeStyles := GetThemeStyles(m.Theme)
 
 	// Calculate total height available for content (excluding status bar and potential error banner)
 	// Status bar always takes 1 row (don't use GetHeight() which returns 0)
@@ -394,12 +412,13 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 
 	// Distribute dimensions to chat and log panes
 	// Subtract frame sizes because MainPane style will add border around the content
-	m.Chat.Width = chatPaneWidth - m.Theme.MainPane.GetHorizontalFrameSize()
-	m.Chat.Height = contentHeight - m.Theme.MainPane.GetVerticalFrameSize()
-	m.Log.Width = logPaneWidth - m.Theme.MainPane.GetHorizontalFrameSize()
-	m.Log.Height = contentHeight - m.Theme.MainPane.GetVerticalFrameSize()
+	m.Chat.Width = chatPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
+	m.Chat.Height = contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
+	m.Log.Width = logPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
+	m.Log.Height = contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
+
 	log.Printf("handleWindowSizeMsg: m.Chat.Width: %d, m.Chat.Height: %d (contentHeight=%d, frameSize=%d)",
-		m.Chat.Width, m.Chat.Height, contentHeight, m.Theme.MainPane.GetVerticalFrameSize())
+		m.Chat.Width, m.Chat.Height, contentHeight, themeStyles.MainPane.GetVerticalFrameSize())
 
 	// Ensure minimum dimensions
 	if m.Chat.Width < minViewportWidth {
@@ -413,13 +432,16 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 	m.Chat.Viewport.Width = m.Chat.Width
 	m.Chat.Viewport.Height = m.Chat.Height
 	m.Chat.TextInput.Width = m.Chat.Width - 8
-	m.Log.Width = logPaneWidth - m.Theme.MainPane.GetHorizontalFrameSize()
+	m.Log.Width = logPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
+	m.Log.Height = contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
 
-	// Update status bar text
-	m.StatusBarText = fmt.Sprintf("Model: %s | Host: %s | Format: %s",
+	// Update status bar text with theme name
+	themeName := getThemeName(m.Theme)
+	m.StatusBarText = fmt.Sprintf("Model: %s | Host: %s | Format: %s | Theme: %s",
 		m.Chat.LlmClient.Model(),
 		m.Chat.LlmClient.Host(),
-		m.Chat.LlmClient.APIFormatString())
+		m.Chat.LlmClient.APIFormatString(),
+		themeName)
 	return nil
 }
 
@@ -427,12 +449,13 @@ func (m *Model) View() string {
 	chatPaneWidth := int(float64(m.Width) * 0.8)
 
 	// Active pane styling
-	chatPaneStyle := m.Theme.MainPane
-	logPaneStyle := m.Theme.MainPane
+	themeStyles := GetThemeStyles(m.Theme)
+	chatPaneStyle := themeStyles.MainPane
+	logPaneStyle := themeStyles.MainPane
 	if m.ActivePane == ChatPane {
-		chatPaneStyle = chatPaneStyle.Copy().BorderForeground(m.Theme.Accent1)
+		chatPaneStyle = chatPaneStyle.Copy().BorderForeground(lipgloss.Color(m.Theme.Theme.Bright.Yellow))
 	} else {
-		logPaneStyle = logPaneStyle.Copy().BorderForeground(m.Theme.Accent1)
+		logPaneStyle = logPaneStyle.Copy().BorderForeground(lipgloss.Color(m.Theme.Theme.Bright.Yellow))
 	}
 
 	// Render panes (dimensions already set in Update())
@@ -442,7 +465,7 @@ func (m *Model) View() string {
 	logView := logPaneStyle.Render(m.Log.View())
 
 	mainView := lipgloss.JoinHorizontal(lipgloss.Top, chatView, logView)
-	statusBarRendered := m.Theme.StatusBar.Width(m.Width).Render(m.StatusBarText)
+	statusBarRendered := themeStyles.StatusBar.Width(m.Width).Render(m.StatusBarText)
 
 	layout := lipgloss.JoinVertical(lipgloss.Left, mainView, statusBarRendered)
 
@@ -454,8 +477,8 @@ func (m *Model) View() string {
 		helpBox := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			Padding(1, 2).
-			Background(m.Theme.BgDark).
-			Foreground(m.Theme.Accent1).
+			Background(lipgloss.Color(m.Theme.Theme.Primary.Background)).
+			Foreground(lipgloss.Color(m.Theme.Theme.Bright.White)).
 			Width(max(chatPaneWidth/2, 10)).
 			Align(lipgloss.Center).
 			Render(m.Help.View(m.Keys))
