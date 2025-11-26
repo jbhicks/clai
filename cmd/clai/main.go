@@ -11,14 +11,12 @@ import (
 	"runtime/debug"
 
 	"github.com/charmbracelet/bubbles/help"
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
-	"github.com/mattn/go-isatty"
 )
 
 func getStackTrace() string {
@@ -35,11 +33,13 @@ func main() {
 			os.Exit(2)
 		}
 	}()
-	// Check for TTY (interactive terminal)
-	if !isatty.IsTerminal(os.Stdin.Fd()) || !isatty.IsTerminal(os.Stdout.Fd()) {
+	// Check for TTY (interactive terminal) by trying to open /dev/tty
+	ttyCheck, err := os.Open("/dev/tty")
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: This program requires an interactive terminal (TTY). Exiting.")
 		os.Exit(1)
 	}
+	ttyCheck.Close()
 	// Log to debug.log, overwrite each run
 	logFile, err := os.Create("debug.log")
 	if err != nil {
@@ -47,6 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 	log.SetOutput(logFile)
+	log.SetFlags(log.Ltime) // Only show time, not date
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -67,6 +68,32 @@ func main() {
 	systemPrompt := os.Getenv("SYSTEM_PROMPT")
 	flag.Parse()
 	llmClient := llm.NewClient(host, modelName, systemPrompt)
+
+	modelInfo, err := llmClient.GetModelInfo()
+	var assistantIntro string
+	if err != nil {
+		log.Printf("Failed to get model info: %v", err)
+		assistantIntro = fmt.Sprintf("Model: %s\nUnable to retrieve model details.", modelName)
+	} else {
+		assistantIntro = fmt.Sprintf("Model: %s", modelName)
+
+		if modelInfo.Details.Family != "" {
+			assistantIntro += fmt.Sprintf("\nFamily: %s", modelInfo.Details.Family)
+		}
+		if modelInfo.Details.ParameterSize != "" {
+			assistantIntro += fmt.Sprintf("\nParameters: %s", modelInfo.Details.ParameterSize)
+		}
+		if modelInfo.Details.QuantizationLevel != "" {
+			assistantIntro += fmt.Sprintf("\nQuantization: %s", modelInfo.Details.QuantizationLevel)
+		}
+		if modelInfo.Details.Format != "" {
+			assistantIntro += fmt.Sprintf("\nFormat: %s", modelInfo.Details.Format)
+		}
+		if contextLen, ok := modelInfo.ModelInfo["llama.context_length"].(float64); ok {
+			assistantIntro += fmt.Sprintf("\nContext Length: %.0f", contextLen)
+		}
+	}
+
 	chatInput := textinput.New()
 	chatInput.Prompt = "> "
 	chatInput.Placeholder = "Type your message..."
@@ -74,7 +101,6 @@ func main() {
 	chatInput.CharLimit = 256
 	chatInput.Width = 40
 	chatInput.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFAA")).Bold(true).Underline(true)
-	// Modern: no blinking cursor (Blink not supported in current bubbles/textinput)
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
 	help := help.New()
@@ -95,23 +121,20 @@ func main() {
 		Spinner:   spin,
 		Theme:     &m.Theme,
 	}
-	assistantIntro := "Hello! I am your AI assistant. I can use tools to help answer your questions."
-	assistantName := "assistant"
-	chat.AssistantName = assistantName
+	chat.AssistantName = "assistant"
 	chat.Messages = append(chat.Messages, llm.Message{Role: "assistant", Content: assistantIntro})
-	items := []list.Item{}
-	items = append(items, ui.Item(assistantIntro))
-	chat.List = list.New(items, list.NewDefaultDelegate(), 0, 0)
+	chat.ContentDirty = true
 	chat.Width = 80
 	chat.Height = 20
 	chat.Viewport = viewport.New(chat.Width, chat.Height)
-	chat.Viewport.SetContent(assistantIntro)
 	m.Chat = chat
-	opts := []tea.ProgramOption{
+	// Let Bubble Tea detect terminal size automatically via WindowSizeMsg
+	log.Printf("Starting app, Bubble Tea will detect terminal size...")
+
+	p := tea.NewProgram(m,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
-	}
-	p := tea.NewProgram(m, opts...)
+	)
 	if _, err := p.Run(); err != nil {
 		log.Println("Fatal error:", err)
 		os.Exit(1)

@@ -3,9 +3,9 @@ package ui
 import "github.com/charmbracelet/bubbles/key"
 
 type KeyMap struct {
-	Quit key.Binding
-	Help key.Binding
-	Tab  key.Binding
+	Quit        key.Binding
+	Help        key.Binding
+	Tab         key.Binding
 	ToggleTheme key.Binding
 }
 
@@ -21,19 +21,19 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 
 var DefaultKeyMap = KeyMap{
 	Quit: key.NewBinding(
-		key.WithKeys("q", "ctrl+c"),
-		key.WithHelp("q/ctrl+c", "quit"),
+		key.WithKeys("ctrl+q", "ctrl+c"),
+		key.WithHelp("ctrl+q/ctrl+c", "quit"),
 	),
 	Help: key.NewBinding(
-		key.WithKeys("?"),
-		key.WithHelp("?", "toggle help"),
+		key.WithKeys("ctrl+h"),
+		key.WithHelp("ctrl+h", "toggle help"),
 	),
 	Tab: key.NewBinding(
-		key.WithKeys("tab"),
-		key.WithHelp("tab", "switch view"),
+		key.WithKeys("ctrl+t"),
+		key.WithHelp("ctrl+t", "switch pane"),
 	),
 	ToggleTheme: key.NewBinding(
-		key.WithKeys("t"),
-		key.WithHelp("t", "toggle theme"),
+		key.WithKeys("ctrl+d"),
+		key.WithHelp("ctrl+d", "toggle theme"),
 	),
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -17,7 +16,6 @@ type ChatModel struct {
 	Messages      []llm.Message
 	TextInput     textinput.Model
 	Viewport      viewport.Model
-	List          list.Model
 	LlmClient     *llm.Client
 	Spinner       spinner.Model
 	Streaming     bool
@@ -25,6 +23,8 @@ type ChatModel struct {
 	Height        int
 	AssistantName string
 	Theme         *Theme
+	CachedContent string
+	ContentDirty  bool
 }
 
 func (c *ChatModel) Init() tea.Cmd {
@@ -32,7 +32,6 @@ func (c *ChatModel) Init() tea.Cmd {
 }
 
 func (c *ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
-	log.Printf("ChatModel.Update called with msg type: %T", msg)
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
 	c.TextInput, cmd = c.TextInput.Update(msg)
@@ -41,74 +40,68 @@ func (c *ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	cmds = append(cmds, cmd)
 	c.Spinner, cmd = c.Spinner.Update(msg)
 	cmds = append(cmds, cmd)
-	c.List, cmd = c.List.Update(msg)
-	cmds = append(cmds, cmd)
 	return *c, tea.Batch(cmds...)
 }
 
 func (c *ChatModel) View() string {
-	log.Printf("ChatModel.View called: Width=%d, Height=%d", c.Width, c.Height)
-
 	inputStyle := lipgloss.NewStyle()
 	if c.TextInput.Focused() {
 		inputStyle = inputStyle.Border(lipgloss.RoundedBorder(), true).BorderForeground(c.Theme.Accent1)
 	}
 
-	chatContent := ""
-	for _, msg := range c.Messages {
-		var rendered string
-		switch msg.Role {
-		case "user":
-			rendered = c.Theme.UserMessage.Width(c.Width).Render(fmt.Sprintf("user: %s", msg.Content))
-		case "assistant":
-			name := c.AssistantName
-			if name == "" {
-				name = "assistant"
+	// Only rebuild chat content if dirty (messages changed)
+	if c.ContentDirty {
+		chatContent := ""
+		for _, msg := range c.Messages {
+			var rendered string
+			switch msg.Role {
+			case "user":
+				rendered = c.Theme.UserMessage.Width(c.Width).Render(fmt.Sprintf("> %s", msg.Content))
+			case "assistant":
+				rendered = c.Theme.AssistantMessage.Width(c.Width).Render(fmt.Sprintf("> %s", msg.Content))
+			case "tool":
+				rendered = c.Theme.ToolMessage.Width(c.Width).Render(fmt.Sprintf("> %s", msg.Content))
+			default:
+				rendered = lipgloss.NewStyle().Width(c.Width).Render(fmt.Sprintf("> %s", msg.Content))
 			}
-			rendered = c.Theme.AssistantMessage.Width(c.Width).Render(fmt.Sprintf("%s: %s", name, msg.Content))
-		case "tool":
-			rendered = c.Theme.ToolMessage.Width(c.Width).Render(fmt.Sprintf("tool: %s", msg.Content))
-		default:
-			rendered = lipgloss.NewStyle().Width(c.Width).Render(fmt.Sprintf("%s: %s", msg.Role, msg.Content))
+			chatContent += rendered + "\n\n"
 		}
-		chatContent += rendered + "\n\n"
+		c.CachedContent = chatContent
+		c.ContentDirty = false
 	}
-	c.Viewport.SetContent(chatContent)
+	c.Viewport.SetContent(c.CachedContent)
 
 	spinnerView := ""
+	spinnerHeight := 0
 	if c.Streaming {
 		spinnerView = c.Spinner.View() + " Generating..."
+		spinnerHeight = 1
 	}
 
 	inputFieldRendered := inputStyle.Render(c.TextInput.View())
-	log.Printf("ChatModel.View: inputFieldRendered height: %d", lipgloss.Height(inputFieldRendered))
+	inputHeight := lipgloss.Height(inputFieldRendered)
 
-	tooltipHeight := 0
 	if !c.TextInput.Focused() {
-		tooltip := lipgloss.NewStyle().Background(c.Theme.Primary2).Foreground(c.Theme.Accent2).Padding(0, 1).Render("Press Enter to send, Tab to switch panes, ? for help")
-		tooltipHeight = lipgloss.Height(tooltip)
+		tooltip := lipgloss.NewStyle().Background(c.Theme.Primary2).Foreground(c.Theme.Accent2).Padding(0, 1).Render("Ctrl+T: switch panes | Ctrl+H: help | Ctrl+D: theme | Ctrl+Q: quit")
 		inputFieldRendered = lipgloss.JoinVertical(lipgloss.Left, inputFieldRendered, tooltip)
-		log.Printf("ChatModel.View: tooltipHeight: %d, inputFieldRendered (with tooltip) height: %d", tooltipHeight, lipgloss.Height(inputFieldRendered))
+		inputHeight = lipgloss.Height(inputFieldRendered)
+		log.Printf("ChatModel.View: Input NOT focused, tooltip added, new inputHeight=%d", inputHeight)
 	}
 
-	// Calculate remaining height for the list
-	remainingHeight := c.Height - lipgloss.Height(spinnerView) - lipgloss.Height(inputFieldRendered)
-	if remainingHeight < 3 {
-		remainingHeight = 3
+	// Calculate viewport height
+	viewportHeight := c.Height - inputHeight - spinnerHeight
+	if viewportHeight < 1 {
+		viewportHeight = 1
 	}
-	log.Printf("ChatModel.View: spinnerView height: %d, inputFieldRendered height: %d, remainingHeight for list: %d", lipgloss.Height(spinnerView), lipgloss.Height(inputFieldRendered), remainingHeight)
+	c.Viewport.Height = viewportHeight
 
-	c.List.SetHeight(remainingHeight)
-	c.List.SetWidth(c.Width)
-	c.Viewport.Width = c.Width
-	c.Viewport.Height = remainingHeight
+	// Join components - only include spinner if streaming
+	var joined string
+	if c.Streaming && spinnerView != "" {
+		joined = lipgloss.JoinVertical(lipgloss.Left, c.Viewport.View(), spinnerView, inputFieldRendered)
+	} else {
+		joined = lipgloss.JoinVertical(lipgloss.Left, c.Viewport.View(), inputFieldRendered)
+	}
 
-	listView := c.List.View()
-	log.Printf("ChatModel.View: listView rendered height: %d", lipgloss.Height(listView))
-	log.Printf("ChatModel.View: spinnerView rendered height: %d", lipgloss.Height(spinnerView))
-	log.Printf("ChatModel.View: inputFieldRendered rendered height: %d", lipgloss.Height(inputFieldRendered))
-
-	joined := lipgloss.JoinVertical(lipgloss.Left, listView, spinnerView, inputFieldRendered)
-	log.Printf("ChatModel.View: joined rendered height: %d", lipgloss.Height(joined))
 	return joined
 }
