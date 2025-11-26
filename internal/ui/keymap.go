@@ -7,6 +7,7 @@ type KeyMap struct {
 	Help        key.Binding
 	Tab         key.Binding
 	ToggleTheme key.Binding
+	NewConv     key.Binding
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -15,7 +16,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Help, k.Quit, k.Tab, k.ToggleTheme},
+		{k.Help, k.Quit, k.Tab, k.ToggleTheme, k.NewConv},
 	}
 }
 
@@ -35,5 +36,9 @@ var DefaultKeyMap = KeyMap{
 	ToggleTheme: key.NewBinding(
 		key.WithKeys("ctrl+d"),
 		key.WithHelp("ctrl+d", "toggle theme"),
+	),
+	NewConv: key.NewBinding(
+		key.WithKeys("ctrl+n"),
+		key.WithHelp("ctrl+n", "new conversation"),
 	),
 }

@@ -11,8 +11,7 @@ import (
 // TestLogUpdateMsg verifies that LogUpdateMsg messages are properly added to the log buffer
 // and displayed in the Log viewport.
 func TestLogUpdateMsg(t *testing.T) {
-	theme := DarkTheme
-	theme.ApplyStyles()
+	theme := AvailableThemes[0] // Use Gruvbox theme
 
 	m := &Model{
 		Width:  100,
@@ -62,8 +61,7 @@ func TestLogUpdateMsg(t *testing.T) {
 // TestLogBufferAccumulation verifies that log messages accumulate correctly
 // in the buffer without losing previous content.
 func TestLogBufferAccumulation(t *testing.T) {
-	theme := DarkTheme
-	theme.ApplyStyles()
+	theme := AvailableThemes[0] // Use Gruvbox theme
 
 	m := &Model{
 		Width:  100,
@@ -98,8 +96,7 @@ func TestLogBufferAccumulation(t *testing.T) {
 
 // TestLogViewportDimensions verifies that the Log viewport respects dimension constraints.
 func TestLogViewportDimensions(t *testing.T) {
-	theme := DarkTheme
-	theme.ApplyStyles()
+	theme := AvailableThemes[0] // Use Gruvbox theme
 
 	logWidth := 50
 	logHeight := 20
