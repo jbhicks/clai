@@ -36,8 +36,7 @@ func TestJoinVerticalEmptyString(t *testing.T) {
 
 // TestChatModelLayoutDimensions verifies that ChatModel.View() respects height constraints.
 func TestChatModelLayoutDimensions(t *testing.T) {
-	theme := DarkTheme
-	theme.ApplyStyles()
+	theme := AvailableThemes[0] // Use Gruvbox theme
 
 	ti := textinput.New()
 	ti.Focus()
@@ -45,7 +44,7 @@ func TestChatModelLayoutDimensions(t *testing.T) {
 	chat := ChatModel{
 		Width:     80,
 		Height:    20,
-		Theme:     &theme,
+		Theme:     theme,
 		Messages:  []llm.Message{{Role: "assistant", Content: "test"}},
 		TextInput: ti,
 		Viewport:  viewport.New(80, 20),
@@ -65,8 +64,7 @@ func TestMainLayoutDimensions(t *testing.T) {
 	termWidth := 100
 	termHeight := 40
 
-	theme := DarkTheme
-	theme.ApplyStyles()
+	theme := AvailableThemes[0] // Use Gruvbox theme
 
 	ti := textinput.New()
 	ti.Focus()
@@ -80,15 +78,16 @@ func TestMainLayoutDimensions(t *testing.T) {
 	// Simulate what handleWindowSizeMsg does:
 	// contentHeight = termHeight - statusBar(1)
 	// Component.Height = contentHeight - MainPane frame size
+	themeStyles := GetThemeStyles(theme)
 	contentHeight := termHeight - 1
-	componentHeight := contentHeight - theme.MainPane.GetVerticalFrameSize()
+	componentHeight := contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
 
 	chatPaneWidth := int(float64(termWidth) * 0.8)
-	chatInnerWidth := chatPaneWidth - theme.MainPane.GetHorizontalFrameSize()
+	chatInnerWidth := chatPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
 
 	m.Chat.Width = chatInnerWidth
 	m.Chat.Height = componentHeight
-	m.Chat.Theme = &m.Theme
+	m.Chat.Theme = theme
 	m.Chat.TextInput = ti
 	m.Chat.Viewport = viewport.New(chatInnerWidth, componentHeight)
 

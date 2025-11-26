@@ -2,9 +2,9 @@ package ui
 
 import (
 	"clai/internal/llm"
-	"fmt"
 	"log"
 
+	"github.com/brittonhayes/glitter/glitter"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -13,18 +13,21 @@ import (
 )
 
 type ChatModel struct {
-	Messages      []llm.Message
-	TextInput     textinput.Model
-	Viewport      viewport.Model
-	LlmClient     *llm.Client
-	Spinner       spinner.Model
-	Streaming     bool
-	Width         int
-	Height        int
-	AssistantName string
-	Theme         *Theme
-	CachedContent string
-	ContentDirty  bool
+	Messages       []llm.Message
+	TextInput      textinput.Model
+	Viewport       viewport.Model
+	LlmClient      llm.LLMClientInterface
+	Spinner        spinner.Model
+	Streaming      bool
+	SelectingTools bool
+	Width          int
+	Height         int
+	AssistantName  string
+	Theme          *glitter.UI
+	CachedContent  string
+	ContentDirty   bool
+	QueryHistory   []string
+	HistoryIndex   int
 }
 
 func (c *ChatModel) Init() tea.Cmd {
@@ -44,27 +47,36 @@ func (c *ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 }
 
 func (c *ChatModel) View() string {
+	themeStyles := GetThemeStyles(c.Theme)
 	inputStyle := lipgloss.NewStyle()
 	if c.TextInput.Focused() {
-		inputStyle = inputStyle.Border(lipgloss.RoundedBorder(), true).BorderForeground(c.Theme.Accent1)
+		inputStyle = inputStyle.Border(lipgloss.RoundedBorder(), true).BorderForeground(lipgloss.Color(c.Theme.Theme.Bright.Yellow))
 	}
 
 	// Only rebuild chat content if dirty (messages changed)
 	if c.ContentDirty {
+		log.Printf("[CHAT] Rendering %d messages, c.Width=%d", len(c.Messages), c.Width)
 		chatContent := ""
-		for _, msg := range c.Messages {
+		for i, msg := range c.Messages {
 			var rendered string
 			switch msg.Role {
 			case "user":
-				rendered = c.Theme.UserMessage.Width(c.Width).Render(fmt.Sprintf("> %s", msg.Content))
+				innerWidth := c.Width - themeStyles.UserMessage.GetHorizontalFrameSize()
+				rendered = themeStyles.UserMessage.Width(innerWidth).Render(msg.Content)
 			case "assistant":
-				rendered = c.Theme.AssistantMessage.Width(c.Width).Render(fmt.Sprintf("> %s", msg.Content))
+				toolBadges := ""
+				if len(msg.SelectedTools) > 0 && i > 0 && c.Messages[i-1].Role == "tool" {
+					badge := themeStyles.ToolBadge.Render("🔧 " + c.Messages[i-1].Content)
+					toolBadges = "\n  " + badge
+				}
+				innerWidth := c.Width - themeStyles.AssistantMessage.GetHorizontalFrameSize()
+				rendered = themeStyles.AssistantMessage.Width(innerWidth).Render(msg.Content + toolBadges)
 			case "tool":
-				rendered = c.Theme.ToolMessage.Width(c.Width).Render(fmt.Sprintf("> %s", msg.Content))
+				continue
 			default:
-				rendered = lipgloss.NewStyle().Width(c.Width).Render(fmt.Sprintf("> %s", msg.Content))
+				rendered = lipgloss.NewStyle().Width(c.Width).Render(msg.Content)
 			}
-			chatContent += rendered + "\n\n"
+			chatContent += rendered + "\n"
 		}
 		c.CachedContent = chatContent
 		c.ContentDirty = false
@@ -73,7 +85,10 @@ func (c *ChatModel) View() string {
 
 	spinnerView := ""
 	spinnerHeight := 0
-	if c.Streaming {
+	if c.SelectingTools {
+		spinnerView = c.Spinner.View() + " Selecting tools..."
+		spinnerHeight = 1
+	} else if c.Streaming {
 		spinnerView = c.Spinner.View() + " Generating..."
 		spinnerHeight = 1
 	}
@@ -82,7 +97,7 @@ func (c *ChatModel) View() string {
 	inputHeight := lipgloss.Height(inputFieldRendered)
 
 	if !c.TextInput.Focused() {
-		tooltip := lipgloss.NewStyle().Background(c.Theme.Primary2).Foreground(c.Theme.Accent2).Padding(0, 1).Render("Ctrl+T: switch panes | Ctrl+H: help | Ctrl+D: theme | Ctrl+Q: quit")
+		tooltip := lipgloss.NewStyle().Background(lipgloss.Color(c.Theme.Theme.Bright.Blue)).Foreground(lipgloss.Color(c.Theme.Theme.Bright.White)).Padding(0, 1).Render("Ctrl+T: switch panes | Ctrl+H: help | Ctrl+D: theme | Ctrl+Q: quit")
 		inputFieldRendered = lipgloss.JoinVertical(lipgloss.Left, inputFieldRendered, tooltip)
 		inputHeight = lipgloss.Height(inputFieldRendered)
 		log.Printf("ChatModel.View: Input NOT focused, tooltip added, new inputHeight=%d", inputHeight)
@@ -95,9 +110,8 @@ func (c *ChatModel) View() string {
 	}
 	c.Viewport.Height = viewportHeight
 
-	// Join components - only include spinner if streaming
 	var joined string
-	if c.Streaming && spinnerView != "" {
+	if (c.Streaming || c.SelectingTools) && spinnerView != "" {
 		joined = lipgloss.JoinVertical(lipgloss.Left, c.Viewport.View(), spinnerView, inputFieldRendered)
 	} else {
 		joined = lipgloss.JoinVertical(lipgloss.Left, c.Viewport.View(), inputFieldRendered)

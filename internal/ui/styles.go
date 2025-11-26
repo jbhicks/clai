@@ -1,63 +1,79 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/brittonhayes/glitter/glitter"
+	"github.com/brittonhayes/glitter/theme"
+	"github.com/charmbracelet/lipgloss"
+)
 
-type Theme struct {
-	Name             string
-	Primary1         lipgloss.Color
-	Primary2         lipgloss.Color
-	Primary3         lipgloss.Color
-	Accent1          lipgloss.Color
-	Accent2          lipgloss.Color
-	BgDark           lipgloss.Color
-	BgLight          lipgloss.Color
-	BorderCol        lipgloss.Color
+// AvailableThemes provides a list of pre-built glitter themes
+var AvailableThemes = []*glitter.UI{
+	glitter.NewUI(theme.Gruvbox),
+	glitter.NewUI(theme.Monokai),
+	glitter.NewUI(theme.Nord),
+	glitter.NewUI(theme.OneBit),
+}
+
+// ThemeNames provides human-readable names for the themes
+var ThemeNames = []string{
+	"Gruvbox",
+	"Monokai",
+	"Nord",
+	"OneBit",
+}
+
+// GetThemeStyles returns lipgloss styles compatible with the current glitter theme
+func GetThemeStyles(ui *glitter.UI) ThemeStyles {
+	return ThemeStyles{
+		MainPane: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(ui.Theme.Primary.Foreground)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)),
+
+		StatusBar: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)).
+			Bold(true).
+			Padding(0, 2),
+
+		UserMessage: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(lipgloss.Color(ui.Theme.Bright.White)).
+			Background(lipgloss.Color(ui.Theme.Normal.White)).
+			PaddingLeft(2).
+			PaddingRight(1).
+			MarginBottom(1).
+			Bold(true),
+
+		AssistantMessage: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, true, false, false).
+			BorderForeground(lipgloss.Color(ui.Theme.Bright.Yellow)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			PaddingLeft(1).
+			PaddingRight(2).
+			MarginLeft(2).
+			MarginBottom(1),
+
+		ToolMessage: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Dim.Black)).
+			Foreground(lipgloss.Color(ui.Theme.Dim.White)).
+			Italic(true).
+			Padding(0, 1).
+			MarginLeft(2),
+
+		ToolBadge: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Bright.Blue)).
+			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
+			Padding(0, 2),
+	}
+}
+
+// ThemeStyles contains all the lipgloss styles for a theme
+type ThemeStyles struct {
 	MainPane         lipgloss.Style
 	StatusBar        lipgloss.Style
 	UserMessage      lipgloss.Style
 	AssistantMessage lipgloss.Style
 	ToolMessage      lipgloss.Style
-}
-
-var (
-	DarkTheme = Theme{
-		Name:      "dark",
-		Primary1:  lipgloss.Color("#5D5D81"), // Muted Purple
-		Primary2:  lipgloss.Color("#7A7ABF"), // Medium Purple
-		Primary3:  lipgloss.Color("#9B9BDC"), // Light Purple
-		Accent1:   lipgloss.Color("#FFD700"), // Gold
-		Accent2:   lipgloss.Color("#FFFFFF"), // White
-		BgDark:    lipgloss.Color("#1A1A2E"), // Dark Blue-Purple
-		BgLight:   lipgloss.Color("#2E2E50"), // Medium Blue-Purple
-		BorderCol: lipgloss.Color("#7A7ABF"), // Medium Purple
-	}
-
-	LightTheme = Theme{
-		Name:      "light",
-		Primary1:  lipgloss.Color("#8B0000"), // Dark Red
-		Primary2:  lipgloss.Color("#B22222"), // Firebrick
-		Primary3:  lipgloss.Color("#CD5C5C"), // Indian Red
-		Accent1:   lipgloss.Color("#FF8C00"), // Dark Orange
-		Accent2:   lipgloss.Color("#000000"), // Black
-		BgDark:    lipgloss.Color("#F5F5DC"), // Beige
-		BgLight:   lipgloss.Color("#FFFFFF"), // White
-		BorderCol: lipgloss.Color("#B22222"), // Firebrick
-	}
-)
-
-func (t *Theme) ApplyStyles() {
-	t.MainPane = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(t.BorderCol).
-		Background(t.BgDark)
-
-	t.StatusBar = lipgloss.NewStyle().
-		Background(t.Primary1).
-		Foreground(t.Accent2).
-		Bold(true).
-		Padding(0, 2)
-
-	t.UserMessage = lipgloss.NewStyle().Background(t.BgLight).Foreground(t.Accent2).Bold(true).Padding(0, 1)
-	t.AssistantMessage = lipgloss.NewStyle().Background(t.Primary1).Foreground(t.Accent2).Padding(0, 1).MarginLeft(2)
-	t.ToolMessage = lipgloss.NewStyle().Background(t.Primary3).Foreground(t.BgLight).Italic(true).Padding(0, 1).MarginLeft(2)
+	ToolBadge        lipgloss.Style
 }
