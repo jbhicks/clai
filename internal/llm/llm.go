@@ -13,21 +13,7 @@ import (
 )
 
 const (
-	defaultSystemPrompt = `You are a helpful AI assistant that can use tools to answer questions.
-When a user asks a question, you can use the available tools to help you answer.
-To use a tool, respond with a JSON object in the following format:
-{
-  "tool_calls": [
-	{
-	  "name": "tool_name",
-	  "parameters": {
-		"param1": "value1",
-		"param2": "value2"
-	  }
-	}
-  ]
-}
-If you don't need to use a tool, just respond with a normal message.`
+	defaultSystemPrompt = `You are a helpful AI assistant. Answer questions clearly and concisely.`
 )
 
 type APIFormat int
@@ -37,6 +23,16 @@ const (
 	FormatOllama
 	FormatOpenAI
 )
+
+type LLMClientInterface interface {
+	SendMessageStream(messages []Message, streamChan chan<- string, toolCallChan chan<- []ToolCall) (Response, error)
+	SendMessageStreamNoTools(messages []Message, streamChan chan<- string, toolCallChan chan<- []ToolCall) (Response, error)
+	SendMessageStreamWithTools(messages []Message, streamChan chan<- string, toolCallChan chan<- []ToolCall, selectedTools []tools.Tool) (Response, error)
+	SelectToolsForQuery(query string) ([]tools.Tool, error)
+	Model() string
+	Host() string
+	APIFormatString() string
+}
 
 type Client struct {
 	host         string
@@ -113,9 +109,10 @@ type ToolCall struct {
 }
 
 type Message struct {
-	Role      string     `json:"role"`
-	Content   string     `json:"content"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	Role          string     `json:"role"`
+	Content       string     `json:"content"`
+	ToolCalls     []ToolCall `json:"tool_calls,omitempty"`
+	SelectedTools []string   `json:"selected_tools,omitempty"`
 }
 
 type Request struct {
@@ -149,9 +146,15 @@ type OpenAIDelta struct {
 }
 
 type OpenAIChoice struct {
-	Delta        OpenAIDelta `json:"delta"`
-	FinishReason string      `json:"finish_reason"`
-	Index        int         `json:"index"`
+	Delta        OpenAIDelta   `json:"delta"`
+	Message      OpenAIMessage `json:"message"`
+	FinishReason string        `json:"finish_reason"`
+	Index        int           `json:"index"`
+}
+
+type OpenAIMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type OpenAIStreamChunk struct {
@@ -200,8 +203,13 @@ func (c *Client) SendMessage(messages []Message) (Response, error) {
 }
 
 // SendMessageWithTools allows specifying which tools to include in the request.
-func (c *Client) SendMessageWithTools(messages []Message, toolList []tools.Tool) (Response, error) {
-	allMessages := append([]Message{{Role: "system", Content: c.systemPrompt}}, messages...)
+func (c *Client) sendMessageWithToolsRaw(messages []Message, toolList []tools.Tool, includeSystemPrompt bool) (Response, error) {
+	var allMessages []Message
+	if includeSystemPrompt && c.systemPrompt != "" {
+		allMessages = append([]Message{{Role: "system", Content: c.systemPrompt}}, messages...)
+	} else {
+		allMessages = messages
+	}
 
 	var jsonBody []byte
 	var err error
@@ -240,11 +248,15 @@ func (c *Client) SendMessageWithTools(messages []Message, toolList []tools.Tool)
 	}
 
 	const maxResponseSize = 1 << 20
-	limited := io.LimitReader(resp.Body, maxResponseSize)
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize))
+	if err != nil {
+		return Response{}, fmt.Errorf("error reading response body: %w", err)
+	}
+	log.Printf("[LLM-RAW-RESP] %s", string(bodyBytes))
 
 	if c.apiFormat == FormatOpenAI {
 		var openAIResp OpenAIStreamChunk
-		if err := json.NewDecoder(limited).Decode(&openAIResp); err != nil {
+		if err := json.Unmarshal(bodyBytes, &openAIResp); err != nil {
 			return Response{}, fmt.Errorf("error decoding OpenAI response: %w", err)
 		}
 
@@ -257,7 +269,11 @@ func (c *Client) SendMessageWithTools(messages []Message, toolList []tools.Tool)
 		}
 
 		if len(openAIResp.Choices) > 0 {
-			llmResp.Message.Content = openAIResp.Choices[0].Delta.Content
+			if openAIResp.Choices[0].Message.Content != "" {
+				llmResp.Message.Content = openAIResp.Choices[0].Message.Content
+			} else {
+				llmResp.Message.Content = openAIResp.Choices[0].Delta.Content
+			}
 		}
 
 		prettyResp, _ := json.MarshalIndent(llmResp, "", "  ")
@@ -267,7 +283,7 @@ func (c *Client) SendMessageWithTools(messages []Message, toolList []tools.Tool)
 	}
 
 	var llmResp Response
-	if err := json.NewDecoder(limited).Decode(&llmResp); err != nil {
+	if err := json.Unmarshal(bodyBytes, &llmResp); err != nil {
 		return Response{}, fmt.Errorf("error decoding LLM response (possibly too large or malformed): %w", err)
 	}
 
@@ -277,46 +293,75 @@ func (c *Client) SendMessageWithTools(messages []Message, toolList []tools.Tool)
 	return llmResp, nil
 }
 
-// ClassifyIntent asks the LLM if the query requires a tool call, and which tool.
-func (c *Client) ClassifyIntent(query string) (string, error) {
-	// Build a system prompt listing available tools
-	availableTools := []string{"calculator", "echo", "web_search"}
-	prompt := "Does this query require a tool call? If yes, which tool? Respond with the tool name or 'none'. Available tools: " +
-		fmt.Sprintf("%v", availableTools)
+func (c *Client) SendMessageWithTools(messages []Message, toolList []tools.Tool) (Response, error) {
+	return c.sendMessageWithToolsRaw(messages, toolList, true)
+}
+
+func (c *Client) SelectToolsForQuery(query string) ([]tools.Tool, error) {
+	prompt := fmt.Sprintf(`You are a tool selection assistant. Analyze the user's query and determine which tools are needed.
+
+User query: "%s"
+
+Available tools:
+%s
+
+Instructions:
+- Tools should ONLY be selected if the query explicitly requires external capabilities
+- For simple conversations, greetings, or questions you can answer directly, respond with: none
+- For mathematical calculations, select: calculator
+- For web searches or current information, select: web_search
+- Respond with ONLY the tool name(s) needed, comma-separated
+- Examples: "calculator" or "web_search,calculator" or "none"
+- Do NOT include any explanations, reasoning, or additional text
+
+Your response:`,
+		query,
+		tools.GetToolDescriptions())
+
+	log.Printf("[TOOL-SELECT] Sending prompt to LLM: %q", prompt)
 
 	messages := []Message{
-		{Role: "system", Content: prompt},
-		{Role: "user", Content: query},
+		{Role: "user", Content: prompt},
 	}
 
-	// Send to LLM without any tools
-	request := Request{
-		Model:    c.model,
-		Messages: messages,
-		Stream:   false,
-	}
-	jsonBody, err := json.Marshal(request)
+	resp, err := c.sendMessageWithToolsRaw(messages, []tools.Tool{}, false)
 	if err != nil {
-		return "", err
+		log.Printf("[TOOL-SELECT] Error selecting tools, falling back to all tools: %v", err)
+		return tools.GetAvailableTools(), nil
 	}
 
-	resp, err := http.Post(c.host+"/api/chat", "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
+	response := strings.TrimSpace(resp.Message.Content)
+	log.Printf("[TOOL-SELECT] LLM raw response: %q (len=%d)", response, len(response))
+	log.Printf("[TOOL-SELECT] Response struct: %+v", resp)
 
-	var llmResp Response
-	if err := json.NewDecoder(resp.Body).Decode(&llmResp); err != nil {
-		return "", err
+	if response == "" || strings.ToLower(response) == "none" {
+		log.Printf("[TOOL-SELECT] No tools selected, returning empty list")
+		return []tools.Tool{}, nil
 	}
 
-	// Parse the tool name from the response
-	toolName := llmResp.Message.Content
-	return toolName, nil
+	toolNames := []string{}
+	for _, name := range strings.Split(response, ",") {
+		trimmed := strings.TrimSpace(name)
+		if trimmed != "" {
+			toolNames = append(toolNames, trimmed)
+		}
+	}
+
+	selected := tools.GetToolsByNames(toolNames...)
+	if len(selected) == 0 {
+		log.Printf("[TOOL-SELECT] No valid tools matched, falling back to all tools")
+		return tools.GetAvailableTools(), nil
+	}
+
+	log.Printf("[TOOL-SELECT] Selected %d tools: %v", len(selected), toolNames)
+	return selected, nil
 }
 
 func (c *Client) SendMessageStream(messages []Message, streamChan chan<- string, toolCallChan chan<- []ToolCall) (Response, error) {
+	return c.SendMessageStreamWithTools(messages, streamChan, toolCallChan, tools.GetAvailableTools())
+}
+
+func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- string, toolCallChan chan<- []ToolCall) (Response, error) {
 	allMessages := append([]Message{{Role: "system", Content: c.systemPrompt}}, messages...)
 
 	var reqBody interface{}
@@ -324,14 +369,140 @@ func (c *Client) SendMessageStream(messages []Message, streamChan chan<- string,
 		reqBody = OpenAIRequest{
 			Model:    c.model,
 			Messages: allMessages,
-			Tools:    convertToOpenAITools(tools.GetAvailableTools()),
 			Stream:   true,
 		}
 	} else {
 		reqBody = Request{
 			Model:    c.model,
 			Messages: allMessages,
-			Tools:    tools.GetAvailableTools(),
+			Stream:   true,
+		}
+	}
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return Response{}, err
+	}
+
+	prettyReq, _ := json.MarshalIndent(reqBody, "", "  ")
+	log.Printf("[LLM-REQ-NO-TOOLS] %s", string(prettyReq))
+
+	req, err := http.NewRequest("POST", c.host+"/api/chat", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return Response{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[LLM-STREAM-ERROR] HTTP request failed: %v", err)
+		return Response{}, err
+	}
+
+	log.Printf("[LLM-STREAM] HTTP response received, status: %s, starting goroutine", resp.Status)
+
+	go func() {
+		defer resp.Body.Close()
+		defer close(streamChan)
+		defer close(toolCallChan)
+		log.Printf("[LLM-STREAM] Goroutine started, apiFormat=%d (2=OpenAI)", c.apiFormat)
+
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 4096), bufio.MaxScanTokenSize)
+
+		if c.apiFormat == FormatOpenAI {
+			log.Printf("[LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)")
+
+			for scanner.Scan() {
+				line := scanner.Text()
+				log.Printf("[LLM-OPENAI-STREAM] Raw line: %q", line)
+				line = strings.TrimSpace(line)
+
+				if line == "" {
+					continue
+				}
+
+				if !strings.HasPrefix(line, "data: ") {
+					log.Printf("[LLM-OPENAI-STREAM] Line doesn't have 'data: ' prefix, skipping")
+					continue
+				}
+
+				data := strings.TrimPrefix(line, "data: ")
+				log.Printf("[LLM-OPENAI-STREAM] Data after prefix removal: %q", data)
+
+				if data == "[DONE]" {
+					log.Printf("[LLM-OPENAI-STREAM] Received [DONE] marker")
+					return
+				}
+
+				var chunk OpenAIStreamChunk
+				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+					log.Printf("[LLM-OPENAI-ERROR] Failed to parse chunk: %v, data: %q", err, data)
+					continue
+				}
+
+				log.Printf("[LLM-OPENAI-STREAM] Parsed chunk with %d choices", len(chunk.Choices))
+				if len(chunk.Choices) > 0 {
+					choice := chunk.Choices[0]
+					if choice.Delta.Content != "" {
+						log.Printf("[LLM-OPENAI-STREAM] Sending content to channel: %q", choice.Delta.Content)
+						streamChan <- choice.Delta.Content
+					}
+
+					if choice.FinishReason != "" && choice.FinishReason != "null" {
+						log.Printf("[LLM-OPENAI-STREAM] Received finish reason: %s", choice.FinishReason)
+						return
+					}
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				log.Printf("[LLM-OPENAI-ERROR] Scanner error: %v", err)
+			}
+			log.Printf("[LLM-OPENAI-STREAM] Stream reading completed")
+		} else {
+			for scanner.Scan() {
+				raw := scanner.Bytes()
+				var llmResp Response
+				if err := json.Unmarshal(raw, &llmResp); err != nil {
+					log.Printf("[LLM-RAW-ERROR] %v", err)
+					return
+				}
+
+				prettyResp, _ := json.MarshalIndent(llmResp, "", "  ")
+				log.Printf("[LLM-RESP-STREAM] %s", string(prettyResp))
+
+				if llmResp.Message.Content != "" {
+					streamChan <- llmResp.Message.Content
+				}
+
+				if llmResp.Done {
+					return
+				}
+			}
+		}
+	}()
+
+	return Response{}, nil
+}
+
+func (c *Client) SendMessageStreamWithTools(messages []Message, streamChan chan<- string, toolCallChan chan<- []ToolCall, selectedTools []tools.Tool) (Response, error) {
+	allMessages := append([]Message{{Role: "system", Content: c.systemPrompt}}, messages...)
+
+	var reqBody interface{}
+	if c.apiFormat == FormatOpenAI {
+		reqBody = OpenAIRequest{
+			Model:    c.model,
+			Messages: allMessages,
+			Tools:    convertToOpenAITools(selectedTools),
+			Stream:   true,
+		}
+	} else {
+		reqBody = Request{
+			Model:    c.model,
+			Messages: allMessages,
+			Tools:    selectedTools,
 			Stream:   true,
 		}
 	}

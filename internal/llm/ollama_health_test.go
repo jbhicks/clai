@@ -10,7 +10,7 @@ import (
 func TestOllamaHealth(t *testing.T) {
 	resp, err := http.Get("http://localhost:11434/")
 	if err != nil {
-		t.Fatalf("Failed to connect to Ollama API: %v", err)
+		t.Skipf("Ollama not running: %v", err)
 	}
 	defer resp.Body.Close()
 

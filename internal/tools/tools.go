@@ -79,3 +79,26 @@ func GetAvailableToolsJSON() (string, error) {
 	}
 	return string(toolsJSON), nil
 }
+
+func GetToolsByNames(names ...string) []Tool {
+	nameSet := make(map[string]bool)
+	for _, name := range names {
+		nameSet[name] = true
+	}
+
+	selected := []Tool{}
+	for _, tool := range availableTools {
+		if nameSet[tool.Name] {
+			selected = append(selected, tool)
+		}
+	}
+	return selected
+}
+
+func GetToolDescriptions() string {
+	descriptions := ""
+	for _, tool := range availableTools {
+		descriptions += fmt.Sprintf("- %s: %s\n", tool.Name, tool.Description)
+	}
+	return descriptions
+}
