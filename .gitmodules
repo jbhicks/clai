@@ -1,0 +1,6 @@
+[submodule "reference-docs/bubbletea-repo"]
+	path = reference-docs/bubbletea-repo
+	url = https://github.com/charmbracelet/bubbletea.git
+[submodule "reference-docs/bubbles-repo"]
+	path = reference-docs/bubbles-repo
+	url = https://github.com/charmbracelet/bubbles.git
