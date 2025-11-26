@@ -1,0 +1,262 @@
+package ui
+
+import (
+	"clai/internal/llm"
+	uitesting "clai/internal/ui/testing"
+	"errors"
+	"testing"
+
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+func newTestModel() *Model {
+	chatInput := textinput.New()
+	chatInput.Prompt = "> "
+	chatInput.Focus()
+
+	spin := spinner.New()
+	mockLLM := uitesting.NewMockLLM()
+	theme := AvailableThemes[0] // Use Gruvbox theme
+
+	m := &Model{
+		Log:         viewport.New(0, 0),
+		Help:        help.New(),
+		Keys:        DefaultKeyMap,
+		ActivePane:  ChatPane,
+		ErrorBanner: lipgloss.NewStyle(),
+		Theme:       theme,
+	}
+
+	chat := ChatModel{
+		TextInput: chatInput,
+		Spinner:   spin,
+		Theme:     m.Theme,
+		Viewport:  viewport.New(80, 20),
+		Messages:  []llm.Message{},
+		LlmClient: mockLLM,
+	}
+
+	m.Chat = chat
+	return m
+}
+
+func TestModelInitialization(t *testing.T) {
+	m := newTestModel()
+
+	if m.Width != 0 || m.Height != 0 {
+		t.Error("expected initial dimensions to be 0")
+	}
+
+	if m.ActivePane != ChatPane {
+		t.Error("expected initial active pane to be ChatPane")
+	}
+}
+
+func TestWindowSizeMsg(t *testing.T) {
+	m := newTestModel()
+
+	msg := tea.WindowSizeMsg{Width: 100, Height: 50}
+	newModel, _ := m.Update(msg)
+	m = newModel.(*Model)
+
+	if m.Width != 100 {
+		t.Errorf("expected width 100, got %d", m.Width)
+	}
+
+	if m.Height != 50 {
+		t.Errorf("expected height 50, got %d", m.Height)
+	}
+}
+
+func TestStreamStartMsg(t *testing.T) {
+	m := newTestModel()
+
+	streamChan := make(chan string, 1)
+	toolCallChan := make(chan []llm.ToolCall, 1)
+
+	msg := streamStartMsg{
+		streamChan:   streamChan,
+		toolCallChan: toolCallChan,
+	}
+
+	newModel, cmd := m.Update(msg)
+	m = newModel.(*Model)
+
+	if m.streamChan == nil || m.toolCallChan == nil {
+		t.Error("expected streamChan and toolCallChan to be set")
+	}
+
+	if cmd == nil {
+		t.Error("expected command to be returned for stream waiting")
+	}
+
+	close(streamChan)
+	close(toolCallChan)
+}
+
+func TestStreamUpdateMsg(t *testing.T) {
+	m := newTestModel()
+
+	m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+		Role:    "user",
+		Content: "test query",
+	})
+	m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+		Role:    "assistant",
+		Content: "",
+	})
+	m.Chat.Streaming = true
+
+	msg := StreamUpdateMsg("Hello")
+	newModel, _ := m.Update(msg)
+	m = newModel.(*Model)
+
+	if len(m.Chat.Messages) != 2 {
+		t.Errorf("expected 2 messages, got %d", len(m.Chat.Messages))
+	}
+
+	if m.Chat.Messages[1].Content != "Hello" {
+		t.Errorf("expected content 'Hello', got %q", m.Chat.Messages[1].Content)
+	}
+
+	emptyMsg := StreamUpdateMsg("")
+	newModel, _ = m.Update(emptyMsg)
+	m = newModel.(*Model)
+
+	if m.Chat.Streaming {
+		t.Error("expected Streaming to be false after empty message")
+	}
+}
+
+func TestToolCallMsg(t *testing.T) {
+	m := newTestModel()
+
+	m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+		Role:    "user",
+		Content: "calculate 2+2",
+	})
+	m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+		Role:    "assistant",
+		Content: "",
+	})
+
+	toolCalls := []llm.ToolCall{
+		{
+			Name:       "calculator",
+			Parameters: []byte(`{"expression": "2+2"}`),
+		},
+	}
+
+	msg := ToolCallMsg{ToolCalls: toolCalls}
+	newModel, cmd := m.Update(msg)
+	m = newModel.(*Model)
+
+	if cmd == nil {
+		t.Error("expected command for tool execution")
+	}
+
+	// TODO: Fix pendingToolNames test - field doesn't exist
+	// if len(m.pendingToolNames) != 1 || m.pendingToolNames[0] != "calculator" {
+	// 	t.Errorf("expected pending tool names to be [calculator], got %v", m.pendingToolNames)
+	// }
+}
+
+func TestToolResultMsg(t *testing.T) {
+	m := newTestModel()
+
+	m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+		Role:    "user",
+		Content: "test",
+	})
+
+	msg := ToolResultMsg{
+		ToolName: "calculator",
+		Result:   "4",
+	}
+
+	newModel, cmd := m.Update(msg)
+	m = newModel.(*Model)
+
+	if len(m.Chat.Messages) != 2 {
+		t.Errorf("expected 2 messages (user + tool result), got %d", len(m.Chat.Messages))
+	}
+
+	if m.Chat.Messages[1].Role != "tool" {
+		t.Errorf("expected tool role, got %q", m.Chat.Messages[1].Role)
+	}
+
+	if m.Chat.Messages[1].Content != "calculator: 4" {
+		t.Errorf("expected tool name and result in content, got %q", m.Chat.Messages[1].Content)
+	}
+
+	if cmd == nil {
+		t.Error("expected command for LLM response after tool result")
+	}
+}
+
+func TestErrorMsg(t *testing.T) {
+	m := newTestModel()
+
+	msg := errorMsg{err: errors.New("test error")}
+	newModel, _ := m.Update(msg)
+	m = newModel.(*Model)
+
+	if !m.ShowError {
+		t.Error("expected ShowError to be true")
+	}
+
+	if m.ErrorMessage == "" {
+		t.Error("expected ErrorMessage to be set")
+	}
+}
+
+func TestPaneSwitching(t *testing.T) {
+	m := newTestModel()
+
+	if m.ActivePane != ChatPane {
+		t.Error("expected initial pane to be ChatPane")
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyCtrlT}
+	newModel, _ := m.Update(msg)
+	m = newModel.(*Model)
+
+	if m.ActivePane != LogPane {
+		t.Error("expected pane to switch to LogPane")
+	}
+
+	newModel, _ = m.Update(msg)
+	m = newModel.(*Model)
+
+	if m.ActivePane != ChatPane {
+		t.Error("expected pane to switch back to ChatPane")
+	}
+}
+
+func TestHelpToggle(t *testing.T) {
+	m := newTestModel()
+
+	if m.ShowHelp {
+		t.Error("expected ShowHelp to initially be false")
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyCtrlH}
+	newModel, _ := m.Update(msg)
+	m = newModel.(*Model)
+
+	if !m.ShowHelp {
+		t.Error("expected ShowHelp to be true after toggle")
+	}
+
+	newModel, _ = m.Update(msg)
+	m = newModel.(*Model)
+
+	if m.ShowHelp {
+		t.Error("expected ShowHelp to be false after second toggle")
+	}
+}
