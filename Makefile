@@ -1,27 +1,39 @@
 .PHONY: dev
-# Live reload development
+# Live reload development with entr (separate build/run processes)
 dev:
+	@if ! command -v entr >/dev/null 2>&1; then \
+		echo "Error: entr is not installed."; \
+		echo "Install with: sudo apt install entr (Debian/Ubuntu) or brew install entr (macOS)"; \
+		exit 1; \
+	fi
+	@./dev.sh
+
+.PHONY: dev-tmux
+# Alternative: tmux-based development (old method)
+dev-tmux:
 	@if ! command -v tmux >/dev/null 2>&1; then \
-		echo "Error: tmux is not installed. Please install tmux to use the dev workflow."; \
+		echo "Error: tmux is not installed."; \
 		exit 1; \
 	fi
 	@if tmux has-session -t clai_dev 2>/dev/null; then \
-		echo "Killing previous tmux session 'clai_dev'..."; \
 		tmux kill-session -t clai_dev; \
 	fi
-	@tmux new-session -d -s clai_dev 'bash' \
-		\; split-window -v 'tail -f debug.log' \
+	@echo "Starting tmux session with air..."
+	@tmux new-session -d -s clai_dev -x $$(tput cols) -y $$(tput lines) 'air' \
+		\; split-window -h -p 40 'tail -f debug.log' \
 		\; select-pane -t 0
-	@echo "Started tmux session 'clai_dev'."
-	@echo "Top pane: shell prompt. Run './clai' manually, or let the watcher do it."
-	@echo "Bottom pane: live logs."
-	@echo "In a third terminal, run:"
-	@echo "  ls internal/**/*.go cmd/clai/*.go | entr -r go build -o clai ./cmd/clai && tmux send-keys -t clai_dev:0.0 C-c './clai' Enter"
+	@echo "✓ 2-pane tmux session started"
+	@echo "  Left: App running under air (auto-reload)"
+	@echo "  Right: Live logs"
+	@echo ""
+	@echo "Tmux commands:"
+	@echo "  Ctrl+b then arrow keys - Switch panes"
+	@echo "  Ctrl+b then z - Toggle zoom"
+	@echo "  Ctrl+b then d - Detach"
 	@if [ -z "$$TMUX" ]; then \
-		echo "Attaching to tmux session 'clai_dev'..."; \
 		tmux attach -t clai_dev; \
 	else \
-		echo "tmux session 'clai_dev' started. Attach manually if needed."; \
+		echo "Attach with: tmux attach -t clai_dev"; \
 	fi
 # Makefile for the clai project
 #
@@ -38,7 +50,7 @@ GOINSTALL=$(GOCMD) install
 BINARY_NAME=clai
 BINARY_UNIX=$(BINARY_NAME)
 
-all: build
+all: test build
 
 build:
 	$(GOBUILD) -o $(BINARY_NAME) ./cmd/clai

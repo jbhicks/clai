@@ -6,9 +6,9 @@ import (
 )
 
 type Tool struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Parameters  any    `json:"parameters"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Parameters  map[string]interface{} `json:"parameters"`
 }
 
 type CalculatorParams struct {
@@ -27,17 +27,44 @@ var availableTools = []Tool{
 	{
 		Name:        "calculator",
 		Description: "A simple calculator that evaluates a mathematical expression.",
-		Parameters:  CalculatorParams{},
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"expression": map[string]interface{}{
+					"type":        "string",
+					"description": "Mathematical expression to evaluate (e.g., '2 + 2', '10 * 5')",
+				},
+			},
+			"required": []string{"expression"},
+		},
 	},
 	{
 		Name:        "echo",
 		Description: "Echoes the message back to the user.",
-		Parameters:  EchoParams{},
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"message": map[string]interface{}{
+					"type":        "string",
+					"description": "The message to echo back",
+				},
+			},
+			"required": []string{"message"},
+		},
 	},
 	{
 		Name:        "web_search",
 		Description: "Performs a web search for the given query.",
-		Parameters:  WebSearchParams{},
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"query": map[string]interface{}{
+					"type":        "string",
+					"description": "The search query",
+				},
+			},
+			"required": []string{"query"},
+		},
 	},
 }
 

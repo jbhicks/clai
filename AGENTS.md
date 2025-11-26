@@ -26,12 +26,105 @@ This repository is a Go CLI project for local AI agent interaction. Follow these
 - Do not write custom UI components unless absolutely necessary (e.g., when no Bubble component exists for your use case).
 - If a custom component is required, document the reason in code comments and prefer extending Bubble components when possible.
 
+### Bubble Tea Layout & Sizing Best Practices
+
+**Critical Rules for Proper Layout:**
+
+1. **Height Calculation - Account for Actual Rendered Heights**
+   - **DON'T** use `style.GetHeight()` for styles that rely on padding/content - it returns 0
+   - **DO** use actual rendered heights: e.g., status bar with padding is always 1 row
+   - Formula: `contentHeight = terminalHeight - statusBarRows - errorBannerRows`
+   - Example: For 84-row terminal with 1-row status bar: `contentHeight = 84 - 1 = 83`
+
+2. **Width Calculation - Respect Frame Sizes**
+   - Calculate inner content widths: `innerWidth = outerWidth - style.GetHorizontalFrameSize()`
+   - `GetHorizontalFrameSize()` returns: left border (1) + left padding + right padding + right border (1)
+   - Example: For 70% of 139 cols = 97 cols, with padding(0,2) + rounded border:
+     - `GetHorizontalFrameSize()` = 6 (1 + 2 + 2 + 1)
+     - `innerWidth` = 97 - 6 = 91
+
+3. **Applying Styles Without Breaking Dimensions**
+   - **DON'T** use `style.Width(outerWidth).Render(content)` - this adds frame size on top
+   - **DO** calculate inner dimensions, set those on components, then render with unsized style
+   - **DO** pad the result if needed to reach exact outer width
+   ```go
+   // Calculate inner dimensions
+   innerWidth := outerWidth - style.GetHorizontalFrameSize()
+   innerHeight := outerHeight - style.GetVerticalFrameSize()
+   
+   // Set dimensions on inner content/components
+   component.Width = innerWidth
+   component.Height = innerHeight
+   
+   // Render with style (no width set on style)
+   view := style.Render(component.View())
+   
+   // Pad to exact width if needed
+   if lipgloss.Width(view) < outerWidth {
+       view = lipgloss.NewStyle().Width(outerWidth).Render(view)
+   }
+   ```
+
+4. **Vertical Layout - Join Carefully**
+   - When using `lipgloss.JoinVertical()`, ensure sum of heights equals terminal height
+   - Each component's rendered height (via `lipgloss.Height()`) must be accounted for
+   - Example: `mainView (83) + statusBar (1) = 84 (terminal height)`
+
+5. **Horizontal Layout - Join Carefully**
+   - When using `lipgloss.JoinHorizontal()`, ensure sum of widths equals terminal width
+   - Each pane's rendered width (via `lipgloss.Width()`) must be accounted for
+   - Example: `chatPane (97) + logPane (42) = 139 (terminal width)`
+   - **CRITICAL**: When splitting terminal width between panes, calculate each pane's width FIRST, then set component dimensions based on those pane widths
+   - Example:
+     ```go
+     // Calculate pane widths first
+     chatPaneWidth := int(float64(terminalWidth) * 0.8)
+     logPaneWidth := terminalWidth - chatPaneWidth
+     
+     // Then set component inner widths by subtracting frame sizes
+     chatComponent.Width = chatPaneWidth - style.GetHorizontalFrameSize()
+     logComponent.Width = logPaneWidth - style.GetHorizontalFrameSize()
+     ```
+   - **DON'T** set all component widths to full terminal width minus frame - this makes all panes the same size
+
+6. **Debugging Layout Issues**
+   - Log actual rendered dimensions: `lipgloss.Height(view)`, `lipgloss.Width(view)`
+   - Log component dimensions before rendering: `component.Width`, `component.Height`
+   - Log frame sizes: `style.GetHorizontalFrameSize()`, `style.GetVerticalFrameSize()`
+   - Compare: terminal size → calculated sizes → rendered sizes
+   - Off-by-one errors usually indicate frame size or padding miscalculation
+
+7. **List Component - Multi-Line Content Handling**
+   - **CRITICAL**: List delegates report each item as 1 row height, but multi-line content will render taller
+   - **DON'T** add multi-line strings (with `\n`) as single list items - this causes overflow
+   - **DO** split multi-line content into separate items: `strings.Split(text, "\n")`
+   - Example problem: Adding "Line1\nLine2\nLine3" as 1 item renders 3 rows but list thinks it's 1 row
+   - Example solution: Add each line separately: `for _, line := range strings.Split(text, "\n") { list.InsertItem(...) }`
+   - Set list styles with zero padding to prevent additional height: `list.Styles.PaginationStyle = list.Styles.PaginationStyle.Padding(0)`
+
+**Common Pitfalls:**
+- ❌ Using `style.GetHeight()` when the style has no explicit height (returns 0)
+- ❌ Setting `.Width()` on a style that already has padding/borders (double-counts frame)
+- ❌ Forgetting to subtract frame sizes when calculating inner dimensions
+- ❌ Not accounting for status bars, borders, or other UI chrome in height calculations
+- ❌ Adding multi-line content (`\n` newlines) as single list items - causes height overflow
+
 ## Testing
 - Use Go's `testing` package for unit/integration tests.
 - Mock external dependencies (e.g., Ollama) in tests.
 - For Bubble Tea projects, follow the [Bubble Tea Agent Testing Strategy](BUBBLETEA_TESTING_STRATEGY.md) for all test creation. This document provides detailed guidelines and examples for unit, integration, and UI testing specific to Bubble Tea applications.
 
 No Cursor or Copilot rules detected.
+
+## Development Workflow
+- **ASSUME** the user is running `make dev` in another terminal/thread with automatic file watching and reload enabled.
+- **NEVER** run the application yourself (e.g., `./clai` or `make run`).
+- After making code changes, **ASSUME** the automatic reload has already occurred.
+- To verify your changes:
+  1. Check `debug.log` for runtime logs: `tail -f debug.log` or `cat debug.log`
+  2. Look for errors, warnings, or debug output related to your changes
+  3. If needed, ask the user to test specific functionality in the running app
+- The dev watcher uses `air` to automatically rebuild and restart on `.go` file changes.
 
 ## Running Blocking Scripts
 - Do **not** run blocking scripts (such as `dev_run.sh` or `dev_watch.sh`) directly in the foreground, as this will block the thread and prevent further interaction.
