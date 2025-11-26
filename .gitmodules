@@ -4,3 +4,6 @@
 [submodule "reference-docs/bubbles-repo"]
 	path = reference-docs/bubbles-repo
 	url = https://github.com/charmbracelet/bubbles.git
+[submodule "reference-docs/vscode-copilot-chat"]
+	path = reference-docs/vscode-copilot-chat
+	url = https://github.com/microsoft/vscode-copilot-chat
