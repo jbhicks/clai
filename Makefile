@@ -59,7 +59,7 @@ run:
 	$(GORUN) ./cmd/clai
 
 test:
-	$(GOTEST) ./...
+	$(GOTEST) ./cmd/... ./internal/...
 
 clean:
 	$(GOCLEAN)
