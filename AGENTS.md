@@ -102,12 +102,27 @@ This repository is a Go CLI project for local AI agent interaction. Follow these
    - Example solution: Add each line separately: `for _, line := range strings.Split(text, "\n") { list.InsertItem(...) }`
    - Set list styles with zero padding to prevent additional height: `list.Styles.PaginationStyle = list.Styles.PaginationStyle.Padding(0)`
 
+8. **Background Colors and Content Wrapping**
+   - **CRITICAL**: When rendering styled content (borders/padding) inside a container with a background, empty space must be explicitly filled
+   - **Problem**: `lipgloss.NewStyle().Width(w).Render(styledContent)` creates transparent space, showing mismatched backgrounds
+   - **Solution**: Always set `.Background()` on wrapper styles to match the parent container:
+     ```go
+     bubble := messageStyle.Render(content)
+     wrapper := lipgloss.NewStyle().
+         Width(containerWidth).
+         Background(lipgloss.Color(parentBackground)).
+         Align(lipgloss.Left)
+     rendered := wrapper.Render(bubble)
+     ```
+   - This ensures the entire line has consistent background color with no visible "boxes" or artifacts
+
 **Common Pitfalls:**
 - ❌ Using `style.GetHeight()` when the style has no explicit height (returns 0)
 - ❌ Setting `.Width()` on a style that already has padding/borders (double-counts frame)
 - ❌ Forgetting to subtract frame sizes when calculating inner dimensions
 - ❌ Not accounting for status bars, borders, or other UI chrome in height calculations
 - ❌ Adding multi-line content (`\n` newlines) as single list items - causes height overflow
+- ❌ Creating width wrappers without explicit backgrounds - causes background color mismatches
 
 ## Testing
 - Use Go's `testing` package for unit/integration tests.
@@ -125,6 +140,24 @@ No Cursor or Copilot rules detected.
   2. Look for errors, warnings, or debug output related to your changes
   3. If needed, ask the user to test specific functionality in the running app
 - The dev watcher uses `air` to automatically rebuild and restart on `.go` file changes.
+
+## Debugging UI Issues
+- **ALWAYS** use the debug server to inspect UI rendering when working on layout or display issues
+- The app runs a Unix socket server at `/tmp/clai.sock` that provides real-time UI inspection
+- Use `clai debug inspect` to see:
+  - Actual rendered viewport content (with ANSI codes preserved)
+  - Terminal and pane dimensions
+  - Viewport state (scroll position, total lines)
+  - Message count and active pane
+- This is the ONLY reliable way to see what's actually rendering in the terminal
+- See [docs/DEBUG_SERVER.md](docs/DEBUG_SERVER.md) for full protocol documentation
+- **Workflow for UI fixes**:
+  1. Run `clai debug inspect` to capture current state
+  2. Make code changes
+  3. Wait for `make dev` auto-reload
+  4. Run `clai debug inspect` again to verify fix
+  5. Compare before/after output
+- Other debug commands: `clai debug ping`, `clai debug switch_pane`, `clai debug get_history`
 
 ## Running Blocking Scripts
 - Do **not** run blocking scripts (such as `dev_run.sh` or `dev_watch.sh`) directly in the foreground, as this will block the thread and prevent further interaction.
