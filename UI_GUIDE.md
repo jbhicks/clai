@@ -137,8 +137,53 @@ func (m model) View() string {
 - For complex UIs, break your layout into smaller components and size each from the model’s terminal size.
 
 ### Still Having Issues?
-- Double-check that every component’s width/height is set from the model’s stored terminal size.
+- Double-check that every component's width/height is set from the model's stored terminal size.
 - Make sure you are running the TUI in a real terminal (see the recommended tmux workflow in the README).
 - Review the official [Bubble Tea Examples](https://github.com/charmbracelet/bubbletea/tree/main/examples) for working patterns.
 - See [Lip Gloss README](https://github.com/charmbracelet/lipgloss) for layout utilities.
+
+---
+
+## Chat Viewport Features
+
+The chat viewport includes several user-friendly features for navigating conversation history:
+
+### Auto-Scroll Behavior
+- **Smart auto-scroll**: Automatically scrolls to show new messages when the user sends a message or when streaming responses arrive
+- **Manual scroll detection**: When you scroll up to review history, auto-scroll is disabled to preserve your position
+- **Re-enable auto-scroll**: Scroll to the bottom to re-enable automatic scrolling for new messages
+
+### Scroll Controls
+
+**Mouse:**
+- Mouse wheel scrolling enabled with 3-line delta for smooth navigation
+
+**Keyboard shortcuts (when input is not focused):**
+- `↑` or `k`: Scroll up one line
+- `↓` or `j`: Scroll down one line
+- `Page Up`: Scroll up one page
+- `Page Down`: Scroll down one page
+- `Home` or `g`: Jump to top of conversation
+- `End` or `G`: Jump to bottom of conversation
+
+### Visual Indicators
+- **Scroll position indicator**: Shows when not at top/bottom with:
+  - Current scroll percentage (0-100%)
+  - Directional arrows: `↑` (can scroll up), `↓` (can scroll down), `↕` (can scroll both ways)
+- Indicator automatically hides when at top or bottom of conversation
+
+### Message Styling
+- **User messages**: Right-aligned with blue rounded border, max 70% width, dynamic left margin
+- **Assistant messages**: Left-aligned with green rounded border, max 70% width
+- Messages use `MaxWidth()` to allow natural sizing based on content
+- Tool execution badges displayed inline with assistant messages
+- Modern chat bubble appearance with rounded borders and proper padding
+
+### Implementation Notes
+The chat bubbles follow Bubble Tea best practices:
+- Use `MaxWidth()` instead of `Width()` to allow natural bubble sizing
+- Calculate margins dynamically based on rendered bubble width
+- User messages pushed to the right via dynamic left margin
+- Assistant messages naturally left-aligned with no extra margin
+
 
