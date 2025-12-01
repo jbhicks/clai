@@ -1,13 +1,13 @@
 package llm
 
 import (
-	"bytes"
 	"fmt"
 	"log"
 	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type CodeBlock struct {
@@ -60,22 +60,59 @@ func StripCodeTags(content string) string {
 	return strings.TrimSpace(cleaned)
 }
 
-func RenderWithSyntaxHighlighting(content string, maxWidth int) string {
+func stripTrailingBackgroundPadding(line string) string {
+	re := regexp.MustCompile(`\x1b\[48;[0-9;]+m\s+\x1b\[0m$`)
+	return re.ReplaceAllString(line, "")
+}
+
+func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, codeBlockContainer lipgloss.Style) string {
 	blocks := ParseCodeBlocks(content)
 
-	hasCodeTag := strings.Contains(content, "<code")
-	log.Printf("[SYNTAX-HIGHLIGHT] Found %d code blocks in content (maxWidth=%d, hasCodeTag=%v, contentLen=%d)", len(blocks), maxWidth, hasCodeTag, len(content))
-	if hasCodeTag && len(blocks) == 0 {
-		log.Printf("[SYNTAX-HIGHLIGHT] Content preview: %s", content[:min(200, len(content))])
-	}
-
 	if len(blocks) == 0 {
-		return content
+		style := lipgloss.NewStyle().Width(maxWidth)
+		return style.Render(content)
 	}
 
 	result := content
 
-	// First, replace complete code blocks
+	renderCodeBlock := func(language, code string) string {
+		markdown := fmt.Sprintf("```%s\n%s\n```", language, code)
+
+		codeContainerWidth := maxWidth - codeBlockContainer.GetHorizontalFrameSize()
+
+		renderer, err := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(codeContainerWidth),
+		)
+		if err != nil {
+			log.Printf("[SYNTAX-HIGHLIGHT] Failed to create glamour renderer: %v", err)
+			return markdown
+		}
+
+		rendered, err := renderer.Render(markdown)
+		if err != nil {
+			log.Printf("[SYNTAX-HIGHLIGHT] Failed to render markdown: %v", err)
+			return markdown
+		}
+
+		lines := strings.Split(rendered, "\n")
+		var cleanLines []string
+		for _, line := range lines {
+			cleanedLine := stripTrailingBackgroundPadding(line)
+			trimmed := strings.TrimRight(cleanedLine, " ")
+			if trimmed != "" {
+				cleanLines = append(cleanLines, trimmed)
+			}
+		}
+
+		codeRendered := strings.Join(cleanLines, "\n")
+
+		badge := codeBlockBadge.Render(fmt.Sprintf("🔧 %s", language))
+		contentWithBadge := badge + "\n" + codeRendered
+
+		return codeBlockContainer.Render(contentWithBadge)
+	}
+
 	codeTagRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)</code>`)
 	result = codeTagRegex.ReplaceAllStringFunc(result, func(match string) string {
 		submatches := codeTagRegex.FindStringSubmatch(match)
@@ -86,31 +123,9 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int) string {
 		language := submatches[1]
 		code := strings.TrimSpace(submatches[2])
 
-		markdown := fmt.Sprintf("```%s\n%s\n```", language, code)
-		log.Printf("[SYNTAX-HIGHLIGHT] Rendering %s code block with %d chars", language, len(code))
-
-		renderer, err := glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
-			glamour.WithWordWrap(maxWidth),
-		)
-		if err != nil {
-			log.Printf("[SYNTAX-HIGHLIGHT] Failed to create glamour renderer: %v", err)
-			return match
-		}
-
-		var buf bytes.Buffer
-		rendered, err := renderer.Render(markdown)
-		if err != nil {
-			log.Printf("[SYNTAX-HIGHLIGHT] Failed to render markdown: %v", err)
-			return match
-		}
-
-		log.Printf("[SYNTAX-HIGHLIGHT] Successfully rendered, output length: %d", len(rendered))
-		buf.WriteString(rendered)
-		return buf.String()
+		return renderCodeBlock(language, code)
 	})
 
-	// Then, replace incomplete code blocks (missing closing tag or partial closing tag like "</code")
 	incompleteRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)(?:</code|$)`)
 	result = incompleteRegex.ReplaceAllStringFunc(result, func(match string) string {
 		submatches := incompleteRegex.FindStringSubmatch(match)
@@ -121,28 +136,8 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int) string {
 		language := submatches[1]
 		code := strings.TrimSpace(submatches[2])
 
-		markdown := fmt.Sprintf("```%s\n%s\n```", language, code)
-		log.Printf("[SYNTAX-HIGHLIGHT] Rendering incomplete %s code block with %d chars", language, len(code))
-
-		renderer, err := glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
-			glamour.WithWordWrap(maxWidth),
-		)
-		if err != nil {
-			log.Printf("[SYNTAX-HIGHLIGHT] Failed to create glamour renderer: %v", err)
-			return match
-		}
-
-		rendered, err := renderer.Render(markdown)
-		if err != nil {
-			log.Printf("[SYNTAX-HIGHLIGHT] Failed to render markdown: %v", err)
-			return match
-		}
-
-		log.Printf("[SYNTAX-HIGHLIGHT] Successfully rendered incomplete block, output length: %d", len(rendered))
-		return rendered
+		return renderCodeBlock(language, code)
 	})
 
 	return result
 }
-

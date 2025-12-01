@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func newTestChatModel() ChatModel {
@@ -212,5 +213,116 @@ func TestChatModelViewDimensions(t *testing.T) {
 	lines := strings.Split(view, "\n")
 	if len(lines) == 0 {
 		t.Error("expected multiple lines in view")
+	}
+}
+
+func TestChatModelMessageWidthConstraints(t *testing.T) {
+	c := newTestChatModel()
+	c.Width = 100
+	c.Height = 30
+
+	longMessage := strings.Repeat("This is a long message that should wrap. ", 10)
+	c.Messages = []llm.Message{
+		{Role: "assistant", Content: longMessage},
+	}
+	c.ContentDirty = true
+
+	_ = c.View()
+
+	themeStyles := GetThemeStyles(c.Theme)
+	maxBubbleWidth := int(float64(c.Width) * 0.8)
+	maxInnerTextWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
+
+	t.Logf("c.Width=%d, maxBubbleWidth=%d, maxInnerTextWidth=%d, frameSize=%d",
+		c.Width, maxBubbleWidth, maxInnerTextWidth, themeStyles.AssistantMessage.GetHorizontalFrameSize())
+
+	lines := strings.Split(c.CachedContent, "\n")
+	t.Logf("Total lines: %d", len(lines))
+	for i, line := range lines {
+		visualWidth := lipgloss.Width(line)
+		if i < 3 {
+			t.Logf("Line %d: visualWidth=%d", i, visualWidth)
+		}
+		if visualWidth > c.Width+2 {
+			t.Errorf("line visual width exceeds chat width: got %d, max %d",
+				visualWidth, c.Width)
+		}
+	}
+}
+
+func TestChatModelCodeBlockWidthConstraints(t *testing.T) {
+	c := newTestChatModel()
+	c.Width = 100
+	c.Height = 30
+
+	codeMessage := "Here's some code:\n```go\nfunc main() {\n    fmt.Println(\"" + strings.Repeat("x", 200) + "\")\n}\n```"
+	c.Messages = []llm.Message{
+		{Role: "assistant", Content: codeMessage},
+	}
+	c.ContentDirty = true
+
+	_ = c.View()
+
+	lines := strings.Split(c.CachedContent, "\n")
+	for i, line := range lines {
+		visualWidth := lipgloss.Width(line)
+		if i < 3 {
+			t.Logf("Line %d: visualWidth=%d", i, visualWidth)
+		}
+		if visualWidth > c.Width+2 {
+			t.Errorf("code block line visual width exceeds chat width: got %d, max %d",
+				visualWidth, c.Width)
+		}
+	}
+}
+
+func TestChatModelInnerTextWidthCalculation(t *testing.T) {
+	c := newTestChatModel()
+	c.Width = 100
+
+	themeStyles := GetThemeStyles(c.Theme)
+	maxBubbleWidth := int(float64(c.Width) * 0.8)
+	maxInnerTextWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
+
+	if maxInnerTextWidth >= maxBubbleWidth {
+		t.Errorf("inner text width should be less than bubble width: inner=%d, bubble=%d",
+			maxInnerTextWidth, maxBubbleWidth)
+	}
+
+	frameSize := themeStyles.AssistantMessage.GetHorizontalFrameSize()
+	if frameSize == 0 {
+		t.Error("expected non-zero horizontal frame size for assistant message style")
+	}
+
+	expectedInner := maxBubbleWidth - frameSize
+	if maxInnerTextWidth != expectedInner {
+		t.Errorf("inner width calculation incorrect: got %d, expected %d",
+			maxInnerTextWidth, expectedInner)
+	}
+}
+
+func TestChatModelNarrowWidthHandling(t *testing.T) {
+	c := newTestChatModel()
+	c.Width = 50
+	c.Height = 20
+
+	message := "This is a test message that should wrap on narrow screens"
+	c.Messages = []llm.Message{
+		{Role: "assistant", Content: message},
+	}
+	c.ContentDirty = true
+
+	view := c.View()
+
+	if view == "" {
+		t.Error("expected non-empty view even with narrow width")
+	}
+
+	themeStyles := GetThemeStyles(c.Theme)
+	maxBubbleWidth := int(float64(c.Width) * 0.8)
+	maxInnerTextWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
+
+	if maxInnerTextWidth < 10 {
+		t.Errorf("inner text width too narrow: %d (may cause rendering issues)", maxInnerTextWidth)
 	}
 }

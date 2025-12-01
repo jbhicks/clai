@@ -193,8 +193,7 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Blue)).
 			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
-			Background(lipgloss.Color(ui.Theme.Primary.Background)).
-			Padding(1, 2).
+			Padding(0, 1).
 			MarginBottom(1).
 			Bold(true),
 
@@ -202,8 +201,7 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Green)).
 			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)).
-			Background(lipgloss.Color(ui.Theme.Primary.Background)).
-			Padding(1, 2).
+			Padding(0, 1).
 			MarginBottom(1),
 
 		ToolMessage: lipgloss.NewStyle().
@@ -218,6 +216,20 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
 			Padding(0, 2),
 
+		CodeBlockBadge: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Bright.Magenta)).
+			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
+			Padding(0, 1).
+			Bold(true),
+
+		CodeBlockContainer: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(ui.Theme.Bright.Magenta)).
+			Background(lipgloss.Color(ui.Theme.Dim.Black)).
+			Padding(0, 1).
+			MarginTop(1).
+			MarginBottom(1),
+
 		ScrollIndicator: lipgloss.NewStyle().
 			Background(lipgloss.Color(ui.Theme.Bright.Cyan)).
 			Foreground(lipgloss.Color(ui.Theme.Primary.Background)).
@@ -229,11 +241,13 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 
 // ThemeStyles contains all the lipgloss styles for a theme
 type ThemeStyles struct {
-	MainPane         lipgloss.Style
-	StatusBar        lipgloss.Style
-	UserMessage      lipgloss.Style
-	AssistantMessage lipgloss.Style
-	ToolMessage      lipgloss.Style
-	ToolBadge        lipgloss.Style
-	ScrollIndicator  lipgloss.Style
+	MainPane           lipgloss.Style
+	StatusBar          lipgloss.Style
+	UserMessage        lipgloss.Style
+	AssistantMessage   lipgloss.Style
+	ToolMessage        lipgloss.Style
+	ToolBadge          lipgloss.Style
+	CodeBlockBadge     lipgloss.Style
+	CodeBlockContainer lipgloss.Style
+	ScrollIndicator    lipgloss.Style
 }
