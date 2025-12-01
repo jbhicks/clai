@@ -1,8 +1,8 @@
 package llm
 
 import (
+	"clai/internal/logger"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 
@@ -68,30 +68,23 @@ func stripTrailingBackgroundPadding(line string) string {
 func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, codeBlockContainer lipgloss.Style) string {
 	blocks := ParseCodeBlocks(content)
 
-	if len(blocks) == 0 {
-		style := lipgloss.NewStyle().Width(maxWidth)
-		return style.Render(content)
-	}
-
-	result := content
+	codeContainerWidth := maxWidth - codeBlockContainer.GetHorizontalFrameSize()
 
 	renderCodeBlock := func(language, code string) string {
 		markdown := fmt.Sprintf("```%s\n%s\n```", language, code)
-
-		codeContainerWidth := maxWidth - codeBlockContainer.GetHorizontalFrameSize()
 
 		renderer, err := glamour.NewTermRenderer(
 			glamour.WithAutoStyle(),
 			glamour.WithWordWrap(codeContainerWidth),
 		)
 		if err != nil {
-			log.Printf("[SYNTAX-HIGHLIGHT] Failed to create glamour renderer: %v", err)
+			logger.Warn("[SYNTAX-HIGHLIGHT] Failed to create glamour renderer: %v", err)
 			return markdown
 		}
 
 		rendered, err := renderer.Render(markdown)
 		if err != nil {
-			log.Printf("[SYNTAX-HIGHLIGHT] Failed to render markdown: %v", err)
+			logger.Warn("[SYNTAX-HIGHLIGHT] Failed to render markdown: %v", err)
 			return markdown
 		}
 
@@ -113,31 +106,66 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 		return codeBlockContainer.Render(contentWithBadge)
 	}
 
-	codeTagRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)</code>`)
-	result = codeTagRegex.ReplaceAllStringFunc(result, func(match string) string {
-		submatches := codeTagRegex.FindStringSubmatch(match)
-		if len(submatches) < 3 {
-			return match
-		}
+	result := content
 
-		language := submatches[1]
-		code := strings.TrimSpace(submatches[2])
+	if len(blocks) > 0 {
+		codeTagRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)</code>`)
+		result = codeTagRegex.ReplaceAllStringFunc(result, func(match string) string {
+			submatches := codeTagRegex.FindStringSubmatch(match)
+			if len(submatches) < 3 {
+				return match
+			}
 
-		return renderCodeBlock(language, code)
-	})
+			language := submatches[1]
+			code := strings.TrimSpace(submatches[2])
 
-	incompleteRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)(?:</code|$)`)
-	result = incompleteRegex.ReplaceAllStringFunc(result, func(match string) string {
-		submatches := incompleteRegex.FindStringSubmatch(match)
-		if len(submatches) < 3 {
-			return match
-		}
+			return renderCodeBlock(language, code)
+		})
 
-		language := submatches[1]
-		code := strings.TrimSpace(submatches[2])
+		incompleteRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)(?:</code|$)`)
+		result = incompleteRegex.ReplaceAllStringFunc(result, func(match string) string {
+			submatches := incompleteRegex.FindStringSubmatch(match)
+			if len(submatches) < 3 {
+				return match
+			}
 
-		return renderCodeBlock(language, code)
-	})
+			language := submatches[1]
+			code := strings.TrimSpace(submatches[2])
 
-	return result
+			return renderCodeBlock(language, code)
+		})
+	}
+
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(maxWidth),
+	)
+	if err != nil {
+		logger.Warn("[MARKDOWN-RENDER] Failed to create glamour renderer: %v", err)
+		return result
+	}
+
+	rendered, err := renderer.Render(result)
+	if err != nil {
+		logger.Warn("[MARKDOWN-RENDER] Failed to render markdown: %v", err)
+		return result
+	}
+
+	lines := strings.Split(rendered, "\n")
+	var cleanLines []string
+	for _, line := range lines {
+		cleanedLine := stripTrailingBackgroundPadding(line)
+		trimmed := strings.TrimRight(cleanedLine, " ")
+		cleanLines = append(cleanLines, trimmed)
+	}
+
+	// Trim leading and trailing empty lines
+	for len(cleanLines) > 0 && cleanLines[0] == "" {
+		cleanLines = cleanLines[1:]
+	}
+	for len(cleanLines) > 0 && cleanLines[len(cleanLines)-1] == "" {
+		cleanLines = cleanLines[:len(cleanLines)-1]
+	}
+
+	return strings.Join(cleanLines, "\n")
 }
