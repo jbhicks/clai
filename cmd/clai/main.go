@@ -3,10 +3,10 @@ package main
 import (
 	"clai/internal/db"
 	"clai/internal/llm"
+	"clai/internal/logger"
 	"clai/internal/ui"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -32,8 +32,8 @@ func main() {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("PANIC: %v\n", r)
-			log.Printf("STACK TRACE:\n%s", getStackTrace())
+			logger.Error("PANIC: %v", r)
+			logger.Error("STACK TRACE:\n%s", getStackTrace())
 			fmt.Fprintf(os.Stderr, "PANIC: %v\n", r)
 			fmt.Fprintf(os.Stderr, "STACK TRACE:\n%s", getStackTrace())
 			os.Exit(2)
@@ -52,14 +52,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to open debug.log for writing: %v\n", err)
 		os.Exit(1)
 	}
-	log.SetOutput(logFile)
-	log.SetFlags(log.Ltime) // Only show time, not date
+	logger.Init(logFile)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		<-c
-		log.Println("Received SIGINT (Ctrl+C), exiting immediately.")
+		logger.Info("Received SIGINT (Ctrl+C), exiting immediately.")
 		os.Exit(0)
 	}()
 	_ = godotenv.Load()
@@ -77,7 +76,7 @@ func main() {
 
 	store, err := db.New()
 	if err != nil {
-		log.Printf("Failed to initialize database: %v", err)
+		logger.Error("Failed to initialize database: %v", err)
 		fmt.Fprintf(os.Stderr, "Failed to initialize database: %v\n", err)
 		os.Exit(1)
 	}
@@ -86,7 +85,7 @@ func main() {
 	modelInfo, err := llmClient.GetModelInfo()
 	var assistantIntro string
 	if err != nil {
-		log.Printf("Failed to get model info: %v", err)
+		logger.Warn("Failed to get model info: %v", err)
 		assistantIntro = fmt.Sprintf("Model: %s\nUnable to retrieve model details.", modelName)
 	} else {
 		assistantIntro = fmt.Sprintf("Model: %s", modelName)
@@ -132,16 +131,16 @@ func main() {
 
 	conv, err := store.GetLatestConversation()
 	if err != nil {
-		log.Printf("Failed to load latest conversation: %v", err)
+		logger.Warn("Failed to load latest conversation: %v", err)
 	}
 	if conv == nil {
 		conv = &db.Conversation{
 			Title:    "New Conversation",
 			Messages: []llm.Message{{Role: "assistant", Content: assistantIntro}},
 		}
-		log.Printf("[DB] Starting new conversation")
+		logger.Info("Starting new conversation")
 	} else {
-		log.Printf("[DB] Loaded conversation %d with %d messages", conv.ID, len(conv.Messages))
+		logger.Info("Loaded conversation %d with %d messages", conv.ID, len(conv.Messages))
 	}
 	m.Conversation = conv
 
@@ -156,6 +155,7 @@ func main() {
 	chat.AssistantName = "assistant"
 	chat.Messages = conv.Messages
 	chat.ContentDirty = true
+	chat.NeedsInitialScroll = true
 	chat.Width = 80
 	chat.Height = 20
 	chat.Viewport = viewport.New(chat.Width, chat.Height)
@@ -170,7 +170,7 @@ func main() {
 
 	m.Chat = chat
 	// Let Bubble Tea detect terminal size automatically via WindowSizeMsg
-	log.Printf("Starting app, Bubble Tea will detect terminal size...")
+	logger.Info("Starting app, Bubble Tea will detect terminal size...")
 
 	p := tea.NewProgram(m,
 		tea.WithAltScreen(),
@@ -178,11 +178,11 @@ func main() {
 	)
 
 	if err := ui.StartDebugServer(p); err != nil {
-		log.Printf("Warning: Failed to start debug server: %v", err)
+		logger.Warn("Failed to start debug server: %v", err)
 	}
 
 	if _, err := p.Run(); err != nil {
-		log.Println("Fatal error:", err)
+		logger.Error("Fatal error: %v", err)
 		os.Exit(1)
 	}
 }

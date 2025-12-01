@@ -194,15 +194,13 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Blue)).
 			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
 			Padding(0, 1).
-			MarginBottom(1).
 			Bold(true),
 
 		AssistantMessage: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Green)).
 			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)).
-			Padding(0, 1).
-			MarginBottom(1),
+			Padding(0, 1),
 
 		ToolMessage: lipgloss.NewStyle().
 			Background(lipgloss.Color(ui.Theme.Dim.Black)).

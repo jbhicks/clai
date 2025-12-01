@@ -171,10 +171,10 @@ func (c *ChatModel) View() string {
 			default:
 				rendered = msg.Content
 			}
-			if i > 0 {
+			chatContent += rendered
+			if i < len(c.Messages)-1 {
 				chatContent += "\n"
 			}
-			chatContent += rendered
 		}
 		c.CachedContent = chatContent
 		c.ContentDirty = false
