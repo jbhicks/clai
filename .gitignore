@@ -30,4 +30,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
-reference-docs/vscode-copilot-chat/
+
+# Reference documentation (not part of codebase)
+reference-docs/

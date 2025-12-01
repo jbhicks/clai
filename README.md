@@ -1,6 +1,41 @@
 # clai
 An AI interface, built for local AI, by AI. AlrAIght?
 
+## Features
+
+- **Local AI Integration**: Built for Ollama and OpenAI-compatible local LLM endpoints
+- **Interactive TUI**: Modern terminal user interface built with Bubble Tea
+- **Tool System**: Extensible tool calling system for LLM function execution
+- **Conversation Management**: Persistent conversation history with SQLite
+- **Smart Chat Viewport**:
+  - Auto-scroll with manual override
+  - Mouse wheel and smooth keyboard navigation
+  - Visual scroll position indicators with percentage
+  - Beautiful chat bubbles (user right-aligned, assistant left-aligned)
+  - Dynamic bubble sizing with max 70% width
+- **Theme Support**: Multiple color themes (Dracula, Catppuccin Mocha, Tokyo Night Storm)
+- **Live Reload**: Developer-friendly hot reload workflow
+
+## Keyboard Shortcuts
+
+**Global:**
+- `Ctrl+T`: Switch between chat and log panes
+- `Ctrl+H`: Toggle help
+- `Ctrl+D`: Cycle themes
+- `Ctrl+Q`: Quit
+
+**Chat Navigation (when input not focused):**
+- `↑` or `k`: Scroll up one line
+- `↓` or `j`: Scroll down one line
+- `Page Up`: Scroll up one page
+- `Page Down`: Scroll down one page
+- `Home` or `g`: Jump to top
+- `End` or `G`: Jump to bottom
+
+**Input:**
+- `Ctrl+N`: Focus input (from log pane)
+- `↑`/`↓`: Navigate command history
+
 # CLAI Implementation Plan
 
 [...unchanged content above...]

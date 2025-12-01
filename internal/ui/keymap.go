@@ -8,6 +8,12 @@ type KeyMap struct {
 	Tab         key.Binding
 	ToggleTheme key.Binding
 	NewConv     key.Binding
+	ScrollUp    key.Binding
+	ScrollDown  key.Binding
+	PageUp      key.Binding
+	PageDown    key.Binding
+	Home        key.Binding
+	End         key.Binding
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -17,6 +23,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Help, k.Quit, k.Tab, k.ToggleTheme, k.NewConv},
+		{k.ScrollUp, k.ScrollDown, k.PageUp, k.PageDown, k.Home, k.End},
 	}
 }
 
@@ -40,5 +47,29 @@ var DefaultKeyMap = KeyMap{
 	NewConv: key.NewBinding(
 		key.WithKeys("ctrl+n"),
 		key.WithHelp("ctrl+n", "new conversation"),
+	),
+	ScrollUp: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "scroll up"),
+	),
+	ScrollDown: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "scroll down"),
+	),
+	PageUp: key.NewBinding(
+		key.WithKeys("pgup"),
+		key.WithHelp("pgup", "page up"),
+	),
+	PageDown: key.NewBinding(
+		key.WithKeys("pgdown"),
+		key.WithHelp("pgdown", "page down"),
+	),
+	Home: key.NewBinding(
+		key.WithKeys("home", "g"),
+		key.WithHelp("home/g", "scroll to top"),
+	),
+	End: key.NewBinding(
+		key.WithKeys("end", "G"),
+		key.WithHelp("end/G", "scroll to bottom"),
 	),
 }
