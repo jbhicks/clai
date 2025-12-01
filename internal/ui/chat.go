@@ -88,30 +88,36 @@ func (c *ChatModel) View() string {
 	if c.ContentDirty {
 		log.Printf("[CHAT] Rendering %d messages, c.Width=%d", len(c.Messages), c.Width)
 		chatContent := ""
+		maxBubbleWidth := int(float64(c.Width) * 0.8)
+		maxInnerTextWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
 
 		for i, msg := range c.Messages {
 			var rendered string
 			switch msg.Role {
 			case "user":
-				// User messages: left-aligned with full-width wrapper
-				bubble := themeStyles.UserMessage.Render(msg.Content)
-				wrapper := lipgloss.NewStyle().
+				wrappedContent := lipgloss.NewStyle().Width(maxInnerTextWidth).Render(msg.Content)
+				bubble := themeStyles.UserMessage.Render(wrappedContent)
+				paddedLine := lipgloss.NewStyle().
 					Width(c.Width).
 					Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
-					Align(lipgloss.Left)
-				rendered = wrapper.Render(bubble)
+					Align(lipgloss.Left).
+					Render(bubble)
+				rendered = paddedLine
 			case "assistant":
 				toolBadges := ""
 				if len(msg.SelectedTools) > 0 && i > 0 && c.Messages[i-1].Role == "tool" {
 					badge := themeStyles.ToolBadge.Render("🔧 " + c.Messages[i-1].Content)
 					toolBadges = "\n  " + badge
 				}
-				bubble := themeStyles.AssistantMessage.Render(msg.Content + toolBadges)
-				wrapper := lipgloss.NewStyle().
+
+				contentWithHighlighting := llm.RenderWithSyntaxHighlighting(msg.Content, maxInnerTextWidth)
+				bubble := themeStyles.AssistantMessage.Render(contentWithHighlighting + toolBadges)
+				paddedLine := lipgloss.NewStyle().
 					Width(c.Width).
 					Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
-					Align(lipgloss.Right)
-				rendered = wrapper.Render(bubble)
+					Align(lipgloss.Right).
+					Render(bubble)
+				rendered = paddedLine
 			case "tool":
 				continue
 			default:

@@ -30,6 +30,13 @@ func max(a, b int) int {
 	return b
 }
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 type Model struct {
 	Chat          ChatModel
 	Log           viewport.Model
@@ -59,11 +66,14 @@ type (
 	StreamUpdateMsg    string
 	ToolCallMsg        struct{ ToolCalls []llm.ToolCall }
 	ToolResultMsg      struct{ ToolName, Result string }
+	CodeBlockMsg       struct{ Blocks []llm.CodeBlock }
+	CodeResultMsg      struct{ Result string }
 	TickMsg            struct{}
 	HealthCheckMsg     struct{ Err error }
 	HealthCheckDoneMsg struct{}
 	errorMsg           struct{ err error }
 	clearErrorMsg      struct{}
+	smoothScrollMsg    struct{}
 )
 
 func executeToolCmd(toolCall llm.ToolCall) tea.Cmd {
@@ -82,6 +92,32 @@ func executeToolCmd(toolCall llm.ToolCall) tea.Cmd {
 			ToolName: toolCall.Name,
 			Result:   result,
 		}
+	}
+}
+
+func executeCodeBlocksCmd(blocks []llm.CodeBlock) tea.Cmd {
+	return func() tea.Msg {
+		var results []string
+		for i, block := range blocks {
+			log.Printf("Executing code block %d/%d (language=%s)", i+1, len(blocks), block.Language)
+			output, err := tools.ExecuteCode(block.Language, block.Code)
+
+			if err != nil {
+				results = append(results, fmt.Sprintf("Code block %d (error):\n```\n%s\n```\nError: %v", i+1, output, err))
+			} else {
+				truncated := tools.TruncateForHistory(output)
+				results = append(results, fmt.Sprintf("Code block %d output:\n```\n%s\n```", i+1, truncated))
+			}
+		}
+
+		combined := fmt.Sprintf("%d code block(s) executed:\n\n%s", len(blocks), fmt.Sprintf("%s", results[0]))
+		if len(results) > 1 {
+			for i := 1; i < len(results); i++ {
+				combined += "\n\n" + results[i]
+			}
+		}
+
+		return CodeResultMsg{Result: combined}
 	}
 }
 
@@ -123,6 +159,12 @@ func waitForStreamChunk(streamChan <-chan string, toolCallChan <-chan []llm.Tool
 		}
 		return StreamUpdateMsg(chunk)
 	}
+}
+
+func smoothScrollCmd() tea.Cmd {
+	return tea.Tick(16*time.Millisecond, func(t time.Time) tea.Msg {
+		return smoothScrollMsg{}
+	})
 }
 
 func TailLogFileCmd(m *Model) tea.Cmd {
@@ -229,6 +271,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		chunk := string(msg)
 		if len(chunk) == 0 {
 			m.Chat.Streaming = false
+
+			// Check if last message contains code blocks
+			if len(m.Chat.Messages) > 0 {
+				lastMsg := m.Chat.Messages[len(m.Chat.Messages)-1]
+				if lastMsg.Role == "assistant" {
+					blocks := llm.ParseCodeBlocks(lastMsg.Content)
+					if len(blocks) > 0 {
+						log.Printf("Detected %d code blocks in completed message", len(blocks))
+						m.streamChan = nil
+						m.toolCallChan = nil
+						return m, executeCodeBlocksCmd(blocks)
+					}
+				}
+			}
+
 			m.streamChan = nil
 			m.toolCallChan = nil
 			break
@@ -240,7 +297,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Chat.Messages = append(m.Chat.Messages, llm.Message{Role: "assistant", Content: chunk})
 			m.Chat.ContentDirty = true
 		}
-		m.Chat.Viewport.GotoBottom()
+		if m.Chat.AutoScroll && !m.Chat.UserScrolled {
+			m.Chat.Viewport.GotoBottom()
+		}
 		if StartsWithLLMError(chunk) {
 			m.Chat.Streaming = false
 			m.streamChan = nil
@@ -248,6 +307,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.streamChan != nil {
 			return m, waitForStreamChunk(m.streamChan, m.toolCallChan)
 		}
+	case CodeResultMsg:
+		log.Printf("CodeResultMsg received: %s", msg.Result)
+
+		// Strip code tags from last assistant message
+		if len(m.Chat.Messages) > 0 && m.Chat.Messages[len(m.Chat.Messages)-1].Role == "assistant" {
+			m.Chat.Messages[len(m.Chat.Messages)-1].Content = llm.StripCodeTags(m.Chat.Messages[len(m.Chat.Messages)-1].Content)
+		}
+
+		// Add code result as tool message
+		m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+			Role:    "tool",
+			Content: msg.Result,
+		})
+		m.Chat.ContentDirty = true
+		if m.Chat.AutoScroll && !m.Chat.UserScrolled {
+			m.Chat.Viewport.GotoBottom()
+		}
+
+		// Send updated conversation back to LLM for final response
+		m.Chat.Streaming = true
+		return m, StreamLLMResponseCmd(m.Chat.LlmClient, m.Chat.Messages)
 	case ToolCallMsg:
 		log.Printf("ToolCallMsg received with %d tool calls", len(msg.ToolCalls))
 		m.Chat.Streaming = false
@@ -268,11 +348,38 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Content: fmt.Sprintf("%s: %s", msg.ToolName, msg.Result),
 		})
 		m.Chat.ContentDirty = true
-		m.Chat.Viewport.GotoBottom()
+		if m.Chat.AutoScroll && !m.Chat.UserScrolled {
+			m.Chat.Viewport.GotoBottom()
+		}
 
 		// Send updated conversation back to LLM for final response
 		m.Chat.Streaming = true
 		return m, StreamLLMResponseCmd(m.Chat.LlmClient, m.Chat.Messages)
+	case smoothScrollMsg:
+		if m.Chat.SmoothScrollActive {
+			currentOffset := m.Chat.Viewport.YOffset
+			targetOffset := m.Chat.SmoothScrollTarget
+
+			if currentOffset == targetOffset {
+				m.Chat.SmoothScrollActive = false
+				return m, nil
+			}
+
+			diff := targetOffset - currentOffset
+			step := 1
+			if diff < 0 {
+				step = -1
+			}
+			if diff > 5 || diff < -5 {
+				step = diff / 5
+			}
+
+			newOffset := currentOffset + step
+			m.Chat.Viewport.SetYOffset(newOffset)
+
+			return m, smoothScrollCmd()
+		}
+		return m, nil
 	case LogUpdateMsg:
 		m.logBuffer += string(msg) + "\n"
 		m.Log.SetContent(m.logBuffer)
@@ -286,6 +393,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ShowError = false
 		m.ErrorMessage = ""
 		return m, nil
+	case DebugServerMsg:
+		cmds = append(cmds, m.handleDebugCommand(msg))
 	default:
 		var cmd tea.Cmd
 		updatedChat, cmd := m.Chat.Update(msg)
@@ -322,6 +431,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 				log.Printf("handleKeyMsg: Submitting message: %s", userMsg)
 				m.Chat.Messages = append(m.Chat.Messages, llm.Message{Role: "user", Content: userMsg})
 				m.Chat.ContentDirty = true
+				m.Chat.AutoScroll = true
+				m.Chat.UserScrolled = false
 				m.Chat.Viewport.GotoBottom()
 				m.Chat.TextInput.SetValue("")
 				m.Chat.Streaming = true
@@ -359,7 +470,77 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		nextIdx := (currentIdx + 1) % len(AvailableThemes)
 		m.Theme = AvailableThemes[nextIdx]
 		m.Chat.Theme = m.Theme
+		m.Chat.ContentDirty = true
+		themeName := getThemeName(m.Theme)
+		m.StatusBarText = fmt.Sprintf("Model: %s | Host: %s | Format: %s | Theme: %s",
+			m.Chat.LlmClient.Model(),
+			m.Chat.LlmClient.Host(),
+			m.Chat.LlmClient.APIFormatString(),
+			themeName)
 		return nil
+	case "ctrl+n":
+		m.Chat.Messages = []llm.Message{}
+		m.Chat.ContentDirty = true
+		m.Chat.TextInput.SetValue("")
+		m.Chat.Viewport.GotoTop()
+		m.Chat.UserScrolled = false
+		m.Chat.AutoScroll = true
+		return nil
+	case "up", "k":
+		if !m.Chat.TextInput.Focused() {
+			m.Chat.SmoothScrollTarget = max(m.Chat.Viewport.YOffset-1, 0)
+			m.Chat.SmoothScrollActive = true
+			m.Chat.UserScrolled = true
+			m.Chat.AutoScroll = false
+			return smoothScrollCmd()
+		}
+	case "down", "j":
+		if !m.Chat.TextInput.Focused() {
+			maxOffset := max(m.Chat.Viewport.TotalLineCount()-m.Chat.Viewport.Height, 0)
+			m.Chat.SmoothScrollTarget = max(0, min(m.Chat.Viewport.YOffset+1, maxOffset))
+			m.Chat.SmoothScrollActive = true
+			if m.Chat.Viewport.AtBottom() {
+				m.Chat.UserScrolled = false
+				m.Chat.AutoScroll = true
+			}
+			return smoothScrollCmd()
+		}
+	case "pgup":
+		if !m.Chat.TextInput.Focused() {
+			m.Chat.SmoothScrollTarget = max(m.Chat.Viewport.YOffset-m.Chat.Viewport.Height, 0)
+			m.Chat.SmoothScrollActive = true
+			m.Chat.UserScrolled = true
+			m.Chat.AutoScroll = false
+			return smoothScrollCmd()
+		}
+	case "pgdown":
+		if !m.Chat.TextInput.Focused() {
+			maxOffset := max(m.Chat.Viewport.TotalLineCount()-m.Chat.Viewport.Height, 0)
+			m.Chat.SmoothScrollTarget = max(0, min(m.Chat.Viewport.YOffset+m.Chat.Viewport.Height, maxOffset))
+			m.Chat.SmoothScrollActive = true
+			if m.Chat.Viewport.AtBottom() {
+				m.Chat.UserScrolled = false
+				m.Chat.AutoScroll = true
+			}
+			return smoothScrollCmd()
+		}
+	case "home", "g":
+		if !m.Chat.TextInput.Focused() {
+			m.Chat.SmoothScrollTarget = 0
+			m.Chat.SmoothScrollActive = true
+			m.Chat.UserScrolled = true
+			m.Chat.AutoScroll = false
+			return smoothScrollCmd()
+		}
+	case "end", "G":
+		if !m.Chat.TextInput.Focused() {
+			maxOffset := max(m.Chat.Viewport.TotalLineCount()-m.Chat.Viewport.Height, 0)
+			m.Chat.SmoothScrollTarget = maxOffset
+			m.Chat.SmoothScrollActive = true
+			m.Chat.UserScrolled = false
+			m.Chat.AutoScroll = true
+			return smoothScrollCmd()
+		}
 	}
 
 	// Pass all other keys to chat component (for text input)
@@ -368,6 +549,73 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	m.Chat = updatedChat
 	cmds = append(cmds, cmd)
 	return tea.Batch(cmds...)
+}
+
+func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
+	log.Printf("[DEBUG] Handling command: %s", msg.Cmd.Command)
+
+	var resp DebugResponse
+
+	switch msg.Cmd.Command {
+	case "ping":
+		resp = DebugResponse{
+			Success: true,
+			Data: map[string]interface{}{
+				"status": "ok",
+			},
+		}
+
+	case "inspect":
+		chatView := m.Chat.Viewport.View()
+		resp = DebugResponse{
+			Success: true,
+			Data: map[string]interface{}{
+				"viewport_content": chatView,
+				"width":            m.Width,
+				"height":           m.Height,
+				"chat_width":       m.Chat.Width,
+				"chat_height":      m.Chat.Height,
+				"message_count":    len(m.Chat.Messages),
+				"viewport_offset":  m.Chat.Viewport.YOffset,
+				"viewport_height":  m.Chat.Viewport.Height,
+				"total_lines":      m.Chat.Viewport.TotalLineCount(),
+				"active_pane":      m.ActivePane,
+				"theme":            "current",
+			},
+		}
+
+	case "get_history":
+		resp = DebugResponse{
+			Success: true,
+			Data: map[string]interface{}{
+				"messages": m.Chat.Messages,
+			},
+		}
+
+	case "switch_pane":
+		if m.ActivePane == ChatPane {
+			m.ActivePane = LogPane
+		} else {
+			m.ActivePane = ChatPane
+		}
+		resp = DebugResponse{
+			Success: true,
+			Data: map[string]interface{}{
+				"active_pane": m.ActivePane,
+			},
+		}
+
+	default:
+		resp = DebugResponse{
+			Success: false,
+			Error:   fmt.Sprintf("Unknown command: %s", msg.Cmd.Command),
+		}
+	}
+
+	SendDebugResponse(msg.Conn, resp)
+	msg.Conn.Close()
+	log.Printf("[DEBUG] Response sent and connection closed for command: %s", msg.Cmd.Command)
+	return nil
 }
 
 func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
@@ -434,6 +682,10 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 	m.Chat.TextInput.Width = m.Chat.Width - 8
 	m.Log.Width = logPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
 	m.Log.Height = contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
+
+	// Mark content dirty so it re-renders, and flag for initial scroll
+	m.Chat.ContentDirty = true
+	m.Chat.NeedsInitialScroll = true
 
 	// Update status bar text with theme name
 	themeName := getThemeName(m.Theme)
