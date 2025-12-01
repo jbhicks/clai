@@ -25,6 +25,11 @@ func getStackTrace() string {
 }
 
 func main() {
+	if len(os.Args) >= 2 && os.Args[1] == "debug" {
+		runDebugCommand(os.Args[2:])
+		return
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("PANIC: %v\n", r)
@@ -141,10 +146,12 @@ func main() {
 	m.Conversation = conv
 
 	chat := ui.ChatModel{
-		TextInput: chatInput,
-		LlmClient: llmClient,
-		Spinner:   spin,
-		Theme:     m.Theme,
+		TextInput:    chatInput,
+		LlmClient:    llmClient,
+		Spinner:      spin,
+		Theme:        m.Theme,
+		AutoScroll:   true,
+		UserScrolled: false,
 	}
 	chat.AssistantName = "assistant"
 	chat.Messages = conv.Messages
@@ -152,6 +159,8 @@ func main() {
 	chat.Width = 80
 	chat.Height = 20
 	chat.Viewport = viewport.New(chat.Width, chat.Height)
+	chat.Viewport.MouseWheelEnabled = true
+	chat.Viewport.MouseWheelDelta = 3
 
 	for _, msg := range conv.Messages {
 		if msg.Role == "user" {
@@ -167,6 +176,11 @@ func main() {
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
+
+	if err := ui.StartDebugServer(p); err != nil {
+		log.Printf("Warning: Failed to start debug server: %v", err)
+	}
+
 	if _, err := p.Run(); err != nil {
 		log.Println("Fatal error:", err)
 		os.Exit(1)

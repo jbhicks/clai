@@ -2,6 +2,7 @@ package ui
 
 import (
 	"clai/internal/llm"
+	"fmt"
 	"log"
 
 	"github.com/brittonhayes/glitter/glitter"
@@ -13,21 +14,26 @@ import (
 )
 
 type ChatModel struct {
-	Messages       []llm.Message
-	TextInput      textinput.Model
-	Viewport       viewport.Model
-	LlmClient      llm.LLMClientInterface
-	Spinner        spinner.Model
-	Streaming      bool
-	SelectingTools bool
-	Width          int
-	Height         int
-	AssistantName  string
-	Theme          *glitter.UI
-	CachedContent  string
-	ContentDirty   bool
-	QueryHistory   []string
-	HistoryIndex   int
+	Messages           []llm.Message
+	TextInput          textinput.Model
+	Viewport           viewport.Model
+	LlmClient          llm.LLMClientInterface
+	Spinner            spinner.Model
+	Streaming          bool
+	SelectingTools     bool
+	Width              int
+	Height             int
+	AssistantName      string
+	Theme              *glitter.UI
+	CachedContent      string
+	ContentDirty       bool
+	QueryHistory       []string
+	HistoryIndex       int
+	AutoScroll         bool
+	UserScrolled       bool
+	SmoothScrollTarget int
+	SmoothScrollActive bool
+	NeedsInitialScroll bool
 }
 
 func (c *ChatModel) Init() tea.Cmd {
@@ -37,12 +43,37 @@ func (c *ChatModel) Init() tea.Cmd {
 func (c *ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	var cmds []tea.Cmd
 	var cmd tea.Cmd
+
+	oldYOffset := c.Viewport.YOffset
+
 	c.TextInput, cmd = c.TextInput.Update(msg)
 	cmds = append(cmds, cmd)
 	c.Viewport, cmd = c.Viewport.Update(msg)
 	cmds = append(cmds, cmd)
 	c.Spinner, cmd = c.Spinner.Update(msg)
 	cmds = append(cmds, cmd)
+
+	if c.Viewport.YOffset != oldYOffset && !c.Streaming {
+		c.UserScrolled = true
+		c.AutoScroll = false
+		log.Printf("[CHAT] Manual scroll detected: YOffset changed from %d to %d", oldYOffset, c.Viewport.YOffset)
+	}
+
+	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonWheelUp {
+			c.UserScrolled = true
+			c.AutoScroll = false
+			c.SmoothScrollActive = false
+		} else if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonWheelDown {
+			if c.Viewport.AtBottom() {
+				c.UserScrolled = false
+				c.AutoScroll = true
+			}
+			c.SmoothScrollActive = false
+		}
+	}
+
 	return *c, tea.Batch(cmds...)
 }
 
@@ -57,31 +88,59 @@ func (c *ChatModel) View() string {
 	if c.ContentDirty {
 		log.Printf("[CHAT] Rendering %d messages, c.Width=%d", len(c.Messages), c.Width)
 		chatContent := ""
+
 		for i, msg := range c.Messages {
 			var rendered string
 			switch msg.Role {
 			case "user":
-				innerWidth := c.Width - themeStyles.UserMessage.GetHorizontalFrameSize()
-				rendered = themeStyles.UserMessage.Width(innerWidth).Render(msg.Content)
+				// User messages: left-aligned with full-width wrapper
+				bubble := themeStyles.UserMessage.Render(msg.Content)
+				wrapper := lipgloss.NewStyle().
+					Width(c.Width).
+					Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
+					Align(lipgloss.Left)
+				rendered = wrapper.Render(bubble)
 			case "assistant":
 				toolBadges := ""
 				if len(msg.SelectedTools) > 0 && i > 0 && c.Messages[i-1].Role == "tool" {
 					badge := themeStyles.ToolBadge.Render("🔧 " + c.Messages[i-1].Content)
 					toolBadges = "\n  " + badge
 				}
-				innerWidth := c.Width - themeStyles.AssistantMessage.GetHorizontalFrameSize()
-				rendered = themeStyles.AssistantMessage.Width(innerWidth).Render(msg.Content + toolBadges)
+				bubble := themeStyles.AssistantMessage.Render(msg.Content + toolBadges)
+				wrapper := lipgloss.NewStyle().
+					Width(c.Width).
+					Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
+					Align(lipgloss.Right)
+				rendered = wrapper.Render(bubble)
 			case "tool":
 				continue
 			default:
-				rendered = lipgloss.NewStyle().Width(c.Width).Render(msg.Content)
+				rendered = msg.Content
 			}
 			chatContent += rendered + "\n"
 		}
 		c.CachedContent = chatContent
 		c.ContentDirty = false
+		c.Viewport.SetContent(c.CachedContent)
 	}
-	c.Viewport.SetContent(c.CachedContent)
+
+	scrollIndicator := ""
+	scrollIndicatorHeight := 0
+	if c.Viewport.TotalLineCount() > 0 {
+		scrollPct := int(c.Viewport.ScrollPercent() * 100)
+		arrow := ""
+		if !c.Viewport.AtTop() && !c.Viewport.AtBottom() {
+			arrow = "↕"
+		} else if !c.Viewport.AtTop() {
+			arrow = "↑"
+		} else if !c.Viewport.AtBottom() {
+			arrow = "↓"
+		}
+		if arrow != "" {
+			scrollIndicator = themeStyles.ScrollIndicator.Render(fmt.Sprintf(" %s %d%% ", arrow, scrollPct))
+			scrollIndicatorHeight = 1
+		}
+	}
 
 	spinnerView := ""
 	spinnerHeight := 0
@@ -104,18 +163,31 @@ func (c *ChatModel) View() string {
 	}
 
 	// Calculate viewport height
-	viewportHeight := c.Height - inputHeight - spinnerHeight
+	viewportHeight := c.Height - inputHeight - spinnerHeight - scrollIndicatorHeight
 	if viewportHeight < 1 {
 		viewportHeight = 1
 	}
 	c.Viewport.Height = viewportHeight
 
-	var joined string
-	if (c.Streaming || c.SelectingTools) && spinnerView != "" {
-		joined = lipgloss.JoinVertical(lipgloss.Left, c.Viewport.View(), spinnerView, inputFieldRendered)
-	} else {
-		joined = lipgloss.JoinVertical(lipgloss.Left, c.Viewport.View(), inputFieldRendered)
+	// Perform initial scroll to bottom after first render (when height is set correctly)
+	if c.NeedsInitialScroll {
+		c.Viewport.GotoBottom()
+		c.NeedsInitialScroll = false
+		log.Printf("[CHAT] Initial scroll to bottom: YOffset=%d, Height=%d, TotalLines=%d",
+			c.Viewport.YOffset, c.Viewport.Height, c.Viewport.TotalLineCount())
 	}
+
+	var joined string
+	var parts []string
+	parts = append(parts, c.Viewport.View())
+	if scrollIndicator != "" {
+		parts = append(parts, scrollIndicator)
+	}
+	if (c.Streaming || c.SelectingTools) && spinnerView != "" {
+		parts = append(parts, spinnerView)
+	}
+	parts = append(parts, inputFieldRendered)
+	joined = lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	return joined
 }
