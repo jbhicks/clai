@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bufio"
+	"clai/internal/db"
 	"clai/internal/llm"
 	"clai/internal/tools"
 	"fmt"
@@ -255,11 +256,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		cmds = append(cmds, m.handleWindowSizeMsg(msg))
 	case tea.KeyMsg:
-		// Filter out terminal escape sequences before processing
 		keyStr := msg.String()
 		if len(keyStr) > 2 && (keyStr[:3] == "alt" ||
 			(keyStr[0] >= '0' && keyStr[0] <= '9' && len(keyStr) > 1 && keyStr[1] == ';')) {
-			log.Printf("Update: Filtering escape sequence: %s", keyStr)
 			return m, nil
 		}
 		cmds = append(cmds, m.handleKeyMsg(msg))
@@ -271,6 +270,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		chunk := string(msg)
 		if len(chunk) == 0 {
 			m.Chat.Streaming = false
+
+			// Save conversation after assistant response completes
+			if conv, ok := m.Conversation.(*db.Conversation); ok {
+				conv.Messages = m.Chat.Messages
+				if store, ok := m.DB.(*db.Store); ok {
+					if err := store.SaveConversation(conv); err != nil {
+						log.Printf("[DB] Failed to save conversation: %v", err)
+					}
+				}
+			}
 
 			// Check if last message contains code blocks
 			if len(m.Chat.Messages) > 0 {
@@ -293,12 +302,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.Chat.Messages) > 0 && m.Chat.Messages[len(m.Chat.Messages)-1].Role == "assistant" && m.Chat.Streaming && !StartsWithLLMError(chunk) {
 			m.Chat.Messages[len(m.Chat.Messages)-1].Content += chunk
 			m.Chat.ContentDirty = true
-		} else {
+		} else if chunk != "" {
 			m.Chat.Messages = append(m.Chat.Messages, llm.Message{Role: "assistant", Content: chunk})
 			m.Chat.ContentDirty = true
-		}
-		if m.Chat.AutoScroll && !m.Chat.UserScrolled {
-			m.Chat.Viewport.GotoBottom()
 		}
 		if StartsWithLLMError(chunk) {
 			m.Chat.Streaming = false
@@ -321,9 +327,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Content: msg.Result,
 		})
 		m.Chat.ContentDirty = true
-		if m.Chat.AutoScroll && !m.Chat.UserScrolled {
-			m.Chat.Viewport.GotoBottom()
-		}
 
 		// Send updated conversation back to LLM for final response
 		m.Chat.Streaming = true
@@ -348,9 +351,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Content: fmt.Sprintf("%s: %s", msg.ToolName, msg.Result),
 		})
 		m.Chat.ContentDirty = true
-		if m.Chat.AutoScroll && !m.Chat.UserScrolled {
-			m.Chat.Viewport.GotoBottom()
-		}
 
 		// Send updated conversation back to LLM for final response
 		m.Chat.Streaming = true
@@ -407,15 +407,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	var cmds []tea.Cmd
 
-	log.Printf("handleKeyMsg: key=%s, focused=%v, value=%s", msg.String(), m.Chat.TextInput.Focused(), m.Chat.TextInput.Value())
-
-	// Filter out terminal escape sequences that appear at startup
 	keyStr := msg.String()
 	if len(keyStr) > 0 && (keyStr[0] == '\x1b' ||
 		(len(keyStr) > 2 && keyStr[:3] == "alt") ||
 		(len(keyStr) > 1 && (keyStr[0] >= '0' && keyStr[0] <= '9') && keyStr[1] == ';') ||
 		(len(keyStr) > 3 && keyStr[0] >= '0' && keyStr[0] <= '9' && keyStr[1] >= '0' && keyStr[1] <= '9' && keyStr[2] == ';')) {
-		log.Printf("handleKeyMsg: Ignoring escape sequence: %s", keyStr)
 		return nil
 	}
 
@@ -424,11 +420,9 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	case "ctrl+c":
 		return tea.Quit
 	case "enter":
-		log.Printf("handleKeyMsg: Enter pressed, focused=%v, value=%s", m.Chat.TextInput.Focused(), m.Chat.TextInput.Value())
 		if m.Chat.TextInput.Focused() {
 			userMsg := m.Chat.TextInput.Value()
 			if userMsg != "" {
-				log.Printf("handleKeyMsg: Submitting message: %s", userMsg)
 				m.Chat.Messages = append(m.Chat.Messages, llm.Message{Role: "user", Content: userMsg})
 				m.Chat.ContentDirty = true
 				m.Chat.AutoScroll = true
@@ -436,18 +430,39 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 				m.Chat.Viewport.GotoBottom()
 				m.Chat.TextInput.SetValue("")
 				m.Chat.Streaming = true
+
+				// Update conversation with new message
+				if conv, ok := m.Conversation.(*db.Conversation); ok {
+					conv.Messages = m.Chat.Messages
+					if conv.Title == "" || conv.Title == "New Conversation" {
+						conv.Title = db.GenerateConversationTitle(m.Chat.Messages)
+					}
+					if store, ok := m.DB.(*db.Store); ok {
+						if err := store.SaveConversation(conv); err != nil {
+							log.Printf("[DB] Failed to save conversation: %v", err)
+						}
+					}
+				}
+
 				return StreamLLMResponseCmd(m.Chat.LlmClient, m.Chat.Messages)
-			} else {
-				log.Printf("handleKeyMsg: Empty message, not submitting")
 			}
-		} else {
-			log.Printf("handleKeyMsg: TextInput not focused")
 		}
 	}
 
 	// Handle hotkeys with ctrl modifier (work even when input is focused)
 	switch msg.String() {
 	case "ctrl+q":
+		// Save conversation before quitting
+		if conv, ok := m.Conversation.(*db.Conversation); ok {
+			if len(m.Chat.Messages) > 0 {
+				conv.Messages = m.Chat.Messages
+				if store, ok := m.DB.(*db.Store); ok {
+					if err := store.SaveConversation(conv); err != nil {
+						log.Printf("[DB] Failed to save conversation on quit: %v", err)
+					}
+				}
+			}
+		}
 		return tea.Quit
 	case "ctrl+h":
 		m.ShowHelp = !m.ShowHelp
@@ -479,6 +494,25 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			themeName)
 		return nil
 	case "ctrl+n":
+		// Save current conversation before creating new one
+		if conv, ok := m.Conversation.(*db.Conversation); ok {
+			if len(m.Chat.Messages) > 0 {
+				conv.Messages = m.Chat.Messages
+				if store, ok := m.DB.(*db.Store); ok {
+					if err := store.SaveConversation(conv); err != nil {
+						log.Printf("[DB] Failed to save conversation: %v", err)
+					}
+				}
+			}
+		}
+
+		// Create new conversation
+		newConv := &db.Conversation{
+			Title:    "New Conversation",
+			Messages: []llm.Message{},
+		}
+		m.Conversation = newConv
+
 		m.Chat.Messages = []llm.Message{}
 		m.Chat.QueryHistory = []string{}
 		m.Chat.HistoryIndex = 0

@@ -3,6 +3,8 @@ package llm
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestParseCodeBlocks(t *testing.T) {
@@ -98,12 +100,12 @@ func TestParseCodeBlocksEdgeCases(t *testing.T) {
 		{
 			name:     "incomplete opening tag",
 			content:  `<code language="bash">echo hello`,
-			expected: 0,
+			expected: 1, // Now matches incomplete blocks
 		},
 		{
 			name:     "incomplete closing tag",
 			content:  `<code language="bash">echo hello</cod`,
-			expected: 0,
+			expected: 1, // Now matches incomplete blocks
 		},
 		{
 			name:     "mismatched quotes in language",
@@ -113,7 +115,7 @@ func TestParseCodeBlocksEdgeCases(t *testing.T) {
 		{
 			name:     "empty code block",
 			content:  `<code language="bash"></code>`,
-			expected: 0,
+			expected: 1, // Empty block is still a valid match
 		},
 		{
 			name:     "whitespace only code",
@@ -335,8 +337,9 @@ func TestRenderWithSyntaxHighlighting(t *testing.T) {
 			}
 
 			if len(ParseCodeBlocks(tt.content)) == 0 {
-				if result != tt.content {
-					t.Errorf("content without code blocks should be unchanged, got different result")
+				// Content is now wrapped to maxWidth, so check that wrapping was applied
+				if lipgloss.Width(result) > tt.maxWidth {
+					t.Errorf("content without code blocks should be wrapped to maxWidth=%d, but width=%d", tt.maxWidth, lipgloss.Width(result))
 				}
 			} else {
 				if strings.Contains(result, "<code language=") {

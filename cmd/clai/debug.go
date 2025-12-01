@@ -12,10 +12,11 @@ func runDebugCommand(args []string) {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Usage: clai debug COMMAND [ARGS...]")
 		fmt.Fprintln(os.Stderr, "\nAvailable commands:")
-		fmt.Fprintln(os.Stderr, "  ping           - Test server connectivity")
-		fmt.Fprintln(os.Stderr, "  inspect        - Show viewport state and content")
-		fmt.Fprintln(os.Stderr, "  switch_pane    - Switch between chat and log panes")
-		fmt.Fprintln(os.Stderr, "  get_history    - Get conversation history")
+		fmt.Fprintln(os.Stderr, "  ping                    - Test server connectivity")
+		fmt.Fprintln(os.Stderr, "  inspect                 - Show viewport state and content")
+		fmt.Fprintln(os.Stderr, "  switch_pane             - Switch between chat and log panes")
+		fmt.Fprintln(os.Stderr, "  get_history             - Get conversation history")
+		fmt.Fprintln(os.Stderr, "  send_message ROLE TEXT  - Send test message (role: user|assistant)")
 		os.Exit(1)
 	}
 
@@ -30,6 +31,12 @@ func runDebugCommand(args []string) {
 		runSwitchPane()
 	case "get_history":
 		runGetHistory()
+	case "send_message":
+		if len(args) < 3 {
+			fmt.Fprintln(os.Stderr, "Usage: clai debug send_message ROLE TEXT")
+			os.Exit(1)
+		}
+		runSendMessage(args[1], strings.Join(args[2:], " "))
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown debug command: %s\n", command)
 		os.Exit(1)
@@ -115,4 +122,24 @@ func runGetHistory() {
 	}
 
 	fmt.Println(string(output))
+}
+
+func runSendMessage(role, content string) {
+	args := map[string]interface{}{
+		"role":    role,
+		"content": content,
+	}
+
+	resp, err := debug.SendCommand("send_message", args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !resp.Success {
+		fmt.Fprintf(os.Stderr, "Command failed: %s\n", resp.Error)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Message sent. Total messages: %v\n", resp.Data["message_count"])
 }

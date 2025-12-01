@@ -4,6 +4,7 @@ import (
 	"clai/internal/llm"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/brittonhayes/glitter/glitter"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -91,18 +92,32 @@ func (c *ChatModel) View() string {
 		maxBubbleWidth := int(float64(c.Width) * 0.8)
 		maxInnerTextWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
 
+		padLinesToWidth := func(text string, targetWidth int, bgColor lipgloss.Color) string {
+			lines := strings.Split(text, "\n")
+			var paddedLines []string
+			for _, line := range lines {
+				lineWidth := lipgloss.Width(line)
+				if lineWidth < targetWidth {
+					padStyle := lipgloss.NewStyle().
+						Width(targetWidth).
+						Background(bgColor).
+						Align(lipgloss.Left)
+					line = padStyle.Render(line)
+				}
+				paddedLines = append(paddedLines, line)
+			}
+			return strings.Join(paddedLines, "\n")
+		}
+
 		for i, msg := range c.Messages {
 			var rendered string
 			switch msg.Role {
 			case "user":
-				wrappedContent := lipgloss.NewStyle().Width(maxInnerTextWidth).Render(msg.Content)
+				userInnerWidth := maxBubbleWidth - themeStyles.UserMessage.GetHorizontalFrameSize()
+				wrappedContent := lipgloss.NewStyle().Width(userInnerWidth).Render(msg.Content)
 				bubble := themeStyles.UserMessage.Render(wrappedContent)
-				paddedLine := lipgloss.NewStyle().
-					Width(c.Width).
-					Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
-					Align(lipgloss.Left).
-					Render(bubble)
-				rendered = paddedLine
+				bubble = padLinesToWidth(bubble, c.Width, lipgloss.Color(c.Theme.Theme.Primary.Background))
+				rendered = bubble
 			case "assistant":
 				toolBadges := ""
 				if len(msg.SelectedTools) > 0 && i > 0 && c.Messages[i-1].Role == "tool" {
@@ -110,24 +125,32 @@ func (c *ChatModel) View() string {
 					toolBadges = "\n  " + badge
 				}
 
-				contentWithHighlighting := llm.RenderWithSyntaxHighlighting(msg.Content, maxInnerTextWidth)
+				contentWithHighlighting := llm.RenderWithSyntaxHighlighting(msg.Content, maxInnerTextWidth, themeStyles.CodeBlockBadge, themeStyles.CodeBlockContainer)
 				bubble := themeStyles.AssistantMessage.Render(contentWithHighlighting + toolBadges)
-				paddedLine := lipgloss.NewStyle().
+				wrapper := lipgloss.NewStyle().
 					Width(c.Width).
 					Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
-					Align(lipgloss.Right).
-					Render(bubble)
-				rendered = paddedLine
+					Align(lipgloss.Right)
+				rendered = wrapper.Render(bubble)
 			case "tool":
 				continue
 			default:
 				rendered = msg.Content
 			}
-			chatContent += rendered + "\n"
+			if i > 0 {
+				chatContent += "\n"
+			}
+			chatContent += rendered
 		}
 		c.CachedContent = chatContent
 		c.ContentDirty = false
 		c.Viewport.SetContent(c.CachedContent)
+
+		if c.AutoScroll && !c.UserScrolled {
+			c.Viewport.GotoBottom()
+			log.Printf("[CHAT] Auto-scroll to bottom after content update: YOffset=%d, Height=%d, TotalLines=%d",
+				c.Viewport.YOffset, c.Viewport.Height, c.Viewport.TotalLineCount())
+		}
 	}
 
 	scrollIndicator := ""
