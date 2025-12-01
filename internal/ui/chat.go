@@ -2,8 +2,9 @@ package ui
 
 import (
 	"clai/internal/llm"
+	"clai/internal/logger"
 	"fmt"
-	"log"
+	"regexp"
 	"strings"
 
 	"github.com/brittonhayes/glitter/glitter"
@@ -13,6 +14,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 type ChatModel struct {
 	Messages           []llm.Message
@@ -57,7 +60,7 @@ func (c *ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	if c.Viewport.YOffset != oldYOffset && !c.Streaming {
 		c.UserScrolled = true
 		c.AutoScroll = false
-		log.Printf("[CHAT] Manual scroll detected: YOffset changed from %d to %d", oldYOffset, c.Viewport.YOffset)
+		logger.Debug("[CHAT] Manual scroll detected: YOffset changed from %d to %d", oldYOffset, c.Viewport.YOffset)
 	}
 
 	switch msg := msg.(type) {
@@ -87,9 +90,9 @@ func (c *ChatModel) View() string {
 
 	// Only rebuild chat content if dirty (messages changed)
 	if c.ContentDirty {
-		log.Printf("[CHAT] Rendering %d messages, c.Width=%d", len(c.Messages), c.Width)
+		logger.Debug("[CHAT] Rendering %d messages, c.Width=%d", len(c.Messages), c.Width)
 		chatContent := ""
-		maxBubbleWidth := int(float64(c.Width) * 0.8)
+		maxBubbleWidth := int(float64(c.Width) * 0.95)
 		maxInnerTextWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
 
 		padLinesToWidth := func(text string, targetWidth int, bgColor lipgloss.Color) string {
@@ -119,21 +122,52 @@ func (c *ChatModel) View() string {
 				bubble = padLinesToWidth(bubble, c.Width, lipgloss.Color(c.Theme.Theme.Primary.Background))
 				rendered = bubble
 			case "assistant":
-				toolBadges := ""
-				if len(msg.SelectedTools) > 0 && i > 0 && c.Messages[i-1].Role == "tool" {
-					badge := themeStyles.ToolBadge.Render("🔧 " + c.Messages[i-1].Content)
-					toolBadges = "\n  " + badge
-				}
-
 				contentWithHighlighting := llm.RenderWithSyntaxHighlighting(msg.Content, maxInnerTextWidth, themeStyles.CodeBlockBadge, themeStyles.CodeBlockContainer)
-				bubble := themeStyles.AssistantMessage.Render(contentWithHighlighting + toolBadges)
+				bubble := themeStyles.AssistantMessage.Render(contentWithHighlighting)
 				wrapper := lipgloss.NewStyle().
 					Width(c.Width).
 					Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
 					Align(lipgloss.Right)
 				rendered = wrapper.Render(bubble)
 			case "tool":
-				continue
+				// Display tool execution results with styling
+				toolInnerWidth := maxBubbleWidth - themeStyles.ToolMessage.GetHorizontalFrameSize()
+
+				// Strip ANSI escape codes from tool message content
+				cleanContent := ansiRegex.ReplaceAllString(msg.Content, "")
+
+				// Extract language information if present
+				languageIcon := "⚙️"
+				header := "Execution Result"
+
+				// Check if this is a code execution result
+				if strings.Contains(cleanContent, "code block") && strings.Contains(cleanContent, "executed") {
+					header = "Code Execution Complete"
+					// Try to detect language from context
+					if strings.Contains(cleanContent, "(bash)") || strings.Contains(strings.ToLower(cleanContent), "bash") {
+						languageIcon = "🐚"
+					} else if strings.Contains(strings.ToLower(cleanContent), "python") {
+						languageIcon = "🐍"
+					} else if strings.Contains(strings.ToLower(cleanContent), "javascript") || strings.Contains(strings.ToLower(cleanContent), "node") {
+						languageIcon = "📜"
+					}
+				}
+
+				// Render the content with markdown (for code blocks in output)
+				displayContent := cleanContent
+				const maxToolOutputLength = 1000
+				if len(displayContent) > maxToolOutputLength {
+					displayContent = displayContent[:maxToolOutputLength] + "\n... (output truncated)"
+				}
+
+				wrappedContent := lipgloss.NewStyle().Width(toolInnerWidth).Render(displayContent)
+				toolHeader := themeStyles.ToolBadge.Render(languageIcon + " " + header)
+				bubble := themeStyles.ToolMessage.Render(toolHeader + "\n" + wrappedContent)
+				wrapper := lipgloss.NewStyle().
+					Width(c.Width).
+					Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
+					Align(lipgloss.Right)
+				rendered = wrapper.Render(bubble)
 			default:
 				rendered = msg.Content
 			}
@@ -148,7 +182,7 @@ func (c *ChatModel) View() string {
 
 		if c.AutoScroll && !c.UserScrolled {
 			c.Viewport.GotoBottom()
-			log.Printf("[CHAT] Auto-scroll to bottom after content update: YOffset=%d, Height=%d, TotalLines=%d",
+			logger.Debug("[CHAT] Auto-scroll to bottom after content update: YOffset=%d, Height=%d, TotalLines=%d",
 				c.Viewport.YOffset, c.Viewport.Height, c.Viewport.TotalLineCount())
 		}
 	}
@@ -188,7 +222,7 @@ func (c *ChatModel) View() string {
 		tooltip := lipgloss.NewStyle().Background(lipgloss.Color(c.Theme.Theme.Bright.Blue)).Foreground(lipgloss.Color(c.Theme.Theme.Bright.White)).Padding(0, 1).Render("Ctrl+T: switch panes | Ctrl+H: help | Ctrl+D: theme | Ctrl+Q: quit")
 		inputFieldRendered = lipgloss.JoinVertical(lipgloss.Left, inputFieldRendered, tooltip)
 		inputHeight = lipgloss.Height(inputFieldRendered)
-		log.Printf("ChatModel.View: Input NOT focused, tooltip added, new inputHeight=%d", inputHeight)
+		logger.Debug("ChatModel.View: Input NOT focused, tooltip added, new inputHeight=%d", inputHeight)
 	}
 
 	// Calculate viewport height
@@ -202,7 +236,7 @@ func (c *ChatModel) View() string {
 	if c.NeedsInitialScroll {
 		c.Viewport.GotoBottom()
 		c.NeedsInitialScroll = false
-		log.Printf("[CHAT] Initial scroll to bottom: YOffset=%d, Height=%d, TotalLines=%d",
+		logger.Debug("[CHAT] Initial scroll to bottom: YOffset=%d, Height=%d, TotalLines=%d",
 			c.Viewport.YOffset, c.Viewport.Height, c.Viewport.TotalLineCount())
 	}
 
