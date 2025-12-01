@@ -480,6 +480,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "ctrl+n":
 		m.Chat.Messages = []llm.Message{}
+		m.Chat.QueryHistory = []string{}
+		m.Chat.HistoryIndex = 0
 		m.Chat.ContentDirty = true
 		m.Chat.TextInput.SetValue("")
 		m.Chat.Viewport.GotoTop()
@@ -603,6 +605,35 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 			Data: map[string]interface{}{
 				"active_pane": m.ActivePane,
 			},
+		}
+
+	case "send_message":
+		role, roleOk := msg.Cmd.Args["role"].(string)
+		content, contentOk := msg.Cmd.Args["content"].(string)
+		if !roleOk || !contentOk {
+			resp = DebugResponse{
+				Success: false,
+				Error:   "Missing required args: role and content",
+			}
+		} else {
+			m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+				Role:    role,
+				Content: content,
+			})
+			m.Chat.ContentDirty = true
+			m.Chat.AutoScroll = true
+			m.Chat.UserScrolled = false
+
+			if role == "user" {
+				m.Chat.QueryHistory = append(m.Chat.QueryHistory, content)
+			}
+
+			resp = DebugResponse{
+				Success: true,
+				Data: map[string]interface{}{
+					"message_count": len(m.Chat.Messages),
+				},
+			}
 		}
 
 	default:
