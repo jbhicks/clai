@@ -17,6 +17,7 @@ func runDebugCommand(args []string) {
 		fmt.Fprintln(os.Stderr, "  switch_pane             - Switch between chat and log panes")
 		fmt.Fprintln(os.Stderr, "  get_history             - Get conversation history")
 		fmt.Fprintln(os.Stderr, "  send_message ROLE TEXT  - Send test message (role: user|assistant)")
+		fmt.Fprintln(os.Stderr, "  send_key KEY            - Send keystroke (e.g., ctrl+h, enter, up)")
 		os.Exit(1)
 	}
 
@@ -37,6 +38,12 @@ func runDebugCommand(args []string) {
 			os.Exit(1)
 		}
 		runSendMessage(args[1], strings.Join(args[2:], " "))
+	case "send_key":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "Usage: clai debug send_key KEY")
+			os.Exit(1)
+		}
+		runSendKey(args[1])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown debug command: %s\n", command)
 		os.Exit(1)
@@ -81,10 +88,26 @@ func runInspect() {
 	fmt.Printf("Total Lines: %v\n", data["total_lines"])
 	fmt.Printf("Message Count: %v\n", data["message_count"])
 	fmt.Printf("Active Pane: %v\n", data["active_pane"])
+	fmt.Printf("Show Help: %v\n", data["show_help"])
+	fmt.Printf("Help Show All: %v\n", data["help_show_all"])
 	fmt.Println(strings.Repeat("=", 80))
 	fmt.Println("VIEWPORT CONTENT (what user sees):")
 	fmt.Println(strings.Repeat("=", 80))
 	fmt.Println(data["viewport_content"])
+	fmt.Println(strings.Repeat("=", 80))
+	if data["show_help"] == true {
+		fmt.Println("HELP CONTENT:")
+		fmt.Println(strings.Repeat("=", 80))
+		fmt.Println(data["help_content"])
+		fmt.Println(strings.Repeat("=", 80))
+	}
+	fmt.Println("FULL CHAT VIEW (with borders and background):")
+	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println(data["full_chat_view"])
+	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println("FULL VIEW (complete UI):")
+	fmt.Println(strings.Repeat("=", 80))
+	fmt.Println(data["full_view"])
 	fmt.Println(strings.Repeat("=", 80))
 }
 
@@ -142,4 +165,23 @@ func runSendMessage(role, content string) {
 	}
 
 	fmt.Printf("Message sent. Total messages: %v\n", resp.Data["message_count"])
+}
+
+func runSendKey(key string) {
+	args := map[string]interface{}{
+		"key": key,
+	}
+
+	resp, err := debug.SendCommand("send_key", args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !resp.Success {
+		fmt.Fprintf(os.Stderr, "Command failed: %s\n", resp.Error)
+		os.Exit(1)
+	}
+
+	fmt.Println("Keystroke sent")
 }

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestSendMessageStream_OpenAI(t *testing.T) {
+func TestSendMessageStreamNoTools_OpenAI(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "chat") {
 			reqBody := make(map[string]interface{})
@@ -94,12 +94,11 @@ func TestSendMessageStream_OpenAI(t *testing.T) {
 	client.apiFormat = FormatOpenAI
 
 	streamChan := make(chan string, 10)
-	toolCallChan := make(chan []ToolCall, 1)
 
 	messages := []Message{{Role: "user", Content: "test"}}
-	_, err := client.SendMessageStream(messages, streamChan, toolCallChan)
+	_, err := client.SendMessageStreamNoTools(messages, streamChan, true)
 	if err != nil {
-		t.Fatalf("SendMessageStream failed: %v", err)
+		t.Fatalf("SendMessageStreamNoTools failed: %v", err)
 	}
 
 	var received []string

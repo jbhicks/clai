@@ -59,6 +59,8 @@ func main() {
 	go func() {
 		<-c
 		logger.Info("Received SIGINT (Ctrl+C), exiting immediately.")
+		ui.StopDebugServer()
+		logFile.Close()
 		os.Exit(0)
 	}()
 	_ = godotenv.Load()
@@ -71,6 +73,7 @@ func main() {
 		host = "http://localhost:11434"
 	}
 	systemPrompt := os.Getenv("SYSTEM_PROMPT")
+
 	flag.Parse()
 	llmClient := llm.NewClient(host, modelName, systemPrompt)
 
@@ -116,18 +119,26 @@ func main() {
 	chatInput.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFAA")).Bold(true).Underline(true)
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
-	help := help.New()
-	help.ShowAll = false
+	availableThemes := ui.GetAvailableThemes()
+	theme := availableThemes[0]
+	helpModel := help.New()
+	helpModel.ShowAll = false
+	helpModel.Styles.FullKey = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.Foreground))
+	helpModel.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground))
+	helpModel.Styles.FullSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground))
 	m := &ui.Model{
 		Log:           viewport.New(0, 0),
-		Help:          help,
+		Help:          helpModel,
 		Keys:          ui.DefaultKeyMap,
 		StatusBarText: "",
 		ActivePane:    ui.ChatPane,
 		ErrorBanner:   lipgloss.NewStyle().Background(lipgloss.Color("9")).Foreground(lipgloss.Color("15")).Padding(0, 1),
-		Theme:         ui.AvailableThemes[0],
+		Theme:         theme,
 		DB:            store,
 	}
+
+	m.Agent = llm.NewAgent(llmClient)
+	logger.Info("Agent mode enabled")
 
 	conv, err := store.GetLatestConversation()
 	if err != nil {
@@ -183,6 +194,11 @@ func main() {
 
 	if _, err := p.Run(); err != nil {
 		logger.Error("Fatal error: %v", err)
+		ui.StopDebugServer()
+		logFile.Close()
 		os.Exit(1)
 	}
+
+	ui.StopDebugServer()
+	logFile.Close()
 }

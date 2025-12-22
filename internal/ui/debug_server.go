@@ -1,8 +1,8 @@
 package ui
 
 import (
+	"clai/internal/logger"
 	"encoding/json"
-	"log"
 	"net"
 	"os"
 
@@ -10,6 +10,8 @@ import (
 )
 
 const SocketPath = "/tmp/clai.sock"
+
+var debugListener net.Listener
 
 type DebugCommand struct {
 	Command string                 `json:"command"`
@@ -35,14 +37,15 @@ func StartDebugServer(p *tea.Program) error {
 		return err
 	}
 
-	log.Printf("[DEBUG] Server listening on %s", SocketPath)
+	debugListener = listener
+	logger.Debug("[DEBUG] Server listening on %s", SocketPath)
 
 	go func() {
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				log.Printf("[DEBUG] Accept error: %v", err)
-				continue
+				logger.Debug("[DEBUG] Accept error (listener closed): %v", err)
+				return
 			}
 
 			go handleConnection(conn, p)
@@ -52,12 +55,19 @@ func StartDebugServer(p *tea.Program) error {
 	return nil
 }
 
+func StopDebugServer() {
+	if debugListener != nil {
+		debugListener.Close()
+		os.Remove(SocketPath)
+	}
+}
+
 func handleConnection(conn net.Conn, p *tea.Program) {
 	decoder := json.NewDecoder(conn)
 	var cmd DebugCommand
 
 	if err := decoder.Decode(&cmd); err != nil {
-		log.Printf("[DEBUG] Decode error: %v", err)
+		logger.Debug("[DEBUG] Decode error: %v", err)
 		sendResponse(conn, DebugResponse{
 			Success: false,
 			Error:   err.Error(),
@@ -66,7 +76,7 @@ func handleConnection(conn net.Conn, p *tea.Program) {
 		return
 	}
 
-	log.Printf("[DEBUG] Received command: %s", cmd.Command)
+	logger.Debug("[DEBUG] Received command: %s", cmd.Command)
 
 	p.Send(DebugServerMsg{
 		Conn: conn,
@@ -77,7 +87,7 @@ func handleConnection(conn net.Conn, p *tea.Program) {
 func sendResponse(conn net.Conn, resp DebugResponse) {
 	encoder := json.NewEncoder(conn)
 	if err := encoder.Encode(resp); err != nil {
-		log.Printf("[DEBUG] Encode error: %v", err)
+		logger.Debug("[DEBUG] Encode error: %v", err)
 	}
 }
 

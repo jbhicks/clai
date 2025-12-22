@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os/exec"
 	"regexp"
 	"time"
@@ -56,12 +55,9 @@ func ExecuteCodeWithTimeout(language, code string, timeout time.Duration) (strin
 	start := time.Now()
 
 	if dangerous, reason := IsDangerousCode(code); dangerous {
-		slog.Warn("blocked dangerous code execution", "language", language, "reason", reason)
 		logExecution(language, code, -1, time.Since(start).Milliseconds(), 0, reason)
 		return "", fmt.Errorf("code execution blocked: %s", reason)
 	}
-
-	slog.Info("executing code block", "language", language, "code", code)
 
 	if timeout > MaxTimeout {
 		timeout = MaxTimeout
@@ -109,8 +105,6 @@ func ExecuteCodeWithTimeout(language, code string, timeout time.Duration) (strin
 
 	logExecution(language, code, exitCode, duration, len(output), execError)
 
-	slog.Info("code execution completed", "language", language, "result_bytes", len(output))
-
 	return result, err
 }
 
@@ -135,7 +129,7 @@ func logExecution(language, code string, exitCode int, duration int64, outputSiz
 	if globalLogger != nil {
 		err := globalLogger.LogExecution(globalConversationID, language, code, exitCode, duration, outputSize, execError)
 		if err != nil {
-			slog.Warn("failed to log execution", "error", err)
+			// Silently fail - don't log to stderr
 		}
 	}
 }

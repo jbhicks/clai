@@ -2,7 +2,6 @@ package testing
 
 import (
 	"clai/internal/llm"
-	"clai/internal/tools"
 )
 
 func NewTestModel() *MockModel {
@@ -25,45 +24,5 @@ func SampleMessages() []llm.Message {
 		{Role: "assistant", Content: "Hi there! How can I help you?"},
 		{Role: "user", Content: "What is 2+2?"},
 		{Role: "assistant", Content: "2+2 equals 4."},
-	}
-}
-
-func SampleToolCall() llm.ToolCall {
-	return llm.ToolCall{
-		Name:       "calculator",
-		Parameters: []byte(`{"expression":"2+2"}`),
-	}
-}
-
-func SampleTools() []tools.Tool {
-	return []tools.Tool{
-		{
-			Name:        "calculator",
-			Description: "Evaluate mathematical expressions",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"expression": map[string]interface{}{
-						"type":        "string",
-						"description": "Mathematical expression to evaluate",
-					},
-				},
-				"required": []string{"expression"},
-			},
-		},
-		{
-			Name:        "echo",
-			Description: "Echo back the provided message",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"message": map[string]interface{}{
-						"type":        "string",
-						"description": "Message to echo",
-					},
-				},
-				"required": []string{"message"},
-			},
-		},
 	}
 }

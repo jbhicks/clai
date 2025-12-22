@@ -1,9 +1,16 @@
 package ui
 
 import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+
 	"github.com/brittonhayes/glitter/glitter"
 	"github.com/brittonhayes/glitter/theme"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // Custom theme definitions with vibrant colors
@@ -159,12 +166,95 @@ var SolarizedDarkTheme = theme.Theme{
 	},
 }
 
+// 256-color compatible themes for remote terminals
+var DraculaTheme256 = theme.Theme{
+	Primary: theme.Primary{
+		Background:    lipgloss.Color("235"), // Darker, richer background
+		Foreground:    lipgloss.Color("255"), // Pure white
+		DimForeground: lipgloss.Color("60"),  // Better dim blue
+	},
+	Normal: theme.Normal{
+		Black:   lipgloss.Color("232"), // Very dark gray
+		Red:     lipgloss.Color("197"), // Brighter red
+		Green:   lipgloss.Color("48"),  // More vibrant green
+		Yellow:  lipgloss.Color("220"), // Richer yellow
+		Blue:    lipgloss.Color("99"),  // Deeper purple-blue
+		Magenta: lipgloss.Color("205"), // Brighter pink
+		Cyan:    lipgloss.Color("51"),  // Keep cyan as is
+		White:   lipgloss.Color("255"), // Pure white
+	},
+	Bright: theme.Bright{
+		Black:   lipgloss.Color("60"),  // Better dim blue
+		Red:     lipgloss.Color("203"), // Keep as is
+		Green:   lipgloss.Color("77"),  // Keep as is
+		Yellow:  lipgloss.Color("229"), // Keep as is
+		Blue:    lipgloss.Color("147"), // Keep as is
+		Magenta: lipgloss.Color("206"), // Keep as is
+		Cyan:    lipgloss.Color("159"), // Keep as is
+		White:   lipgloss.Color("15"),  // Keep as is
+	},
+	Dim: theme.Dim{
+		Black:   lipgloss.Color("233"), // Very dark
+		Red:     lipgloss.Color("88"),  // Keep as is
+		Green:   lipgloss.Color("28"),  // Keep as is
+		Yellow:  lipgloss.Color("58"),  // Keep as is
+		Blue:    lipgloss.Color("61"),  // Keep as is
+		Magenta: lipgloss.Color("89"),  // Keep as is
+		Cyan:    lipgloss.Color("30"),  // Keep as is
+		White:   lipgloss.Color("102"), // Keep as is
+	},
+}
+
+var TokyoNightTheme256 = theme.Theme{
+	Primary: theme.Primary{
+		Background:    lipgloss.Color("233"), // Richer dark background
+		Foreground:    lipgloss.Color("110"), // Keep as is
+		DimForeground: lipgloss.Color("59"),  // Keep as is
+	},
+	Normal: theme.Normal{
+		Black:   lipgloss.Color("232"), // Very dark gray
+		Red:     lipgloss.Color("167"), // Better red
+		Green:   lipgloss.Color("72"),  // Keep as is
+		Yellow:  lipgloss.Color("179"), // Keep as is
+		Blue:    lipgloss.Color("111"), // Keep as is
+		Magenta: lipgloss.Color("140"), // Keep as is
+		Cyan:    lipgloss.Color("75"),  // Keep as is
+		White:   lipgloss.Color("110"), // Keep as is
+	},
+	Bright: theme.Bright{
+		Black:   lipgloss.Color("59"),  // Keep as is
+		Red:     lipgloss.Color("204"), // Keep as is
+		Green:   lipgloss.Color("77"),  // Keep as is
+		Yellow:  lipgloss.Color("222"), // Keep as is
+		Blue:    lipgloss.Color("111"), // Keep as is
+		Magenta: lipgloss.Color("147"), // Keep as is
+		Cyan:    lipgloss.Color("87"),  // Keep as is
+		White:   lipgloss.Color("15"),  // Keep as is
+	},
+	Dim: theme.Dim{
+		Black:   lipgloss.Color("234"), // Better dim black
+		Red:     lipgloss.Color("96"),  // Keep as is
+		Green:   lipgloss.Color("64"),  // Keep as is
+		Yellow:  lipgloss.Color("100"), // Keep as is
+		Blue:    lipgloss.Color("61"),  // Keep as is
+		Magenta: lipgloss.Color("62"),  // Keep as is
+		Cyan:    lipgloss.Color("66"),  // Keep as is
+		White:   lipgloss.Color("59"),  // Keep as is
+	},
+}
+
 // AvailableThemes provides a list of custom vibrant themes
 var AvailableThemes = []*glitter.UI{
 	glitter.NewUI(DraculaTheme),
 	glitter.NewUI(TokyoNightTheme),
 	glitter.NewUI(CatppuccinTheme),
 	glitter.NewUI(SolarizedDarkTheme),
+}
+
+// AvailableThemes256 provides 256-color compatible themes for remote terminals
+var AvailableThemes256 = []*glitter.UI{
+	glitter.NewUI(DraculaTheme256),
+	glitter.NewUI(TokyoNightTheme256),
 }
 
 // ThemeNames provides human-readable names for the themes
@@ -175,19 +265,122 @@ var ThemeNames = []string{
 	"Solarized Dark",
 }
 
+// ThemeNames256 provides human-readable names for the 256-color themes
+var ThemeNames256 = []string{
+	"Dracula 256",
+	"Tokyo Night 256",
+}
+
+// HasTrueColor checks if terminal supports true color (16M colors)
+func HasTrueColor() bool {
+	// Check for forced true color mode (for users who know their terminal supports it)
+	if os.Getenv("CLAI_FORCE_TRUE_COLOR") == "1" {
+		return true
+	}
+
+	// Check COLORTERM environment variable
+	colorterm := os.Getenv("COLORTERM")
+	if colorterm == "truecolor" || colorterm == "24bit" {
+		return true
+	}
+
+	// Check for WezTerm specifically
+	term := os.Getenv("TERM_PROGRAM")
+	if term == "wezterm" {
+		return true
+	}
+
+	// Check for common true color terminals
+	term = os.Getenv("TERM")
+	if strings.Contains(term, "xterm-256color") ||
+		strings.Contains(term, "screen-256color") ||
+		strings.Contains(term, "tmux-256color") {
+		// These TERM values often support true color, but we need to be more careful
+		// in remote terminal scenarios. Let's check tput colors as a fallback.
+		cmd := exec.Command("tput", "colors")
+		cmd.Stderr = nil
+		if output, err := cmd.Output(); err == nil {
+			if colors := strings.TrimSpace(string(output)); colors != "" {
+				if num, err := strconv.Atoi(colors); err == nil && num > 256 {
+					return true
+				}
+			}
+		}
+		// If tput colors <= 256, don't assume true color support
+		return false
+	}
+
+	// Check if tput reports more than 256 colors
+	cmd := exec.Command("tput", "colors")
+	cmd.Stderr = nil // Suppress stderr
+	if output, err := cmd.Output(); err == nil {
+		if colors := strings.TrimSpace(string(output)); colors != "" {
+			if num, err := strconv.Atoi(colors); err == nil && num > 256 {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// GetAvailableThemes returns the appropriate theme set based on terminal color support
+func GetAvailableThemes() []*glitter.UI {
+	hasTrueColor := HasTrueColor()
+
+	// Debug logging for color detection
+	term := os.Getenv("TERM")
+	colorterm := os.Getenv("COLORTERM")
+	termProgram := os.Getenv("TERM_PROGRAM")
+
+	// Log to debug file for troubleshooting
+	logger := func(msg string) {
+		// Simple logging without importing logger package to avoid circular dependency
+		if f, err := os.OpenFile("debug.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644); err == nil {
+			fmt.Fprintf(f, "[COLOR-DETECT] %s\n", msg)
+			f.Close()
+		}
+	}
+
+	logger(fmt.Sprintf("TERM=%s, COLORTERM=%s, TERM_PROGRAM=%s, HasTrueColor=%v", term, colorterm, termProgram, hasTrueColor))
+
+	if hasTrueColor {
+		logger("Using true color themes")
+		return AvailableThemes
+	}
+	logger("Using 256-color themes")
+	return AvailableThemes256
+}
+
+// GetAvailableThemeNames returns the appropriate theme name set based on terminal color support
+func GetAvailableThemeNames() []string {
+	if HasTrueColor() {
+		return ThemeNames
+	}
+	return ThemeNames256
+}
+
 // GetThemeStyles returns lipgloss styles compatible with the current glitter theme
 func GetThemeStyles(ui *glitter.UI) ThemeStyles {
+	// Explicitly set color profile based on our detection
+	if HasTrueColor() {
+		lipgloss.SetColorProfile(termenv.TrueColor)
+	} else {
+		lipgloss.SetColorProfile(termenv.ANSI256)
+	}
+
 	return ThemeStyles{
 		MainPane: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(ui.Theme.Primary.Foreground)).
-			Background(lipgloss.Color(ui.Theme.Primary.Background)),
+			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			Padding(1, 2),
 
 		StatusBar: lipgloss.NewStyle().
 			Background(lipgloss.Color(ui.Theme.Primary.Background)).
 			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)).
 			Bold(true).
-			Padding(0, 2),
+			Padding(0, 1),
 
 		UserMessage: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -203,11 +396,12 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 			Padding(0, 1),
 
 		ToolMessage: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(ui.Theme.Bright.Blue)).
 			Background(lipgloss.Color(ui.Theme.Dim.Black)).
 			Foreground(lipgloss.Color(ui.Theme.Dim.White)).
 			Italic(true).
-			Padding(0, 1).
-			MarginLeft(2),
+			Padding(0, 1),
 
 		ToolBadge: lipgloss.NewStyle().
 			Background(lipgloss.Color(ui.Theme.Bright.Blue)).

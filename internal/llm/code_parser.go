@@ -60,6 +60,11 @@ func StripCodeTags(content string) string {
 	return strings.TrimSpace(cleaned)
 }
 
+func StripTextBasedFunctionCalls(content string) string {
+	functionCallRegex := regexp.MustCompile(`<function=[a-z_]+>?`)
+	return functionCallRegex.ReplaceAllString(content, "")
+}
+
 func stripTrailingBackgroundPadding(line string) string {
 	re := regexp.MustCompile(`\x1b\[48;[0-9;]+m\s+\x1b\[0m$`)
 	return re.ReplaceAllString(line, "")

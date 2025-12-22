@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
+	"clai/internal/logger"
 	"os"
 	"path/filepath"
 	"time"
@@ -49,7 +49,7 @@ func New() (*Store, error) {
 		return nil, err
 	}
 
-	log.Printf("[DB] Opened database at %s", dbPath)
+	logger.Info("[DB] Opened database at %s", dbPath)
 	return store, nil
 }
 
@@ -97,7 +97,7 @@ func (s *Store) SaveConversation(conv *Conversation) error {
 			return fmt.Errorf("failed to get last insert id: %w", err)
 		}
 		conv.ID = int(id)
-		log.Printf("[DB] Created conversation %d: %s", conv.ID, conv.Title)
+		logger.Info("[DB] Created conversation %d: %s", conv.ID, conv.Title)
 	} else {
 		conv.UpdatedAt = now
 		_, err := s.db.Exec(
@@ -107,7 +107,7 @@ func (s *Store) SaveConversation(conv *Conversation) error {
 		if err != nil {
 			return fmt.Errorf("failed to update conversation: %w", err)
 		}
-		log.Printf("[DB] Updated conversation %d", conv.ID)
+		logger.Info("[DB] Updated conversation %d", conv.ID)
 	}
 
 	return nil
@@ -132,7 +132,7 @@ func (s *Store) GetLatestConversation() (*Conversation, error) {
 		return nil, fmt.Errorf("failed to unmarshal messages: %w", err)
 	}
 
-	log.Printf("[DB] Loaded conversation %d with %d messages", conv.ID, len(conv.Messages))
+	logger.Info("[DB] Loaded conversation %d with %d messages", conv.ID, len(conv.Messages))
 	return &conv, nil
 }
 
@@ -186,7 +186,7 @@ func (s *Store) DeleteConversation(id int) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete conversation: %w", err)
 	}
-	log.Printf("[DB] Deleted conversation %d", id)
+	logger.Info("[DB] Deleted conversation %d", id)
 	return nil
 }
 
