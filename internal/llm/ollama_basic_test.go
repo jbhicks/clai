@@ -23,12 +23,19 @@ func TestOllamaHelloWorld(t *testing.T) {
 	client := llm.NewClient(host, model, "")
 
 	messages := []llm.Message{{Role: "user", Content: "Hello, world!"}}
-	resp, err := client.SendMessage(messages)
+	streamChan := make(chan string, 100)
+	_, err := client.SendMessageStreamNoTools(messages, streamChan, true)
 	if err != nil {
 		t.Skipf("Ollama not running: %v", err)
 	}
-	if resp.Message.Content == "" {
-		t.Errorf("Expected non-empty response, got: %q", resp.Message.Content)
+
+	var response strings.Builder
+	for chunk := range streamChan {
+		response.WriteString(chunk)
+	}
+
+	if response.String() == "" {
+		t.Errorf("Expected non-empty response, got: %q", response.String())
 	}
 }
 

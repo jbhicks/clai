@@ -15,6 +15,53 @@ An AI interface, built for local AI, by AI. AlrAIght?
   - Dynamic bubble sizing with max 70% width
 - **Theme Support**: Multiple color themes (Dracula, Catppuccin Mocha, Tokyo Night Storm)
 - **Live Reload**: Developer-friendly hot reload workflow
+- **Configurable Logging**: Multi-level logging system (DEBUG, INFO, WARN, ERROR) with environment variable control
+- **Autonomous Agent Mode**: Optional ReAct-style agent with embedded JavaScript runtime for complex reasoning and task execution
+
+## Configuration
+
+### Environment Variables
+
+- `OLLAMA_MODEL`: LLM model to use (default: `llama3.1-gpu:latest`)
+- `OLLAMA_HOST`: Ollama server URL (default: `http://localhost:11434`)
+- `SYSTEM_PROMPT`: Custom system prompt for the LLM
+- `AGENT_MODE`: Enable autonomous ReAct agent mode (`true`/`false`, default: `false`)
+- `LOG_LEVEL`: Logging verbosity level - `DEBUG`, `INFO`, `WARN`, or `ERROR` (default: `INFO`)
+
+**Log Levels:**
+- `DEBUG`: Verbose output including LLM request/response details, UI rendering info, and detailed execution traces
+- `INFO`: Standard operational messages (startup, conversation loading, tool execution)
+- `WARN`: Warning messages for non-critical issues
+- `ERROR`: Error messages only
+
+To reduce log verbosity, set `LOG_LEVEL=WARN` or `LOG_LEVEL=ERROR` in your environment or `.env` file.
+
+## Agent Mode
+
+Enable autonomous agent mode by setting `AGENT_MODE=true`. In this mode, the LLM uses a ReAct-style reasoning loop with:
+
+- **Embedded JavaScript Runtime**: Execute code directly using Goja (pure-Go ECMAScript 5.1+ implementation)
+- **Iterative Reasoning**: Think → Code/Delegate → Observe → Repeat
+- **Parallel Sub-Agent Delegation**: Spawn concurrent sub-agents for independent subtasks
+- **Structured Response Format**: Enforces Thought/Delegation/Code/Final Answer structure
+
+**Example queries for agent mode:**
+- `What is 5 + 3?` (simple math via JavaScript)
+- `Calculate 15 * 23 + 100 and log the steps`
+- Complex multi-step reasoning tasks that benefit from iterative refinement
+
+**How it works:**
+1. Agent receives query and enters reasoning loop (max 20 iterations)
+2. Each iteration: LLM responds with structured format (Thought/Code/Delegation/Final Answer)
+3. If Code block present: Execute JavaScript and feed output back as Observation
+4. If Delegation present: Spawn sub-agents in parallel and collect results
+5. Continue until Final Answer or max iterations reached
+
+**Enable:**
+```sh
+export AGENT_MODE=true
+./clai
+```
 
 ## Keyboard Shortcuts
 

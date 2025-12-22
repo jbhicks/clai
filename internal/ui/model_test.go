@@ -73,32 +73,6 @@ func TestWindowSizeMsg(t *testing.T) {
 	}
 }
 
-func TestStreamStartMsg(t *testing.T) {
-	m := newTestModel()
-
-	streamChan := make(chan string, 1)
-	toolCallChan := make(chan []llm.ToolCall, 1)
-
-	msg := streamStartMsg{
-		streamChan:   streamChan,
-		toolCallChan: toolCallChan,
-	}
-
-	newModel, cmd := m.Update(msg)
-	m = newModel.(*Model)
-
-	if m.streamChan == nil || m.toolCallChan == nil {
-		t.Error("expected streamChan and toolCallChan to be set")
-	}
-
-	if cmd == nil {
-		t.Error("expected command to be returned for stream waiting")
-	}
-
-	close(streamChan)
-	close(toolCallChan)
-}
-
 func TestStreamUpdateMsg(t *testing.T) {
 	m := newTestModel()
 
@@ -130,72 +104,6 @@ func TestStreamUpdateMsg(t *testing.T) {
 
 	if m.Chat.Streaming {
 		t.Error("expected Streaming to be false after empty message")
-	}
-}
-
-func TestToolCallMsg(t *testing.T) {
-	m := newTestModel()
-
-	m.Chat.Messages = append(m.Chat.Messages, llm.Message{
-		Role:    "user",
-		Content: "calculate 2+2",
-	})
-	m.Chat.Messages = append(m.Chat.Messages, llm.Message{
-		Role:    "assistant",
-		Content: "",
-	})
-
-	toolCalls := []llm.ToolCall{
-		{
-			Name:       "calculator",
-			Parameters: []byte(`{"expression": "2+2"}`),
-		},
-	}
-
-	msg := ToolCallMsg{ToolCalls: toolCalls}
-	newModel, cmd := m.Update(msg)
-	m = newModel.(*Model)
-
-	if cmd == nil {
-		t.Error("expected command for tool execution")
-	}
-
-	// TODO: Fix pendingToolNames test - field doesn't exist
-	// if len(m.pendingToolNames) != 1 || m.pendingToolNames[0] != "calculator" {
-	// 	t.Errorf("expected pending tool names to be [calculator], got %v", m.pendingToolNames)
-	// }
-}
-
-func TestToolResultMsg(t *testing.T) {
-	m := newTestModel()
-
-	m.Chat.Messages = append(m.Chat.Messages, llm.Message{
-		Role:    "user",
-		Content: "test",
-	})
-
-	msg := ToolResultMsg{
-		ToolName: "calculator",
-		Result:   "4",
-	}
-
-	newModel, cmd := m.Update(msg)
-	m = newModel.(*Model)
-
-	if len(m.Chat.Messages) != 2 {
-		t.Errorf("expected 2 messages (user + tool result), got %d", len(m.Chat.Messages))
-	}
-
-	if m.Chat.Messages[1].Role != "tool" {
-		t.Errorf("expected tool role, got %q", m.Chat.Messages[1].Role)
-	}
-
-	if m.Chat.Messages[1].Content != "calculator: 4" {
-		t.Errorf("expected tool name and result in content, got %q", m.Chat.Messages[1].Content)
-	}
-
-	if cmd == nil {
-		t.Error("expected command for LLM response after tool result")
 	}
 }
 
@@ -245,12 +153,20 @@ func TestHelpToggle(t *testing.T) {
 		t.Error("expected ShowHelp to initially be false")
 	}
 
+	if m.Help.ShowAll {
+		t.Error("expected Help.ShowAll to initially be false")
+	}
+
 	msg := tea.KeyMsg{Type: tea.KeyCtrlH}
 	newModel, _ := m.Update(msg)
 	m = newModel.(*Model)
 
 	if !m.ShowHelp {
 		t.Error("expected ShowHelp to be true after toggle")
+	}
+
+	if !m.Help.ShowAll {
+		t.Error("expected Help.ShowAll to be true when help is shown")
 	}
 
 	newModel, _ = m.Update(msg)

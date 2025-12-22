@@ -300,6 +300,49 @@ func TestCodeBlockTrimming(t *testing.T) {
 	}
 }
 
+func TestStripTextBasedFunctionCalls(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected string
+	}{
+		{
+			name:     "remove function call at start",
+			content:  `<function=web_searchHello, I can help you`,
+			expected: "Hello, I can help you",
+		},
+		{
+			name:     "remove function call in middle",
+			content:  `Hello! How can I assist you today?<function=web_searchI don't have access`,
+			expected: "Hello! How can I assist you today?I don't have access",
+		},
+		{
+			name:     "remove multiple function calls",
+			content:  `<function=calculator<function=web_searchSome text`,
+			expected: "Some text",
+		},
+		{
+			name:     "no function calls",
+			content:  "Just plain text",
+			expected: "Just plain text",
+		},
+		{
+			name:     "function call with closing bracket",
+			content:  `<function=web_search>Result here`,
+			expected: "Result here",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := StripTextBasedFunctionCalls(tt.content)
+			if result != tt.expected {
+				t.Errorf("expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
 func TestRenderWithSyntaxHighlighting(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -328,9 +371,12 @@ func TestRenderWithSyntaxHighlighting(t *testing.T) {
 		},
 	}
 
+	badgeStyle := lipgloss.NewStyle()
+	containerStyle := lipgloss.NewStyle()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := RenderWithSyntaxHighlighting(tt.content, tt.maxWidth)
+			result := RenderWithSyntaxHighlighting(tt.content, tt.maxWidth, badgeStyle, containerStyle)
 
 			if result == "" {
 				t.Error("result should not be empty")

@@ -88,6 +88,9 @@ This repository is a Go CLI project for local AI agent interaction. Follow these
    - **DON'T** set all component widths to full terminal width minus frame - this makes all panes the same size
 
 6. **Debugging Layout Issues**
+   - **CRITICAL**: NEVER add `logger.Debug()` calls inside `View()` methods - they're called in tight render loops
+   - Use the debug server (`clai debug inspect`) instead for inspecting rendered output
+   - If you must add temporary debug logging, only add it in `Update()` methods or initialization functions
    - Log actual rendered dimensions: `lipgloss.Height(view)`, `lipgloss.Width(view)`
    - Log component dimensions before rendering: `component.Width`, `component.Height`
    - Log frame sizes: `style.GetHorizontalFrameSize()`, `style.GetVerticalFrameSize()`
@@ -123,6 +126,7 @@ This repository is a Go CLI project for local AI agent interaction. Follow these
 - ❌ Not accounting for status bars, borders, or other UI chrome in height calculations
 - ❌ Adding multi-line content (`\n` newlines) as single list items - causes height overflow
 - ❌ Creating width wrappers without explicit backgrounds - causes background color mismatches
+- ❌ **NEVER** add debug logging inside `View()` methods - they're called in render loops and will cause infinite spam/lockups
 
 ## Testing
 - Use Go's `testing` package for unit/integration tests.

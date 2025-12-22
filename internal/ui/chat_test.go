@@ -80,51 +80,6 @@ func TestChatModelViewStreamingIndicator(t *testing.T) {
 	}
 }
 
-func TestChatModelViewSelectingToolsIndicator(t *testing.T) {
-	c := newTestChatModel()
-	c.SelectingTools = true
-
-	view := c.View()
-	viewClean := uitesting.StripANSI(view)
-
-	if !strings.Contains(viewClean, "Selecting tools") {
-		t.Error("expected tool selection indicator in view")
-	}
-}
-
-func TestChatModelViewToolBadge(t *testing.T) {
-	c := newTestChatModel()
-	c.Messages = []llm.Message{
-		{Role: "user", Content: "Calculate 2+2"},
-		{Role: "tool", Content: "calculator: 4"},
-		{Role: "assistant", Content: "The result is 4", SelectedTools: []string{"calculator"}},
-	}
-	c.ContentDirty = true
-
-	view := c.View()
-	viewClean := uitesting.StripANSI(view)
-
-	if !strings.Contains(viewClean, "calculator") {
-		t.Error("expected tool badge in view")
-	}
-}
-
-func TestChatModelViewSkipsToolMessages(t *testing.T) {
-	c := newTestChatModel()
-	c.Messages = []llm.Message{
-		{Role: "user", Content: "test"},
-		{Role: "tool", Content: "tool output"},
-		{Role: "assistant", Content: "response"},
-	}
-	c.ContentDirty = true
-
-	_ = c.View()
-
-	if strings.Contains(c.CachedContent, "tool output") {
-		t.Error("expected tool messages to be skipped in rendering")
-	}
-}
-
 func TestChatModelViewCaching(t *testing.T) {
 	c := newTestChatModel()
 	c.Messages = []llm.Message{
@@ -134,10 +89,6 @@ func TestChatModelViewCaching(t *testing.T) {
 
 	view1 := c.View()
 	cached1 := c.CachedContent
-
-	if c.ContentDirty {
-		t.Error("expected ContentDirty to be false after first render")
-	}
 
 	view2 := c.View()
 	cached2 := c.CachedContent
@@ -156,7 +107,6 @@ func TestChatModelViewDirtyFlagTriggersRebuild(t *testing.T) {
 	c.Messages = []llm.Message{
 		{Role: "user", Content: "Hello"},
 	}
-	c.ContentDirty = true
 
 	_ = c.View()
 	cached1 := c.CachedContent

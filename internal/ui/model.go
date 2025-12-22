@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"clai/internal/db"
 	"clai/internal/llm"
+	"clai/internal/logger"
 	"clai/internal/tools"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -54,19 +54,17 @@ type Model struct {
 	ErrorMessage  string
 	ShowError     bool
 	Theme         *glitter.UI
-	streamChan    chan string
-	toolCallChan  chan []llm.ToolCall
 	logChan       chan tea.Msg
+	logDone       chan struct{}
 	DB            interface{}
 	Conversation  interface{}
+	Agent         *llm.Agent
 }
 
 type (
 	LogUpdateMsg       string
 	LLMResponseMsg     struct{ Resp llm.Response }
 	StreamUpdateMsg    string
-	ToolCallMsg        struct{ ToolCalls []llm.ToolCall }
-	ToolResultMsg      struct{ ToolName, Result string }
 	CodeBlockMsg       struct{ Blocks []llm.CodeBlock }
 	CodeResultMsg      struct{ Result string }
 	TickMsg            struct{}
@@ -77,30 +75,11 @@ type (
 	smoothScrollMsg    struct{}
 )
 
-func executeToolCmd(toolCall llm.ToolCall) tea.Cmd {
-	return func() tea.Msg {
-		log.Printf("Executing tool: %s with params: %s", toolCall.Name, string(toolCall.Parameters))
-		result, err := tools.ExecuteTool(toolCall.Name, toolCall.Parameters)
-		if err != nil {
-			log.Printf("Tool execution error: %v", err)
-			return ToolResultMsg{
-				ToolName: toolCall.Name,
-				Result:   fmt.Sprintf("Error: %v", err),
-			}
-		}
-		log.Printf("Tool execution result: %s", result)
-		return ToolResultMsg{
-			ToolName: toolCall.Name,
-			Result:   result,
-		}
-	}
-}
-
 func executeCodeBlocksCmd(blocks []llm.CodeBlock) tea.Cmd {
 	return func() tea.Msg {
 		var results []string
 		for i, block := range blocks {
-			log.Printf("Executing code block %d/%d (language=%s)", i+1, len(blocks), block.Language)
+			logger.Info("Executing code block %d/%d (language=%s)", i+1, len(blocks), block.Language)
 			output, err := tools.ExecuteCode(block.Language, block.Code)
 
 			if err != nil {
@@ -122,46 +101,6 @@ func executeCodeBlocksCmd(blocks []llm.CodeBlock) tea.Cmd {
 	}
 }
 
-func StreamLLMResponseCmd(llmClient llm.LLMClientInterface, messages []llm.Message) tea.Cmd {
-	return func() tea.Msg {
-		streamChan := make(chan string, 100)
-		toolCallChan := make(chan []llm.ToolCall, 1)
-
-		_, err := llmClient.SendMessageStream(messages, streamChan, toolCallChan)
-		if err != nil {
-			return errorMsg{err: err}
-		}
-
-		// Return wrapper that will spawn commands for each chunk
-		return streamStartMsg{streamChan: streamChan, toolCallChan: toolCallChan}
-	}
-}
-
-type streamStartMsg struct {
-	streamChan   chan string
-	toolCallChan chan []llm.ToolCall
-}
-
-func waitForStreamChunk(streamChan <-chan string, toolCallChan <-chan []llm.ToolCall) tea.Cmd {
-	return func() tea.Msg {
-		// Non-blocking check for tool calls first
-		select {
-		case toolCalls, ok := <-toolCallChan:
-			if ok && len(toolCalls) > 0 {
-				return ToolCallMsg{ToolCalls: toolCalls}
-			}
-		default:
-		}
-
-		// Blocking read from stream
-		chunk, ok := <-streamChan
-		if !ok {
-			return StreamUpdateMsg("")
-		}
-		return StreamUpdateMsg(chunk)
-	}
-}
-
 func smoothScrollCmd() tea.Cmd {
 	return tea.Tick(16*time.Millisecond, func(t time.Time) tea.Msg {
 		return smoothScrollMsg{}
@@ -170,11 +109,12 @@ func smoothScrollCmd() tea.Cmd {
 
 func TailLogFileCmd(m *Model) tea.Cmd {
 	m.logChan = make(chan tea.Msg)
-	go tailLogFile(m.logChan)
+	m.logDone = make(chan struct{})
+	go tailLogFile(m.logChan, m.logDone)
 	return readLogChanCmd(m.logChan)
 }
 
-func tailLogFile(logChan chan<- tea.Msg) {
+func tailLogFile(logChan chan<- tea.Msg, done <-chan struct{}) {
 	f, err := os.Open("debug.log")
 	if err == nil {
 		scanner := bufio.NewScanner(f)
@@ -189,20 +129,30 @@ func tailLogFile(logChan chan<- tea.Msg) {
 		offset = t.Size()
 	}
 	for {
-		file, err := os.Open("debug.log")
-		if err != nil {
+		select {
+		case <-done:
+			return
+		default:
+			file, err := os.Open("debug.log")
+			if err != nil {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			file.Seek(offset, 0)
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := scanner.Text()
+				offset += int64(len(line)) + 1
+				select {
+				case logChan <- LogUpdateMsg(line):
+				case <-done:
+					file.Close()
+					return
+				}
+			}
+			file.Close()
 			time.Sleep(1 * time.Second)
-			continue
 		}
-		file.Seek(offset, 0)
-		scanner := bufio.NewScanner(file)
-		for scanner.Scan() {
-			line := scanner.Text()
-			offset += int64(len(line)) + 1
-			logChan <- LogUpdateMsg(line)
-		}
-		file.Close()
-		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -215,9 +165,14 @@ func StartsWithLLMError(s string) bool {
 }
 
 func getThemeName(currentTheme *glitter.UI) string {
-	for i, theme := range AvailableThemes {
+	availableThemes := GetAvailableThemes()
+	themeNames := GetAvailableThemeNames()
+	for i, theme := range availableThemes {
 		if theme == currentTheme {
-			return ThemeNames[i]
+			if i < len(themeNames) {
+				return themeNames[i]
+			}
+			break
 		}
 	}
 	return "Unknown"
@@ -246,7 +201,8 @@ func (m *Model) updateDimensions() {
 	m.Log.Height = max(contentHeight-logPaneStyle.GetVerticalFrameSize(), 3)
 
 	m.Chat.Viewport.Width = m.Chat.Width
-	m.Chat.Viewport.Height = m.Chat.Height
+	// Note: Viewport.Height is set by chat.updateViewportHeight() in chat.Update()
+	// to account for input field, spinner, scroll indicator, etc.
 	m.Chat.TextInput.Width = m.Chat.Width - 8
 }
 
@@ -262,10 +218,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		cmds = append(cmds, m.handleKeyMsg(msg))
-	case streamStartMsg:
-		m.streamChan = msg.streamChan
-		m.toolCallChan = msg.toolCallChan
-		return m, waitForStreamChunk(m.streamChan, m.toolCallChan)
 	case StreamUpdateMsg:
 		chunk := string(msg)
 		if len(chunk) == 0 {
@@ -276,7 +228,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				conv.Messages = m.Chat.Messages
 				if store, ok := m.DB.(*db.Store); ok {
 					if err := store.SaveConversation(conv); err != nil {
-						log.Printf("[DB] Failed to save conversation: %v", err)
+						logger.Info("[DB] Failed to save conversation: %v", err)
 					}
 				}
 			}
@@ -287,20 +239,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if lastMsg.Role == "assistant" {
 					blocks := llm.ParseCodeBlocks(lastMsg.Content)
 					if len(blocks) > 0 {
-						log.Printf("Detected %d code blocks in completed message", len(blocks))
-						m.streamChan = nil
-						m.toolCallChan = nil
+						logger.Info("Detected %d code blocks in completed message", len(blocks))
 						return m, executeCodeBlocksCmd(blocks)
 					}
 				}
 			}
 
-			m.streamChan = nil
-			m.toolCallChan = nil
 			break
 		}
-		if len(m.Chat.Messages) > 0 && m.Chat.Messages[len(m.Chat.Messages)-1].Role == "assistant" && m.Chat.Streaming && !StartsWithLLMError(chunk) {
-			m.Chat.Messages[len(m.Chat.Messages)-1].Content += chunk
+		// Find the last assistant message (may not be the very last message if tool messages exist)
+		lastAssistantIdx := -1
+		for i := len(m.Chat.Messages) - 1; i >= 0; i-- {
+			if m.Chat.Messages[i].Role == "assistant" {
+				lastAssistantIdx = i
+				break
+			}
+		}
+
+		if lastAssistantIdx >= 0 && m.Chat.Streaming && !StartsWithLLMError(chunk) {
+			m.Chat.Messages[lastAssistantIdx].Content += chunk
 			m.Chat.ContentDirty = true
 		} else if chunk != "" {
 			m.Chat.Messages = append(m.Chat.Messages, llm.Message{Role: "assistant", Content: chunk})
@@ -308,13 +265,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if StartsWithLLMError(chunk) {
 			m.Chat.Streaming = false
-			m.streamChan = nil
-			m.toolCallChan = nil
-		} else if m.streamChan != nil {
-			return m, waitForStreamChunk(m.streamChan, m.toolCallChan)
 		}
 	case CodeResultMsg:
-		log.Printf("CodeResultMsg received: %s", msg.Result)
+		logger.Debug("CodeResultMsg received: %s", msg.Result)
 
 		// Strip code tags from last assistant message
 		if len(m.Chat.Messages) > 0 && m.Chat.Messages[len(m.Chat.Messages)-1].Role == "assistant" {
@@ -328,33 +281,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 		m.Chat.ContentDirty = true
 
-		// Send updated conversation back to LLM for final response
+		// Send updated conversation back to agent for final response
 		m.Chat.Streaming = true
-		return m, StreamLLMResponseCmd(m.Chat.LlmClient, m.Chat.Messages)
-	case ToolCallMsg:
-		log.Printf("ToolCallMsg received with %d tool calls", len(msg.ToolCalls))
-		m.Chat.Streaming = false
-		m.streamChan = nil
-		m.toolCallChan = nil
-
-		// Execute all tool calls and collect results
-		var toolResultCmds []tea.Cmd
-		for _, tc := range msg.ToolCalls {
-			toolResultCmds = append(toolResultCmds, executeToolCmd(tc))
-		}
-		return m, tea.Batch(toolResultCmds...)
-	case ToolResultMsg:
-		log.Printf("ToolResultMsg received: %s -> %s", msg.ToolName, msg.Result)
-		// Add tool result to messages
-		m.Chat.Messages = append(m.Chat.Messages, llm.Message{
-			Role:    "tool",
-			Content: fmt.Sprintf("%s: %s", msg.ToolName, msg.Result),
-		})
-		m.Chat.ContentDirty = true
-
-		// Send updated conversation back to LLM for final response
-		m.Chat.Streaming = true
-		return m, StreamLLMResponseCmd(m.Chat.LlmClient, m.Chat.Messages)
+		return m, RunAgentCmd(m.Agent, "continue")
 	case smoothScrollMsg:
 		if m.Chat.SmoothScrollActive {
 			currentOffset := m.Chat.Viewport.YOffset
@@ -395,6 +324,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case DebugServerMsg:
 		cmds = append(cmds, m.handleDebugCommand(msg))
+	case AgentResponseMsg:
+		m.Chat.Streaming = false
+		if msg.Err != nil {
+			logger.Error("[AGENT-RESPONSE] Agent error: %v", msg.Err)
+			m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+				Role:    "assistant",
+				Content: fmt.Sprintf("Agent error: %v", msg.Err),
+			})
+		} else {
+			logger.Info("[AGENT-RESPONSE] Agent completed: %s", msg.Response)
+			m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+				Role:    "assistant",
+				Content: msg.Response,
+			})
+		}
+		m.Chat.ContentDirty = true
+
+		// Save conversation after agent response
+		if conv, ok := m.Conversation.(*db.Conversation); ok {
+			conv.Messages = m.Chat.Messages
+			if store, ok := m.DB.(*db.Store); ok {
+				if err := store.SaveConversation(conv); err != nil {
+					logger.Info("[DB] Failed to save conversation: %v", err)
+				}
+			}
+		}
 	default:
 		var cmd tea.Cmd
 		updatedChat, cmd := m.Chat.Update(msg)
@@ -418,6 +373,10 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 	// Handle global hotkeys that work regardless of focus
 	switch msg.String() {
 	case "ctrl+c":
+		// Signal log tailer to stop
+		if m.logDone != nil {
+			close(m.logDone)
+		}
 		return tea.Quit
 	case "enter":
 		if m.Chat.TextInput.Focused() {
@@ -430,6 +389,8 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 				m.Chat.Viewport.GotoBottom()
 				m.Chat.TextInput.SetValue("")
 				m.Chat.Streaming = true
+				m.Chat.QueryHistory = append(m.Chat.QueryHistory, userMsg)
+				m.Chat.HistoryIndex = 0
 
 				// Update conversation with new message
 				if conv, ok := m.Conversation.(*db.Conversation); ok {
@@ -439,12 +400,17 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 					}
 					if store, ok := m.DB.(*db.Store); ok {
 						if err := store.SaveConversation(conv); err != nil {
-							log.Printf("[DB] Failed to save conversation: %v", err)
+							logger.Info("[DB] Failed to save conversation: %v", err)
 						}
 					}
 				}
 
-				return StreamLLMResponseCmd(m.Chat.LlmClient, m.Chat.Messages)
+				if m.Agent != nil {
+					logger.Info("[AGENT-MODE] Running query through agent: %s", userMsg)
+					return RunAgentCmd(m.Agent, userMsg)
+				}
+
+				logger.Warn("[AGENT-MODE] Agent is nil, cannot process query")
 			}
 		}
 	}
@@ -458,14 +424,19 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 				conv.Messages = m.Chat.Messages
 				if store, ok := m.DB.(*db.Store); ok {
 					if err := store.SaveConversation(conv); err != nil {
-						log.Printf("[DB] Failed to save conversation on quit: %v", err)
+						logger.Info("[DB] Failed to save conversation: %v", err)
 					}
 				}
 			}
 		}
+		// Signal log tailer to stop
+		if m.logDone != nil {
+			close(m.logDone)
+		}
 		return tea.Quit
 	case "ctrl+h":
 		m.ShowHelp = !m.ShowHelp
+		m.Help.ShowAll = true
 		return nil
 	case "ctrl+t":
 		if m.ActivePane == ChatPane {
@@ -475,17 +446,21 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	case "ctrl+d":
+		availableThemes := GetAvailableThemes()
 		currentIdx := 0
-		for i, theme := range AvailableThemes {
+		for i, theme := range availableThemes {
 			if theme == m.Theme {
 				currentIdx = i
 				break
 			}
 		}
-		nextIdx := (currentIdx + 1) % len(AvailableThemes)
-		m.Theme = AvailableThemes[nextIdx]
+		nextIdx := (currentIdx + 1) % len(availableThemes)
+		m.Theme = availableThemes[nextIdx]
 		m.Chat.Theme = m.Theme
 		m.Chat.ContentDirty = true
+		m.Help.Styles.FullKey = lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Primary.Foreground))
+		m.Help.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Primary.DimForeground))
+		m.Help.Styles.FullSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Primary.DimForeground))
 		themeName := getThemeName(m.Theme)
 		m.StatusBarText = fmt.Sprintf("Model: %s | Host: %s | Format: %s | Theme: %s",
 			m.Chat.LlmClient.Model(),
@@ -500,16 +475,23 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 				conv.Messages = m.Chat.Messages
 				if store, ok := m.DB.(*db.Store); ok {
 					if err := store.SaveConversation(conv); err != nil {
-						log.Printf("[DB] Failed to save conversation: %v", err)
+						logger.Info("[DB] Failed to save conversation: %v", err)
 					}
 				}
 			}
 		}
 
-		// Create new conversation
+		// Create new conversation and save it immediately
 		newConv := &db.Conversation{
 			Title:    "New Conversation",
 			Messages: []llm.Message{},
+		}
+		if store, ok := m.DB.(*db.Store); ok {
+			if err := store.SaveConversation(newConv); err != nil {
+				logger.Warn("[DB] Failed to save new conversation: %v", err)
+			} else {
+				logger.Info("[DB] Created new conversation with ID %d", newConv.ID)
+			}
 		}
 		m.Conversation = newConv
 
@@ -522,7 +504,41 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		m.Chat.UserScrolled = false
 		m.Chat.AutoScroll = true
 		return nil
-	case "up", "k":
+	case "up":
+		if m.Chat.TextInput.Focused() {
+			if len(m.Chat.QueryHistory) > 0 && m.Chat.HistoryIndex < len(m.Chat.QueryHistory) {
+				m.Chat.HistoryIndex++
+				m.Chat.TextInput.SetValue(m.Chat.QueryHistory[len(m.Chat.QueryHistory)-m.Chat.HistoryIndex])
+				m.Chat.TextInput.CursorEnd()
+			}
+		} else {
+			m.Chat.SmoothScrollTarget = max(m.Chat.Viewport.YOffset-1, 0)
+			m.Chat.SmoothScrollActive = true
+			m.Chat.UserScrolled = true
+			m.Chat.AutoScroll = false
+			return smoothScrollCmd()
+		}
+	case "down":
+		if m.Chat.TextInput.Focused() {
+			if m.Chat.HistoryIndex > 1 {
+				m.Chat.HistoryIndex--
+				m.Chat.TextInput.SetValue(m.Chat.QueryHistory[len(m.Chat.QueryHistory)-m.Chat.HistoryIndex])
+				m.Chat.TextInput.CursorEnd()
+			} else if m.Chat.HistoryIndex == 1 {
+				m.Chat.HistoryIndex--
+				m.Chat.TextInput.SetValue("")
+			}
+		} else {
+			maxOffset := max(m.Chat.Viewport.TotalLineCount()-m.Chat.Viewport.Height, 0)
+			m.Chat.SmoothScrollTarget = max(0, min(m.Chat.Viewport.YOffset+1, maxOffset))
+			m.Chat.SmoothScrollActive = true
+			if m.Chat.Viewport.AtBottom() {
+				m.Chat.UserScrolled = false
+				m.Chat.AutoScroll = true
+			}
+			return smoothScrollCmd()
+		}
+	case "k":
 		if !m.Chat.TextInput.Focused() {
 			m.Chat.SmoothScrollTarget = max(m.Chat.Viewport.YOffset-1, 0)
 			m.Chat.SmoothScrollActive = true
@@ -530,7 +546,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			m.Chat.AutoScroll = false
 			return smoothScrollCmd()
 		}
-	case "down", "j":
+	case "j":
 		if !m.Chat.TextInput.Focused() {
 			maxOffset := max(m.Chat.Viewport.TotalLineCount()-m.Chat.Viewport.Height, 0)
 			m.Chat.SmoothScrollTarget = max(0, min(m.Chat.Viewport.YOffset+1, maxOffset))
@@ -588,7 +604,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 }
 
 func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
-	log.Printf("[DEBUG] Handling command: %s", msg.Cmd.Command)
+	logger.Debug("[DEBUG] Handling command: %s", msg.Cmd.Command)
 
 	var resp DebugResponse
 
@@ -603,10 +619,18 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 
 	case "inspect":
 		chatView := m.Chat.Viewport.View()
+		fullChatView := m.Chat.View()
+		fullView := m.View()
+		helpContent := ""
+		if m.ShowHelp {
+			helpContent = m.Help.View(m.Keys)
+		}
 		resp = DebugResponse{
 			Success: true,
 			Data: map[string]interface{}{
 				"viewport_content": chatView,
+				"full_chat_view":   fullChatView,
+				"full_view":        fullView,
 				"width":            m.Width,
 				"height":           m.Height,
 				"chat_width":       m.Chat.Width,
@@ -617,6 +641,9 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 				"total_lines":      m.Chat.Viewport.TotalLineCount(),
 				"active_pane":      m.ActivePane,
 				"theme":            "current",
+				"show_help":        m.ShowHelp,
+				"help_show_all":    m.Help.ShowAll,
+				"help_content":     helpContent,
 			},
 		}
 
@@ -670,6 +697,68 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 			}
 		}
 
+	case "send_key":
+		key, keyOk := msg.Cmd.Args["key"].(string)
+		if !keyOk {
+			resp = DebugResponse{
+				Success: false,
+				Error:   "Missing required arg: key",
+			}
+		} else {
+			keyMsg := tea.KeyMsg{}
+			keyMsg.Type = tea.KeyRunes
+
+			switch key {
+			case "ctrl+h":
+				keyMsg.Type = tea.KeyCtrlH
+			case "ctrl+q":
+				keyMsg.Type = tea.KeyCtrlQ
+			case "ctrl+c":
+				keyMsg.Type = tea.KeyCtrlC
+			case "ctrl+t":
+				keyMsg.Type = tea.KeyCtrlT
+			case "ctrl+d":
+				keyMsg.Type = tea.KeyCtrlD
+			case "ctrl+n":
+				keyMsg.Type = tea.KeyCtrlN
+			case "enter":
+				keyMsg.Type = tea.KeyEnter
+			case "up":
+				keyMsg.Type = tea.KeyUp
+			case "down":
+				keyMsg.Type = tea.KeyDown
+			case "left":
+				keyMsg.Type = tea.KeyLeft
+			case "right":
+				keyMsg.Type = tea.KeyRight
+			case "pgup":
+				keyMsg.Type = tea.KeyPgUp
+			case "pgdown":
+				keyMsg.Type = tea.KeyPgDown
+			case "home":
+				keyMsg.Type = tea.KeyHome
+			case "end":
+				keyMsg.Type = tea.KeyEnd
+			default:
+				resp = DebugResponse{
+					Success: false,
+					Error:   fmt.Sprintf("Unknown key: %s", key),
+				}
+				SendDebugResponse(msg.Conn, resp)
+				msg.Conn.Close()
+				return nil
+			}
+
+			m.Update(keyMsg)
+
+			resp = DebugResponse{
+				Success: true,
+				Data: map[string]interface{}{
+					"key_sent": key,
+				},
+			}
+		}
+
 	default:
 		resp = DebugResponse{
 			Success: false,
@@ -679,12 +768,12 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 
 	SendDebugResponse(msg.Conn, resp)
 	msg.Conn.Close()
-	log.Printf("[DEBUG] Response sent and connection closed for command: %s", msg.Cmd.Command)
+	logger.Debug("[DEBUG] Response sent and connection closed for command: %s", msg.Cmd.Command)
 	return nil
 }
 
 func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
-	log.Printf("handleWindowSizeMsg: WindowSizeMsg received - Width: %d, Height: %d", msg.Width, msg.Height)
+	logger.Debug("handleWindowSizeMsg: WindowSizeMsg received - Width: %d, Height: %d", msg.Width, msg.Height)
 
 	// Only update if we receive non-zero dimensions
 	// If WindowSizeMsg has 0x0, keep the manually detected size from main.go
@@ -694,17 +783,17 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 	if msg.Height > 0 {
 		m.Height = msg.Height
 	}
-	log.Printf("handleWindowSizeMsg: Using Width: %d, Height: %d", m.Width, m.Height)
+	logger.Debug("handleWindowSizeMsg: Using Width: %d, Height: %d", m.Width, m.Height)
 
 	themeStyles := GetThemeStyles(m.Theme)
 
 	// Calculate total height available for content (excluding status bar and potential error banner)
 	// Status bar always takes 1 row (don't use GetHeight() which returns 0)
 	contentHeight := m.Height - 1
-	log.Printf("handleWindowSizeMsg: Initial contentHeight (after status bar): %d", contentHeight)
+	logger.Debug("handleWindowSizeMsg: Initial contentHeight (after status bar): %d", contentHeight)
 	if m.ShowError && m.ErrorMessage != "" {
 		contentHeight -= m.ErrorBanner.GetHeight()
-		log.Printf("handleWindowSizeMsg: contentHeight after error banner: %d", contentHeight)
+		logger.Debug("handleWindowSizeMsg: contentHeight after error banner: %d", contentHeight)
 	}
 
 	const minPaneWidth = 20
@@ -730,7 +819,7 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 	m.Log.Width = logPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
 	m.Log.Height = contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
 
-	log.Printf("handleWindowSizeMsg: m.Chat.Width: %d, m.Chat.Height: %d (contentHeight=%d, frameSize=%d)",
+	logger.Debug("handleWindowSizeMsg: m.Chat.Width: %d, m.Chat.Height: %d (contentHeight=%d, frameSize=%d)",
 		m.Chat.Width, m.Chat.Height, contentHeight, themeStyles.MainPane.GetVerticalFrameSize())
 
 	// Ensure minimum dimensions
@@ -743,7 +832,8 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 
 	// Update chat components dimensions
 	m.Chat.Viewport.Width = m.Chat.Width
-	m.Chat.Viewport.Height = m.Chat.Height
+	// Note: Viewport.Height is set by chat.updateViewportHeight() in chat.Update()
+	// to account for input field, spinner, scroll indicator, etc.
 	m.Chat.TextInput.Width = m.Chat.Width - 8
 	m.Log.Width = logPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
 	m.Log.Height = contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
@@ -779,7 +869,14 @@ func (m *Model) View() string {
 	chatViewInner := m.Chat.View()
 	chatView := chatPaneStyle.Render(chatViewInner)
 
-	logView := logPaneStyle.Render(m.Log.View())
+	// Wrap log viewport content with background to fill the entire pane
+	logContent := m.Log.View()
+	logWrapper := lipgloss.NewStyle().
+		Width(m.Log.Width).
+		Height(m.Log.Height).
+		Background(lipgloss.Color(m.Theme.Theme.Primary.Background))
+	logContentFilled := logWrapper.Render(logContent)
+	logView := logPaneStyle.Render(logContentFilled)
 
 	mainView := lipgloss.JoinHorizontal(lipgloss.Top, chatView, logView)
 	statusBarRendered := themeStyles.StatusBar.Width(m.Width).Render(m.StatusBarText)

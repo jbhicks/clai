@@ -5,11 +5,14 @@ PID_FILE="/tmp/clai_dev.pid"
 BUILD_TRIGGER="/tmp/clai_rebuild_trigger"
 
 cleanup() {
+    echo "Cleaning up..." > /dev/tty
     if [ -f "$PID_FILE" ]; then
         kill $(cat "$PID_FILE") 2>/dev/null || true
         rm -f "$PID_FILE"
     fi
     rm -f "$BUILD_TRIGGER"
+    # Kill any remaining clai processes
+    pkill -f "./clai" 2>/dev/null || true
     exit 0
 }
 
@@ -25,8 +28,18 @@ rebuild_and_restart() {
     echo "Rebuilding..."
     if go build -o $BINARY ./cmd/clai 2>&1; then
         clear
-        ./$BINARY < /dev/tty > /dev/tty 2>&1 &
-        echo $! > "$PID_FILE"
+        AGENT_MODE=true LOG_LEVEL=DEBUG ./$BINARY < /dev/tty > /dev/tty 2>&1 &
+        local app_pid=$!
+        echo $app_pid > "$PID_FILE"
+        
+        # Wait for app to exit
+        wait $app_pid 2>/dev/null
+        local exit_code=$?
+        
+        # If app exited normally (0) and not killed by us, user quit intentionally
+        if [ $exit_code -eq 0 ]; then
+            echo "App exited normally. Press Ctrl+C to stop watching, or save a file to restart."
+        fi
     else
         echo "Build failed!"
         sleep 2

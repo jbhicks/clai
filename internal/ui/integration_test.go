@@ -3,7 +3,6 @@ package ui
 import (
 	"bytes"
 	"clai/internal/llm"
-	"clai/internal/tools"
 	uitesting "clai/internal/ui/testing"
 	"context"
 	"errors"
@@ -42,6 +41,7 @@ func TestChatIntegrationSimpleConversation(t *testing.T) {
 			Theme:     AvailableThemes[0],
 		},
 		Theme: AvailableThemes[0],
+		Agent: llm.NewAgent(mockLLM),
 	}
 
 	p := tea.NewProgram(m,
@@ -80,7 +80,7 @@ func TestChatIntegrationSimpleConversation(t *testing.T) {
 	}
 }
 
-func TestChatIntegrationToolExecution(t *testing.T) {
+func TestChatIntegrationCodeExecution(t *testing.T) {
 	var buf bytes.Buffer
 	var in bytes.Buffer
 
@@ -89,23 +89,21 @@ func TestChatIntegrationToolExecution(t *testing.T) {
 
 	mockLLM := &statefulMockLLM{
 		base: baseMock,
-		onStream: func(messages []llm.Message, streamChan chan<- string, toolCallChan chan<- []llm.ToolCall) (llm.Response, error) {
+		onStream: func(messages []llm.Message, streamChan chan<- string) (llm.Response, error) {
 			callCount++
 			if callCount == 1 {
-				baseMock.ToolCallsToEmit = []llm.ToolCall{uitesting.SampleToolCall()}
-				baseMock.Response = ""
-				baseMock.StreamChunks = []string{}
+				baseMock.Response = "```bash\necho 'test'\n```"
+				baseMock.StreamChunks = []string{"```bash\necho 'test'\n```"}
 			} else {
-				baseMock.ToolCallsToEmit = []llm.ToolCall{}
-				baseMock.Response = "The result is 4"
-				baseMock.StreamChunks = []string{"The ", "result ", "is ", "4"}
+				baseMock.Response = "The result is test"
+				baseMock.StreamChunks = []string{"The ", "result ", "is ", "test"}
 			}
-			return baseMock.SendMessageStream(messages, streamChan, toolCallChan)
+			return baseMock.SendMessageStreamNoTools(messages, streamChan, false)
 		},
 	}
 
 	ti := textinput.New()
-	ti.SetValue("what is 2+2?")
+	ti.SetValue("run echo test")
 	ti.Focus()
 
 	m := &Model{
@@ -122,6 +120,7 @@ func TestChatIntegrationToolExecution(t *testing.T) {
 			Theme:     AvailableThemes[0],
 		},
 		Theme: AvailableThemes[0],
+		Agent: llm.NewAgent(mockLLM),
 	}
 
 	p := tea.NewProgram(m,
@@ -155,37 +154,21 @@ func TestChatIntegrationToolExecution(t *testing.T) {
 		t.Fatal("test timed out")
 	}
 
-	if baseMock.CallCount < 2 {
-		t.Errorf("expected at least 2 LLM calls (initial + tool result), got %d", baseMock.CallCount)
+	if baseMock.CallCount < 1 {
+		t.Errorf("expected at least 1 LLM call, got %d", baseMock.CallCount)
 	}
 }
 
 type statefulMockLLM struct {
 	base     *uitesting.MockLLM
-	onStream func([]llm.Message, chan<- string, chan<- []llm.ToolCall) (llm.Response, error)
+	onStream func([]llm.Message, chan<- string) (llm.Response, error)
 }
 
-func (s *statefulMockLLM) SendMessage(messages []llm.Message) (llm.Response, error) {
-	return s.base.SendMessage(messages)
-}
-
-func (s *statefulMockLLM) SendMessageStream(messages []llm.Message, streamChan chan<- string, toolCallChan chan<- []llm.ToolCall) (llm.Response, error) {
+func (s *statefulMockLLM) SendMessageStreamNoTools(messages []llm.Message, streamChan chan<- string, includeSystemPrompt bool) (llm.Response, error) {
 	if s.onStream != nil {
-		return s.onStream(messages, streamChan, toolCallChan)
+		return s.onStream(messages, streamChan)
 	}
-	return s.base.SendMessageStream(messages, streamChan, toolCallChan)
-}
-
-func (s *statefulMockLLM) SendMessageStreamNoTools(messages []llm.Message, streamChan chan<- string, toolCallChan chan<- []llm.ToolCall) (llm.Response, error) {
-	return s.SendMessageStream(messages, streamChan, toolCallChan)
-}
-
-func (s *statefulMockLLM) SendMessageStreamWithTools(messages []llm.Message, streamChan chan<- string, toolCallChan chan<- []llm.ToolCall, selectedTools []tools.Tool) (llm.Response, error) {
-	return s.SendMessageStream(messages, streamChan, toolCallChan)
-}
-
-func (s *statefulMockLLM) SelectToolsForQuery(query string) ([]tools.Tool, error) {
-	return s.base.SelectToolsForQuery(query)
+	return s.base.SendMessageStreamNoTools(messages, streamChan, includeSystemPrompt)
 }
 
 func (s *statefulMockLLM) Model() string {
@@ -220,6 +203,7 @@ func TestChatIntegrationEmptyState(t *testing.T) {
 			Theme:     AvailableThemes[0],
 		},
 		Theme: AvailableThemes[0],
+		Agent: llm.NewAgent(mockLLM),
 	}
 
 	p := tea.NewProgram(m,
@@ -282,6 +266,7 @@ func TestChatIntegrationMultipleMessages(t *testing.T) {
 			Theme:     AvailableThemes[0],
 		},
 		Theme: AvailableThemes[0],
+		Agent: llm.NewAgent(mockLLM),
 	}
 
 	p := tea.NewProgram(m,
@@ -354,6 +339,7 @@ func TestChatIntegrationErrorHandling(t *testing.T) {
 			Theme:     AvailableThemes[0],
 		},
 		Theme: AvailableThemes[0],
+		Agent: llm.NewAgent(mockLLM),
 	}
 
 	p := tea.NewProgram(m,

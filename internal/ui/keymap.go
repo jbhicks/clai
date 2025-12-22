@@ -14,6 +14,7 @@ type KeyMap struct {
 	PageDown    key.Binding
 	Home        key.Binding
 	End         key.Binding
+	Send        key.Binding
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -22,7 +23,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Help, k.Quit, k.Tab, k.ToggleTheme, k.NewConv},
+		{k.Help, k.Quit, k.Tab, k.ToggleTheme, k.NewConv, k.Send},
 		{k.ScrollUp, k.ScrollDown, k.PageUp, k.PageDown, k.Home, k.End},
 	}
 }
@@ -71,5 +72,9 @@ var DefaultKeyMap = KeyMap{
 	End: key.NewBinding(
 		key.WithKeys("end", "G"),
 		key.WithHelp("end/G", "scroll to bottom"),
+	),
+	Send: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "send message"),
 	),
 }
