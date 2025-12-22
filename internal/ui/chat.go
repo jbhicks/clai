@@ -78,7 +78,13 @@ func (c *ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	}
 
 	c.rebuildContentIfDirty()
+	shouldAutoScroll := c.AutoScroll && !c.UserScrolled && c.ContentDirty
 	c.updateViewportHeight()
+
+	// Auto-scroll after viewport height is finalized
+	if shouldAutoScroll {
+		c.Viewport.GotoBottom()
+	}
 
 	return *c, tea.Batch(cmds...)
 }
@@ -148,12 +154,6 @@ func (c *ChatModel) rebuildContentIfDirty() {
 	c.CachedContent = chatContent
 	c.ContentDirty = false
 	c.Viewport.SetContent(c.CachedContent)
-
-	if c.AutoScroll && !c.UserScrolled {
-		c.Viewport.GotoBottom()
-		logger.Debug("[CHAT] Auto-scroll to bottom after content update: YOffset=%d, Height=%d, TotalLines=%d",
-			c.Viewport.YOffset, c.Viewport.Height, c.Viewport.TotalLineCount())
-	}
 }
 
 func (c *ChatModel) updateViewportHeight() {
