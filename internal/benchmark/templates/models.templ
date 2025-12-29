@@ -1,0 +1,180 @@
+package templates
+
+templ Models() {
+	@Layout("Models & GPU") {
+		<!-- SSE Connection for Server Updates - wraps all content that needs SSE -->
+		<div hx-ext="sse" sse-connect="/api/servers/events">
+			<!-- Navigation Tabs -->
+			<div class="nav">
+				<a href="/models" class="active">Models & GPU</a>
+				<a href="/testing">Testing & Results</a>
+			</div>
+
+			<!-- GPU Status Dashboard -->
+			<div 
+				id="gpu_status"
+				hx-get="/api/gpu/status"
+				hx-trigger="load, every 3s, sse:refresh-servers"
+				hx-swap="morph:outerHTML"
+				hx-ext="morph"
+			>
+				<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px 20px; margin-bottom: 20px;">
+					<span style="color: #94a3b8; font-size: 13px;">Loading GPU status...</span>
+				</div>
+			</div>
+
+		<!-- Model Server Management -->
+		<div class="card">
+			<h2 style="margin-bottom: 20px; font-size: 24px;">Model Servers</h2>
+			<p style="margin-bottom: 20px; color: #cbd5e1;">
+				Manage model servers. Each model requires its own server process on a unique port (8081-8090).
+			</p>
+				
+				<!-- Benchmark Status Messages -->
+				<div id="benchmark_status" style="margin-bottom: 15px;"></div>
+				
+			<div 
+				id="servers_list" 
+				hx-get="/api/servers/list" 
+				hx-trigger="load, every 3s, sse:refresh-servers"
+				hx-swap="outerHTML"
+			>
+				<p style="color: #94a3b8;">Loading servers...</p>
+		</div>
+		</div>
+		</div>
+
+		<!-- Model Downloads Section -->
+		<div hx-ext="sse" sse-connect="/api/models/downloads/stream">
+		<div class="card">
+			<h2 style="margin-bottom: 20px; font-size: 24px;">Download Models</h2>
+			<p style="margin-bottom: 20px; color: #cbd5e1;">
+				Download GGUF models from Hugging Face. Downloads run in the background and will appear in the server list when complete.
+			</p>
+
+			<!-- Download Form -->
+			<form 
+				hx-post="/api/models/download" 
+				hx-target="#download_status"
+				hx-swap="innerHTML"
+				style="margin-bottom: 20px;"
+			>
+				<div style="display: flex; gap: 10px; align-items: flex-end; margin-bottom: 15px;">
+					<div style="flex: 1;">
+						<label style="display: block; margin-bottom: 5px; color: #94a3b8; font-size: 13px;">
+							HuggingFace Model (Repository or Direct URL)
+						</label>
+						<input 
+							type="text" 
+							name="url" 
+							id="model_search"
+							list="model_suggestions"
+							placeholder="Search: qwen, llama, mistral... or paste URL"
+							hx-get="/api/models/search"
+							hx-trigger="keyup changed delay:300ms"
+							hx-target="#model_suggestions"
+							hx-vals='js:{q: document.getElementById("model_search").value}'
+							style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 14px;"
+						/>
+						<datalist id="model_suggestions"></datalist>
+						
+						<!-- Hidden trigger for fetching model info -->
+						<div 
+							hx-get="/api/models/info"
+							hx-trigger="modelSelected from:body"
+							hx-target="#model_info_container"
+							hx-swap="innerHTML"
+							hx-vals='js:{id: document.getElementById("model_search").value}'
+							style="display: none;"
+						></div>
+					</div>
+					<button id="main_download_btn" type="submit" class="btn" style="padding: 10px 30px;">
+						Download
+					</button>
+				</div>
+				<p style="color: #64748b; font-size: 12px; margin-top: 10px;">
+					Type to search HuggingFace, or paste a direct URL like: <code style="color: #8b5cf6;">https://huggingface.co/bartowski/Qwen2.5-Coder-32B-Instruct-GGUF/resolve/main/model.gguf</code>
+				</p>
+
+				<!-- Model info container (populated when model is selected) -->
+				<div id="model_info_container"></div>
+			</form>
+
+			<script>
+				// Minimal JS to detect datalist selection and trigger HTMX
+				const modelSearchInput = document.getElementById('model_search');
+				const mainDownloadBtn = document.getElementById('main_download_btn');
+				let lastValue = '';
+				
+				function checkForModelSelection() {
+					const value = modelSearchInput.value.trim();
+					console.log('Model search value:', value, 'Last:', lastValue);
+					
+					// If input is empty, clear model info and show main button
+					if (!value) {
+						lastValue = '';
+						document.getElementById('model_info_container').innerHTML = '';
+						if (mainDownloadBtn) mainDownloadBtn.style.display = '';
+						return;
+					}
+					
+					// Only process if value changed and looks like a repo ID
+					if (value && value !== lastValue) {
+						lastValue = value;
+						
+						if (!value.startsWith('http') && value.includes('/')) {
+							// Looks like a model repo ID - fetch details
+							console.log('Triggering modelSelected event for:', value);
+							htmx.trigger(document.body, 'modelSelected');
+						} else if (value.startsWith('http')) {
+							// Show main button for direct URLs
+							console.log('Direct URL detected, showing main button');
+							document.getElementById('model_info_container').innerHTML = '';
+							if (mainDownloadBtn) mainDownloadBtn.style.display = '';
+						}
+					}
+				}
+				
+				// Listen to multiple events to catch datalist selection
+				modelSearchInput.addEventListener('input', checkForModelSelection);
+				modelSearchInput.addEventListener('change', checkForModelSelection);
+				modelSearchInput.addEventListener('blur', checkForModelSelection);
+				
+				// Poll for changes (datalist selections don't always fire events)
+				setInterval(checkForModelSelection, 500);
+				
+				// Debug: Log when HTMX makes the request
+				document.body.addEventListener('htmx:beforeRequest', function(evt) {
+					if (evt.detail.path && evt.detail.path.includes('/api/models/info')) {
+						console.log('HTMX requesting model info:', evt.detail.path);
+					}
+				});
+				
+				document.body.addEventListener('htmx:afterRequest', function(evt) {
+					if (evt.detail.pathInfo && evt.detail.pathInfo.requestPath.includes('/api/models/info')) {
+						console.log('HTMX response status:', evt.detail.xhr.status);
+						if (evt.detail.xhr.status !== 200) {
+							console.error('Model info request failed:', evt.detail.xhr.responseText);
+						}
+					}
+				});
+			</script>
+
+			<!-- Download Status Messages -->
+			<div id="download_status"></div>
+
+			<!-- Active Downloads List -->
+			<div 
+				id="downloads_list"
+				hx-get="/api/models/downloads"
+				hx-trigger="load, sse:downloads_update"
+				hx-swap="morph:outerHTML"
+				hx-ext="morph"
+			>
+				<p style="color: #64748b; font-size: 13px;">Loading downloads...</p>
+			</div>
+		</div>
+		</div>
+
+	}
+}

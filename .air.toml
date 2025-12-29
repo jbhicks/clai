@@ -11,26 +11,34 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
+  # Pre-build command (runs before build)
+  # Using wrapper script because Air doesn't properly handle command args
+  pre_cmd = ["/tmp/templ-gen.sh"]
+
   # The command to build your application.
   cmd = "go build -o ./tmp/clai ./cmd/clai"
 
   # The path to the binary to run.
   bin = "tmp/clai"
-
-  # A command to run the binary.
-  full_bin = "./tmp/clai"
+  
+  # Arguments to pass to the binary
+  args_bin = ["benchmark"]
 
   # A list of file extensions to watch.
-  include_ext = ["go", "tpl", "tmpl", "html"]
+  include_ext = ["go", "tpl", "tmpl", "html", "templ"]
 
   # A list of directories to exclude from watching.
-  exclude_dir = ["assets", "tmp", "vendor"]
+  exclude_dir = ["assets", "tmp", "vendor", "_build", "model_test_results"]
 
   # A list of directories to include for watching.
   include_dir = []
 
   # A list of files to exclude from watching.
   exclude_file = []
+
+  # Exclude generated templ files from watching to prevent rebuild loops
+  # The files are still compiled into the binary, just not watched for changes
+  exclude_regex = ["_templ\\.go$"]
 
   # The name of the log file.
   log = "air.log"
@@ -42,10 +50,16 @@ tmp_dir = "tmp"
   stop_on_error = true
 
   # Send an interrupt signal to the running application before killing it.
-  send_interrupt = false
+  send_interrupt = true
 
   # The delay in milliseconds before killing the application.
-  kill_delay = 500
+  kill_delay = 1000
+
+  # Rerun build command if it returns an error
+  rerun = false
+  
+  # Delay after sending an interrupt signal
+  rerun_delay = 500
 
 [log]
   # Show the time in the log.

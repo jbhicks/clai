@@ -1,0 +1,91 @@
+package templates
+
+import (
+	"clai/internal/db"
+	"fmt"
+)
+
+templ RunDetails(run *db.BenchmarkRun, results []db.BenchmarkResult) {
+	@Layout("Test Run Details") {
+		<div class="card">
+			<h2 style="margin-bottom: 20px;">{ run.ModelName }</h2>
+			<div style="margin-bottom: 20px;">
+				<span class="metric">Success Rate: <span class={
+					templ.KV("success-high", run.SuccessRate >= 70),
+					templ.KV("success-medium", run.SuccessRate >= 50 && run.SuccessRate < 70),
+					templ.KV("success-low", run.SuccessRate < 50),
+				}>{ fmt.Sprintf("%.1f%%", run.SuccessRate) }</span></span>
+				<span class="metric">Total Time: { fmt.Sprintf("%.2fs", run.TotalTimeSeconds) }</span>
+				<span class="metric">Avg Iterations: { fmt.Sprintf("%.1f", run.AvgIterations) }</span>
+				<span class="metric">Model URL: { run.ModelURL }</span>
+			</div>
+		</div>
+		
+		<div class="card">
+			<h3 style="margin-bottom: 20px;">Test Results</h3>
+			<table>
+				<thead>
+					<tr>
+						<th>Test Name</th>
+						<th>Status</th>
+						<th>Time</th>
+						<th>Iterations</th>
+						<th>Details</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, result := range results {
+						<tr>
+							<td><strong>{ result.TestName }</strong></td>
+							<td>
+								if result.Passed {
+									<span class="status-pass">PASS</span>
+								} else {
+									<span class="status-fail">FAIL</span>
+								}
+							</td>
+							<td>{ fmt.Sprintf("%.2fs", result.TimeSeconds) }</td>
+							<td>{ fmt.Sprintf("%d", result.Iterations) }</td>
+							<td>
+								<button class="btn btn-secondary" 
+									style="padding: 4px 12px; font-size: 12px;"
+									hx-get={ fmt.Sprintf("/api/result/%d", result.ID) }
+									hx-target="#result-details"
+									hx-swap="innerHTML">
+									Show Details
+								</button>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		
+		<div id="result-details" class="card" style="display: none;"></div>
+	}
+}
+
+templ ResultDetails(result *db.BenchmarkResult) {
+	<div style="display: block;">
+		<h3 style="margin-bottom: 15px;">{ result.TestName }</h3>
+		
+		<div style="margin-bottom: 15px;">
+			<strong>Query:</strong>
+			<pre style="background: #0f172a; padding: 10px; border-radius: 4px; margin-top: 5px; overflow-x: auto;">{ result.Query }</pre>
+		</div>
+		
+		if !result.Passed && result.FailureReason != "" {
+			<div style="margin-bottom: 15px;">
+				<strong style="color: #ef4444;">Failure Reason:</strong>
+				<p style="color: #ef4444; margin-top: 5px;">{ result.FailureReason }</p>
+			</div>
+		}
+		
+		<div style="margin-bottom: 15px;">
+			<strong>Response:</strong>
+			<pre style="background: #0f172a; padding: 10px; border-radius: 4px; margin-top: 5px; white-space: pre-wrap; word-wrap: break-word;">{ result.Response }</pre>
+		</div>
+		
+		<button class="btn btn-secondary" onclick="document.getElementById('result-details').style.display='none'">Close</button>
+	</div>
+}
