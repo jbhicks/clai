@@ -11,6 +11,8 @@ cleanup() {
         rm -f "$PID_FILE"
     fi
     rm -f "$BUILD_TRIGGER"
+    # Kill file watcher
+    [ -n "$WATCHER_PID" ] && kill $WATCHER_PID 2>/dev/null || true
     # Kill any remaining clai processes
     pkill -f "./clai" 2>/dev/null || true
     exit 0
@@ -21,7 +23,7 @@ trap cleanup INT TERM
 rebuild_and_restart() {
     if [ -f "$PID_FILE" ]; then
         kill $(cat "$PID_FILE") 2>/dev/null || true
-        sleep 0.1
+        sleep 0.2
     fi
     
     clear
@@ -31,15 +33,6 @@ rebuild_and_restart() {
         AGENT_MODE=true LOG_LEVEL=DEBUG ./$BINARY < /dev/tty > /dev/tty 2>&1 &
         local app_pid=$!
         echo $app_pid > "$PID_FILE"
-        
-        # Wait for app to exit
-        wait $app_pid 2>/dev/null
-        local exit_code=$?
-        
-        # If app exited normally (0) and not killed by us, user quit intentionally
-        if [ $exit_code -eq 0 ]; then
-            echo "App exited normally. Press Ctrl+C to stop watching, or save a file to restart."
-        fi
     else
         echo "Build failed!"
         sleep 2
@@ -47,12 +40,23 @@ rebuild_and_restart() {
 }
 
 echo "=== clai development mode ==="
+
+# Start file watcher in background before starting app
+echo "Watching for changes..." > /dev/tty
+inotifywait -r -m -e modify,create,delete --include '\.go$|\.env$' . 2>/dev/null | while read path action file; do
+    touch "$BUILD_TRIGGER"
+done &
+WATCHER_PID=$!
+
+# Initial build and start
 rebuild_and_restart
 
-echo "Watching for changes..." > /dev/tty
-
-# Watch for changes using inotifywait
+# Monitor for rebuild triggers
 while true; do
-    inotifywait -r -e modify,create,delete --include '\.go$|\.env$' . >/dev/null 2>&1
-    rebuild_and_restart
+    if [ -f "$BUILD_TRIGGER" ]; then
+        rm -f "$BUILD_TRIGGER"
+        sleep 0.2  # Debounce rapid file changes
+        rebuild_and_restart
+    fi
+    sleep 0.5
 done

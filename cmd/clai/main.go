@@ -30,6 +30,16 @@ func main() {
 		return
 	}
 
+	if len(os.Args) >= 2 && os.Args[1] == "models" {
+		runModelsCommand(os.Args[2:])
+		return
+	}
+
+	if len(os.Args) >= 2 && os.Args[1] == "benchmark" {
+		runBenchmarkCommand(os.Args[2:])
+		return
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Error("PANIC: %v", r)
@@ -128,6 +138,7 @@ func main() {
 	helpModel.Styles.FullSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground))
 	m := &ui.Model{
 		Log:           viewport.New(0, 0),
+		AgentStatus:   ui.NewAgentStatusView(theme),
 		Help:          helpModel,
 		Keys:          ui.DefaultKeyMap,
 		StatusBarText: "",

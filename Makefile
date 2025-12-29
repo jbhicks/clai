@@ -1,12 +1,32 @@
 .PHONY: dev
-# Live reload development with entr (separate build/run processes)
+# Live reload development with inotifywait (handles TTY properly for TUI)
 dev:
-	@if ! command -v entr >/dev/null 2>&1; then \
-		echo "Error: entr is not installed."; \
-		echo "Install with: sudo apt install entr (Debian/Ubuntu) or brew install entr (macOS)"; \
+	@./dev.sh
+
+.PHONY: dev-benchmark
+# Live reload for benchmark server development with Templ templates
+# Air automatically runs 'templ generate' before each build (see .air.toml pre_cmd)
+dev-benchmark:
+	@if ! command -v air >/dev/null 2>&1; then \
+		echo "Error: air is not installed."; \
+		echo "Install with: go install github.com/cosmtrek/air@latest"; \
 		exit 1; \
 	fi
-	@./dev.sh
+	@if ! command -v templ >/dev/null 2>&1; then \
+		echo "Error: templ is not installed."; \
+		echo "Install with: go install github.com/a-h/templ/cmd/templ@latest"; \
+		exit 1; \
+	fi
+	@echo "Starting benchmark server with live reload..."
+	@echo "Air will auto-restart when you edit .go or .templ files."
+	@echo "Templates are auto-compiled via 'templ generate' before each build."
+	@echo "Press Ctrl+C to stop."
+	@air
+
+.PHONY: dev-air
+# Live reload development with air (for non-TUI commands like benchmark server)
+# Alias for dev-benchmark
+dev-air: dev-benchmark
 
 .PHONY: dev-tmux
 # Alternative: tmux-based development (old method)

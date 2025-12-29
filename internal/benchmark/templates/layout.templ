@@ -1,0 +1,405 @@
+package templates
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+	<meta charset="UTF-8"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+	<title>{title} - clai Benchmarks</title>
+	<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+	<script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+	<script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph-ext.min.js"></script>
+	<style>
+			/* Base Styles */
+			* { margin: 0; padding: 0; box-sizing: border-box; }
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+				background: #0f172a;
+				color: #e2e8f0;
+				line-height: 1.6;
+			}
+			
+			/* View Transitions API - Smooth page transitions */
+			@keyframes fade-in {
+				from { opacity: 0; }
+			}
+			@keyframes fade-out {
+				to { opacity: 0; }
+			}
+			@keyframes slide-from-right {
+				from { transform: translateX(90px); }
+			}
+			@keyframes slide-to-left {
+				to { transform: translateX(-90px); }
+			}
+			@keyframes slide-from-bottom {
+				from { transform: translateY(20px); opacity: 0; }
+			}
+			@keyframes scale-in {
+				from { transform: scale(0.95); opacity: 0; }
+			}
+			
+			/* Apply view transitions to main content */
+			.page-content {
+				view-transition-name: page-content;
+			}
+			::view-transition-old(page-content) {
+				animation: 180ms cubic-bezier(0.4, 0, 1, 1) both fade-out,
+				           300ms cubic-bezier(0.4, 0, 0.2, 1) both slide-to-left;
+			}
+			::view-transition-new(page-content) {
+				animation: 320ms cubic-bezier(0, 0, 0.2, 1) 90ms both fade-in,
+				           300ms cubic-bezier(0.4, 0, 0.2, 1) both slide-from-right;
+			}
+			
+			/* Card entrance animation */
+			.card {
+				animation: slide-from-bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+			}
+			
+			/* HTMX Loading States */
+			.htmx-indicator {
+				display: none;
+			}
+			.htmx-request .htmx-indicator,
+			.htmx-request.htmx-indicator {
+				display: inline-block;
+			}
+			
+			/* Swapping animations */
+			.htmx-swapping {
+				opacity: 0;
+				transition: opacity 200ms ease-out;
+			}
+			.htmx-settling {
+				animation: fade-in 300ms ease-in;
+			}
+			.htmx-added {
+				animation: slide-from-bottom 400ms cubic-bezier(0.16, 1, 0.3, 1);
+			}
+			
+			/* Pulse loading animation */
+			@keyframes pulse {
+				0%, 100% { opacity: 1; }
+				50% { opacity: 0.5; }
+			}
+			.loading-pulse {
+				animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+			}
+			
+			/* Skeleton loader */
+			@keyframes skeleton-loading {
+				0% { background-position: -200% 0; }
+				100% { background-position: 200% 0; }
+			}
+			.skeleton {
+				background: linear-gradient(
+					90deg,
+					#1e293b 0%,
+					#334155 50%,
+					#1e293b 100%
+				);
+				background-size: 200% 100%;
+				animation: skeleton-loading 1.5s ease-in-out infinite;
+				border-radius: 4px;
+			}
+			
+			/* Spinner */
+			@keyframes spin {
+				to { transform: rotate(360deg); }
+			}
+			.spinner {
+				width: 16px;
+				height: 16px;
+				border: 2px solid #475569;
+				border-top-color: #667eea;
+				border-radius: 50%;
+				animation: spin 0.6s linear infinite;
+				display: inline-block;
+				vertical-align: middle;
+			}
+			
+			/* Progress bar */
+			.progress-container {
+				width: 100%;
+				height: 8px;
+				background: #1e293b;
+				border-radius: 4px;
+				overflow: hidden;
+				margin: 10px 0;
+			}
+			.progress-bar {
+				height: 100%;
+				background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+				border-radius: 4px;
+				transition: width 0.3s ease;
+				position: relative;
+				overflow: hidden;
+			}
+			.progress-bar::after {
+				content: '';
+				position: absolute;
+				top: 0;
+				left: 0;
+				bottom: 0;
+				right: 0;
+				background: linear-gradient(
+					90deg,
+					transparent,
+					rgba(255, 255, 255, 0.3),
+					transparent
+				);
+				animation: shimmer 2s infinite;
+			}
+			@keyframes shimmer {
+				0% { transform: translateX(-100%); }
+				100% { transform: translateX(100%); }
+			}
+			
+			/* Table row animations */
+			tbody tr {
+				transition: background-color 0.15s ease, transform 0.15s ease;
+			}
+			tbody tr:hover {
+				background: #2d3748;
+				transform: translateX(2px);
+			}
+			tbody tr.htmx-swapping td {
+				opacity: 0;
+				transform: translateX(-20px);
+				transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+			}
+			
+			/* Result details slide-in */
+			.result-details {
+				animation: slide-from-bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+			}
+			
+			/* Button press animation */
+			.btn {
+				transition: transform 0.1s ease, box-shadow 0.1s ease;
+			}
+			.btn:active {
+				transform: scale(0.98);
+			}
+			.btn:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+			
+			/* Toast notification slide-in */
+			.toast {
+				position: fixed;
+				top: 20px;
+				right: 20px;
+				background: #1e293b;
+				border: 1px solid #667eea;
+				border-radius: 8px;
+				padding: 16px;
+				box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+				animation: slide-from-right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+				z-index: 1000;
+			}
+			
+			/* Rest of existing styles */
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+				background: #0f172a;
+				color: #e2e8f0;
+				line-height: 1.6;
+			}
+			.container {
+				max-width: 1400px;
+				margin: 0 auto;
+				padding: 20px;
+			}
+			.header {
+				background: #1e293b;
+				padding: 16px 24px;
+				border-radius: 8px;
+				margin-bottom: 20px;
+				border: 1px solid #334155;
+			}
+			.header h1 {
+				font-size: 24px;
+				margin-bottom: 4px;
+				font-weight: 600;
+				color: #e2e8f0;
+			}
+			.header p {
+				opacity: 0.9;
+				font-size: 13px;
+				margin: 0;
+				color: #94a3b8;
+			}
+			.nav {
+				display: flex;
+				gap: 0;
+				margin-bottom: 20px;
+				border-bottom: 1px solid #334155;
+				padding: 0;
+			}
+			.nav a {
+				padding: 8px 16px;
+				background: transparent;
+				color: #94a3b8;
+				text-decoration: none;
+				border-bottom: 2px solid transparent;
+				transition: all 0.15s ease;
+				font-size: 14px;
+				font-weight: 500;
+				position: relative;
+				margin-bottom: -1px;
+			}
+			.nav a:hover {
+				color: #e2e8f0;
+				border-bottom-color: #64748b;
+				background: transparent;
+			}
+			.nav a.active {
+				color: #e2e8f0;
+				border-bottom-color: #f97316;
+				background: transparent;
+			}
+			.card {
+				background: #1e293b;
+				border-radius: 8px;
+				padding: 20px;
+				margin-bottom: 20px;
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+			}
+			th {
+				background: #0f172a;
+				padding: 12px;
+				text-align: left;
+				font-weight: 600;
+				border-bottom: 2px solid #334155;
+			}
+			td {
+				padding: 12px;
+				border-bottom: 1px solid #334155;
+			}
+			tr:hover {
+				background: #2d3748;
+			}
+			.status-pass {
+				color: #10b981;
+				font-weight: bold;
+			}
+			.status-fail {
+				color: #ef4444;
+				font-weight: bold;
+			}
+			.btn {
+				padding: 10px 20px;
+				background: #667eea;
+				color: white;
+				border: none;
+				border-radius: 6px;
+				cursor: pointer;
+				text-decoration: none;
+				display: inline-block;
+			}
+			.btn:hover {
+				background: #5a67d8;
+			}
+			.btn-secondary {
+				background: #475569;
+			}
+			.btn-secondary:hover {
+				background: #64748b;
+			}
+		.metric {
+			display: inline-block;
+			padding: 4px 12px;
+			background: #334155;
+			border-radius: 4px;
+			margin-right: 10px;
+			font-size: 14px;
+		}
+		.success-high { color: #10b981; }
+	.success-medium { color: #f59e0b; }
+	.success-low { color: #ef4444; }
+	
+	/* Loading Spinner - HTMX indicator */
+	.spinner {
+		display: none; /* Hidden by default */
+		width: 14px;
+		height: 14px;
+		border: 2px solid rgba(255, 255, 255, 0.3);
+		border-radius: 50%;
+		border-top-color: white;
+		animation: spin 0.6s linear infinite;
+		margin-right: 6px;
+		vertical-align: middle;
+	}
+	
+	/* Show spinner when HTMX request is in flight */
+	.spinner.htmx-indicator.htmx-request {
+		display: inline-block;
+	}
+	
+	@keyframes spin {
+		to { transform: rotate(360deg); }
+	}
+</style>
+	</head>
+	<body>
+		<div class="container">
+		<div class="header">
+			<h1>clai Model Benchmarks</h1>
+			<p>Manage servers and test model performance</p>
+		</div>
+			{ children... }
+		</div>
+		
+		<!-- Auto-reload on server restart during development -->
+		<script>
+			// Poll server health every 2 seconds
+			let lastServerCheck = Date.now();
+			let consecutiveFailures = 0;
+			
+			setInterval(async () => {
+				try {
+					const response = await fetch('/health', { 
+						method: 'HEAD',
+						cache: 'no-store'
+					});
+					if (response.ok) {
+						// Server is up
+						if (consecutiveFailures > 0) {
+							// Server just came back up after being down - reload!
+							console.log('Server restarted, reloading page...');
+							window.location.reload();
+						}
+						consecutiveFailures = 0;
+					} else {
+						consecutiveFailures++;
+					}
+				} catch (e) {
+					// Server might be restarting
+					consecutiveFailures++;
+				}
+			}, 2000);
+		</script>
+
+		<!-- HTMX: Process dynamically loaded content -->
+		<script>
+			// When new content is loaded via HTMX, process it so hx-* attributes work
+			document.body.addEventListener('htmx:load', function(evt) {
+				console.log('HTMX loaded new content - processing forms');
+				// Process all forms in the loaded element
+				const forms = evt.detail.elt.querySelectorAll('form[hx-post], form[hx-delete]');
+				forms.forEach(form => {
+					console.log('Processing form:', form.getAttribute('hx-post') || form.getAttribute('hx-delete'));
+					htmx.process(form);
+				});
+			});
+		</script>
+	</body>
+	</html>
+}

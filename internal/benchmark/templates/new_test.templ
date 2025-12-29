@@ -1,0 +1,125 @@
+package templates
+
+templ NewTest() {
+	@Layout("New Test") {
+		<div class="card">
+			<h2 style="margin-bottom: 20px; font-size: 24px;">Start New Benchmark Test</h2>
+			<form hx-post="/api/run" hx-target="#result" hx-swap="innerHTML" style="max-width: 600px;">
+				<div style="margin-bottom: 20px;">
+					<label for="model_select" style="display: block; margin-bottom: 8px; font-weight: 500;">Select Model</label>
+					<select 
+						id="model_select" 
+						name="model_select"
+						hx-get="/api/models/options"
+						hx-trigger="load"
+						hx-target="this"
+						hx-swap="innerHTML"
+						style="width: 100%; padding: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 14px; cursor: pointer;"
+						onchange="updateModelFields()"
+					>
+						<option value="">Loading models...</option>
+					</select>
+					<p style="margin-top: 6px; font-size: 12px; color: #94a3b8;">
+						Select a model from available servers
+					</p>
+				</div>
+				
+				<!-- Hidden fields populated by JavaScript -->
+				<input type="hidden" id="model_name" name="model_name" />
+				<input type="hidden" id="model_url" name="model_url" />
+				<input type="hidden" id="api_type" name="api_type" />
+				
+				<!-- Display-only fields showing what was selected -->
+				<div id="selected_info" style="display: none; margin-bottom: 20px; padding: 15px; background: #0f172a; border: 1px solid #334155; border-radius: 6px;">
+					<p style="margin-bottom: 8px;"><strong style="color: #e2e8f0;">Selected Model:</strong> <span id="display_name" style="color: #94a3b8;"></span></p>
+					<p style="margin-bottom: 8px;"><strong style="color: #e2e8f0;">Server URL:</strong> <span id="display_url" style="color: #94a3b8;"></span></p>
+					<p><strong style="color: #e2e8f0;">API Type:</strong> <span id="display_api_type" style="color: #94a3b8;"></span></p>
+				</div>
+				
+				<div style="margin-bottom: 20px;">
+					<button type="submit" class="btn" id="submit_btn" disabled style="opacity: 0.5; cursor: not-allowed;">
+						Start Benchmark
+					</button>
+					<a href="/" class="btn btn-secondary" style="margin-left: 10px;">
+						Cancel
+					</a>
+				</div>
+				<div id="result"></div>
+			</form>
+		</div>
+		
+		<div class="card">
+			<h3 style="margin-bottom: 15px; font-size: 18px;">About Benchmarking</h3>
+			<p style="margin-bottom: 10px; color: #cbd5e1;">
+				The benchmark suite tests the model's ability to perform 12 different tasks:
+			</p>
+			<ul style="margin-left: 20px; color: #cbd5e1; line-height: 2;">
+				<li>Extract specific values from files</li>
+				<li>Count files by extension</li>
+				<li>Perform mathematical calculations</li>
+				<li>Extract and analyze JSON data</li>
+				<li>Execute Python code for complex calculations</li>
+				<li>Verify file contents</li>
+				<li>Process and filter text</li>
+				<li>Handle errors gracefully</li>
+				<li>Analyze code files</li>
+				<li>Answer general knowledge questions</li>
+			</ul>
+			<p style="margin-top: 15px; color: #cbd5e1;">
+				Each test allows multiple iterations for the model to self-correct. The benchmark measures success rate, 
+				average iterations needed, and total time taken.
+			</p>
+		</div>
+		
+		<script>
+			// Function to update model fields when dropdown changes
+			function updateModelFields() {
+				const select = document.getElementById('model_select');
+				const selectedOption = select.options[select.selectedIndex];
+				const infoDiv = document.getElementById('selected_info');
+				const submitBtn = document.getElementById('submit_btn');
+				
+				if (selectedOption.value) {
+					try {
+						const data = JSON.parse(selectedOption.value);
+						
+						// Populate hidden form fields
+						document.getElementById('model_name').value = data.name;
+						document.getElementById('model_url').value = data.url;
+						document.getElementById('api_type').value = data.api_type || '';
+						
+						// Update display fields
+						document.getElementById('display_name').textContent = data.name;
+						document.getElementById('display_url').textContent = data.url;
+						document.getElementById('display_api_type').textContent = data.api_type || 'Unknown';
+						
+						// Show info box and enable submit
+						infoDiv.style.display = 'block';
+						submitBtn.disabled = false;
+						submitBtn.style.opacity = '1';
+						submitBtn.style.cursor = 'pointer';
+					} catch (e) {
+						console.error('Failed to parse model data:', e);
+						resetForm();
+					}
+				} else {
+					resetForm();
+				}
+			}
+			
+			function resetForm() {
+				// Clear hidden fields
+				document.getElementById('model_name').value = '';
+				document.getElementById('model_url').value = '';
+				document.getElementById('api_type').value = '';
+				
+				// Hide info box and disable submit
+				document.getElementById('selected_info').style.display = 'none';
+				const submitBtn = document.getElementById('submit_btn');
+				submitBtn.disabled = true;
+				submitBtn.style.opacity = '0.5';
+				submitBtn.style.cursor = 'not-allowed';
+			}
+		</script>
+	}
+}

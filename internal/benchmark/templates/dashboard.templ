@@ -1,0 +1,56 @@
+package templates
+
+import (
+	"clai/internal/db"
+	"fmt"
+)
+
+templ Dashboard(runs []db.BenchmarkRun) {
+	@Layout("Dashboard") {
+		<div class="card">
+			<h2 style="margin-bottom: 20px;">Recent Test Runs</h2>
+			if len(runs) == 0 {
+				<p style="color: #94a3b8;">No benchmark runs yet. <a href="/new" style="color: #667eea;">Start a new test</a>.</p>
+			} else {
+				<table>
+					<thead>
+						<tr>
+							<th>Model</th>
+							<th>Success Rate</th>
+							<th>Tests</th>
+							<th>Avg Time</th>
+							<th>Completed</th>
+							<th>Actions</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, run := range runs {
+							<tr>
+								<td><strong>{ run.ModelName }</strong></td>
+								<td>
+									<span class={
+										templ.KV("success-high", run.SuccessRate >= 70),
+										templ.KV("success-medium", run.SuccessRate >= 50 && run.SuccessRate < 70),
+										templ.KV("success-low", run.SuccessRate < 50),
+									}>
+										{ fmt.Sprintf("%.1f%%", run.SuccessRate) }
+									</span>
+								</td>
+								<td>
+									<span class="status-pass">{ fmt.Sprintf("%d", run.PassedTests) }</span>
+									/
+									<span class="status-fail">{ fmt.Sprintf("%d", run.FailedTests) }</span>
+								</td>
+								<td>{ fmt.Sprintf("%.2fs", run.TotalTimeSeconds / float64(run.TotalTests)) }</td>
+								<td>{ run.CompletedAt.Format("Jan 2, 3:04 PM") }</td>
+								<td>
+									<a href={ templ.URL(fmt.Sprintf("/run/%d", run.ID)) } class="btn btn-secondary" style="padding: 6px 12px; font-size: 13px;">View Details</a>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		</div>
+	}
+}

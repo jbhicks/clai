@@ -1,0 +1,128 @@
+package templates
+
+templ Testing() {
+	@Layout("Testing & Results") {
+		<!-- Navigation Tabs -->
+		<div class="nav">
+			<a href="/models">Models &amp; GPU</a>
+			<a href="/testing" class="active">Testing &amp; Results</a>
+		</div>
+
+		<!-- Agentic Benchmark Results -->
+		<div class="card">
+			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+				<div>
+					<h2 style="margin: 0 0 10px 0; font-size: 24px;">Agentic Code Generation Benchmarks</h2>
+					<p style="margin: 0; color: #cbd5e1; font-size: 14px;">
+						These benchmarks test if models can autonomously use code execution to solve natural tasks.
+						Each test provides a task and validates the model generates correct code to complete it.
+					</p>
+				</div>
+				<button 
+					id="clear-results-btn"
+					style="background: #dc2626; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; white-space: nowrap; flex-shrink: 0; margin-left: 20px;"
+					onmouseover="this.style.background='#b91c1c'"
+					onmouseout="this.style.background='#dc2626'"
+				>
+					🗑️ Clear All Results
+				</button>
+			</div>
+			
+		<div 
+			id="benchmark_results_table"
+			hx-get="/api/benchmark/results"
+			hx-trigger="load, every 5s, sse:benchmark-update"
+			hx-swap="morph:outerHTML"
+			hx-ext="morph"
+		>
+			<p style="color: #94a3b8;">Loading benchmark results...</p>
+		</div>
+		</div>
+
+		<!-- Detailed Test Results -->
+		<div class="card">
+			<h2 style="margin-bottom: 20px; font-size: 24px;">Detailed Test Results</h2>
+			<p style="margin-bottom: 15px; color: #cbd5e1; font-size: 14px;">
+				Click on a benchmark run above to view individual test executions with prompts, responses, and validation results.
+			</p>
+
+			<!-- Detailed Results Table -->
+			<div 
+				id="detailed_results"
+				hx-get="/api/test/results/detailed"
+				hx-trigger="load"
+				hx-swap="morph:outerHTML"
+			>
+				<p style="color: #94a3b8;">Select a benchmark run above to view detailed test results...</p>
+			</div>
+		</div>
+
+		<!-- Test Detail Modal -->
+		<div id="test_detail_modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; overflow-y: auto;">
+			<div style="max-width: 1200px; margin: 40px auto; background: #0f172a; border: 1px solid #334155; border-radius: 8px; position: relative;">
+				<div style="padding: 20px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
+					<h3 style="margin: 0; font-size: 20px; color: #e2e8f0;">Test Details</h3>
+					<button onclick="document.getElementById('test_detail_modal').style.display='none'" style="background: transparent; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; padding: 0; width: 32px; height: 32px;">&times;</button>
+				</div>
+				<div id="test_detail_content" style="padding: 20px;">
+					Loading...
+				</div>
+			</div>
+		</div>
+
+		<!-- SSE Connection for Benchmark Updates -->
+		<div hx-ext="sse" sse-connect="/api/servers/events" style="display: none;"></div>
+
+		<!-- Toast Notification Area (updated via SSE) -->
+		<div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 10px;">
+		</div>
+
+		<!-- Toast Notification -->
+		<div id="benchmark_toast" style="display: none; position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 16px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 2000; min-width: 300px;">
+			<div style="display: flex; align-items: center; gap: 12px;">
+				<span style="font-size: 24px;">✅</span>
+				<div>
+					<div style="font-weight: 600; margin-bottom: 4px;">Benchmark Complete!</div>
+					<div style="font-size: 13px; opacity: 0.9;">Results have been updated below</div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			document.getElementById('clear-results-btn').addEventListener('click', function() {
+				if (confirm('Are you sure you want to delete ALL benchmark runs and results? This cannot be undone.')) {
+					htmx.ajax('DELETE', '/api/benchmark/clear', {
+						target: '#benchmark_results_table',
+						swap: 'outerHTML'
+					}).then(function() {
+						// Clear detailed results view
+						document.getElementById('detailed_results').innerHTML = '<p style="color: #94a3b8;">Select a benchmark run above to view detailed test results...</p>';
+					});
+				}
+			});
+
+			// Show toast notification on SSE benchmark update
+			let toastTimeout;
+			document.body.addEventListener('htmx:sseBeforeMessage', function(evt) {
+				if (evt.detail.type === 'benchmark-update') {
+					// Create toast element
+					const toast = document.createElement('div');
+					toast.style.cssText = 'background: #10b981; color: white; padding: 12px 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); min-width: 250px; animation: slide-from-right 0.3s cubic-bezier(0.16, 1, 0.3, 1);';
+					toast.innerHTML = '<div style="display: flex; align-items: center; gap: 10px;"><span style="font-size: 20px;">📊</span><div style="font-size: 13px; font-weight: 500;">Test completed - updating results...</div></div>';
+					
+					const container = document.getElementById('toast-container');
+					container.innerHTML = ''; // Clear previous toasts
+					container.appendChild(toast);
+					
+					// Auto-remove after 2 seconds
+					clearTimeout(toastTimeout);
+					toastTimeout = setTimeout(function() {
+						toast.style.opacity = '0';
+						toast.style.transition = 'opacity 0.3s ease-out';
+						setTimeout(function() { container.innerHTML = ''; }, 300);
+					}, 2000);
+				}
+			});
+		</script>
+	}
+}
