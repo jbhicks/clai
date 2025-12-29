@@ -14,7 +14,7 @@ templ Models() {
 			<div 
 				id="gpu_status"
 				hx-get="/api/gpu/status"
-				hx-trigger="load, every 3s, sse:refresh-servers"
+				hx-trigger="load, every 1s, sse:refresh-servers"
 				hx-swap="morph:outerHTML"
 				hx-ext="morph"
 			>
