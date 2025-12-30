@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,7 +35,7 @@ type Server struct {
 func NewServer(store *db.Store) *Server {
 	s := &Server{
 		store:        store,
-		modelManager: NewModelManager(),
+		modelManager: NewModelManager(store),
 		sseClients:   make(map[chan string]bool),
 	}
 
@@ -107,7 +108,12 @@ func (s *Server) StartWithPreferredPort(preferredPort int) error {
 	mux.HandleFunc("/api/models/download", s.handleDownloadModel)
 	mux.HandleFunc("/api/models/download-group", s.handleDownloadGroup)
 	mux.HandleFunc("/api/models/downloads", s.handleGetDownloads)
+	mux.HandleFunc("/api/models/downloads/single", s.handleGetSingleDownload)
 	mux.HandleFunc("/api/models/downloads/stream", s.handleDownloadsSSE)
+	mux.HandleFunc("/api/models/downloads/clear", s.handleClearDownload)
+	mux.HandleFunc("/api/models/downloads/clear-all", s.handleClearAllDownloads)
+	mux.HandleFunc("/api/models/downloads/resume", s.handleResumeDownload)
+	mux.HandleFunc("/api/models/downloads/cleanup", s.handleCleanupDownload)
 	mux.HandleFunc("/api/servers/list", s.HandleListModels)
 	mux.HandleFunc("/api/servers/start", s.HandleStartServer)
 	mux.HandleFunc("/api/servers/stop", s.HandleStopServer)
@@ -142,13 +148,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleServerEvents streams server status updates via SSE
+// Uses Pattern 1: sse-swap - SSE sends content directly, no hx-get needed
 func (s *Server) handleServerEvents(w http.ResponseWriter, r *http.Request) {
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	// Create client channel
+	// Create client channel for event signals
 	clientChan := make(chan string, 10)
 
 	// Register client
@@ -172,11 +179,27 @@ func (s *Server) handleServerEvents(w http.ResponseWriter, r *http.Request) {
 	// Keep connection alive and send updates
 	for {
 		select {
-		case msg := <-clientChan:
-			// Send SSE event with proper format for HTMX
-			// HTMX expects: event: eventname\ndata: payload\n\n
-			log.Printf("SSE: Sending event '%s' to client", msg)
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", msg, msg)
+		case eventName := <-clientChan:
+			// Generate HTML content based on event type
+			var htmlContent string
+			switch eventName {
+			case "servers_update":
+				htmlContent = s.renderServersListHTML()
+			case "benchmark_update":
+				htmlContent = s.renderBenchmarkResultsHTML()
+			default:
+				htmlContent = ""
+			}
+
+			// Send SSE event with content to swap directly
+			// HTMX expects: event: eventname\ndata: HTML content\n\n
+			if htmlContent != "" {
+				log.Printf("SSE: Sending %s event (%d bytes)", eventName, len(htmlContent))
+				fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventName, htmlContent)
+			} else {
+				log.Printf("SSE: Sending %s event (no content)", eventName)
+				fmt.Fprintf(w, "event: %s\ndata: \n\n", eventName)
+			}
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -187,27 +210,138 @@ func (s *Server) handleServerEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// renderServersListHTML generates HTML for the servers list
+func (s *Server) renderServersListHTML() string {
+	servers := s.modelManager.GetServerStatus()
+	gpus, _ := gpu.GetGPUInfo()
+
+	var gpuInfo string
+	if len(gpus) > 0 {
+		g := gpus[0]
+		gpuInfo = fmt.Sprintf("%s (%.1f GB VRAM free)", g.Name, float64(g.VRAMFreeBytes)/(1024*1024*1024))
+	} else {
+		gpuInfo = "No GPU detected"
+	}
+
+	html := fmt.Sprintf(`<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px 20px; margin-bottom: 20px;">
+		<span style="color: #94a3b8; font-size: 13px;">GPU: %s</span>
+	</div>
+	<table>
+		<thead>
+			<tr>
+				<th>Model</th>
+				<th>Status</th>
+				<th>Port</th>
+				<th>Actions</th>
+			</tr>
+		</thead>
+		<tbody>`, gpuInfo)
+
+	for _, server := range servers {
+		statusClass := "status-fail"
+		if server.Status == "running" {
+			statusClass = "status-pass"
+		}
+
+		html += fmt.Sprintf(`<tr>
+			<td><strong>%s</strong></td>
+			<td><span class="%s">%s</span></td>
+			<td>%d</td>
+			<td>
+				%s
+			</td>
+		</tr>`, server.ModelName, statusClass, server.Status, server.Port,
+			s.renderServerActions(server))
+	}
+
+	if len(servers) == 0 {
+		html += `<tr><td colspan="4" style="text-align: center; color: #64748b; padding: 20px;">No servers running</td></tr>`
+	}
+
+	html += `</tbody></table>`
+	return html
+}
+
+// renderServerActions generates action buttons for a server
+func (s *Server) renderServerActions(server *ModelServer) string {
+	if server.Status == "running" {
+		return fmt.Sprintf(`<form hx-post="/api/servers/stop" hx-target="#servers_list" hx-swap="innerHTML" style="display: inline;">
+			<input type="hidden" name="model_path" value="%s">
+			<button type="submit" class="btn" style="padding: 4px 12px; font-size: 12px; background: #ef4444;">Stop</button>
+		</form>`, server.ModelPath)
+	}
+	return fmt.Sprintf(`<span style="color: #64748b; font-size: 12px;">Stopped</span>`)
+}
+
+// renderBenchmarkResultsHTML generates HTML for benchmark results
+func (s *Server) renderBenchmarkResultsHTML() string {
+	runs, err := s.store.GetBenchmarkRuns(5)
+	if err != nil {
+		return `<p style="color: #ef4444;">Error loading results</p>`
+	}
+
+	if len(runs) == 0 {
+		return `<p style="color: #64748b; font-size: 13px;">No benchmark results yet</p>`
+	}
+
+	html := `<table style="width: 100%%; border-collapse: collapse;">
+		<thead>
+			<tr style="border-bottom: 1px solid #334155;">
+				<th style="text-align: left; padding: 12px; color: #94a3b8;">Model</th>
+				<th style="text-align: left; padding: 12px; color: #94a3b8;">Success</th>
+				<th style="text-align: left; padding: 12px; color: #94a3b8;">Tests</th>
+				<th style="text-align: left; padding: 12px; color: #94a3b8;">Completed</th>
+			</tr>
+		</thead>
+		<tbody>`
+
+	for _, run := range runs {
+		html += fmt.Sprintf(`<tr style="border-bottom: 1px solid #1e293b;">
+			<td style="padding: 12px; color: #e2e8f0;">%s</td>
+			<td style="padding: 12px;"><span class="%s">%.1f%%</span></td>
+			<td style="padding: 12px; color: #94a3b8;">%d/%d</td>
+			<td style="padding: 12px; color: #64748b;">%s</td>
+		</tr>`,
+			run.ModelName,
+			func() string {
+				if run.SuccessRate >= 70 {
+					return "success-high"
+				}
+				if run.SuccessRate >= 50 {
+					return "success-medium"
+				}
+				return "success-low"
+			}(),
+			run.SuccessRate,
+			run.PassedTests, run.TotalTests,
+			run.CompletedAt.Format("Jan 2, 3:04 PM"))
+	}
+
+	html += `</tbody></table>`
+	return html
+}
+
 // broadcastServerUpdate sends a server list update to all SSE clients
+// Triggers clients to refresh their server list via sse-swap
 func (s *Server) broadcastServerUpdate() {
 	s.sseClientsMu.RLock()
 	defer s.sseClientsMu.RUnlock()
 
-	log.Printf("Broadcasting refresh-servers event to %d SSE clients", len(s.sseClients))
+	log.Printf("Broadcasting servers_update event to %d SSE clients", len(s.sseClients))
 
 	if len(s.sseClients) == 0 {
 		log.Println("No SSE clients connected, skipping broadcast")
 		return
 	}
 
-	// Signal clients to refresh
-	msg := "refresh-servers"
+	// Signal clients to refresh - they'll receive HTML content in SSE data
+	msg := "servers_update"
 	for clientChan := range s.sseClients {
 		select {
 		case clientChan <- msg:
-			log.Println("Sent refresh-servers event to client")
+			log.Println("Sent servers_update event to client")
 		default:
 			log.Println("Client buffer full, skipping")
-			// Client buffer full, skip
 		}
 	}
 }
@@ -217,21 +351,19 @@ func (s *Server) broadcastBenchmarkUpdate() {
 	s.sseClientsMu.RLock()
 	defer s.sseClientsMu.RUnlock()
 
-	log.Printf("Broadcasting benchmark-complete event to %d SSE clients", len(s.sseClients))
+	log.Printf("Broadcasting benchmark_update event to %d SSE clients", len(s.sseClients))
 
 	if len(s.sseClients) == 0 {
 		log.Println("No SSE clients connected, skipping broadcast")
 		return
 	}
 
-	// Signal clients that benchmark updated (either test completed or full benchmark done)
-	msg := "benchmark-update"
+	msg := "benchmark_update"
 	for clientChan := range s.sseClients {
 		select {
 		case clientChan <- msg:
-			log.Println("Sent benchmark-update event to client")
+			log.Println("Sent benchmark_update event to client")
 		default:
-			// Client buffer full, skip
 			log.Println("Client buffer full, skipping")
 		}
 	}
@@ -841,6 +973,7 @@ func (s *Server) handleGetModelInfo(w http.ResponseWriter, r *http.Request) {
 		for _, filename := range ggufFiles {
 			// Extract quantization
 			quant := extractQuantization(filename)
+			log.Printf("DEBUG: File '%s' -> Quantization '%s'", filename, quant)
 			if quant == "" {
 				// Try extracting from directory name (e.g., Q2_K/file.gguf)
 				if strings.Contains(filename, "/") {
@@ -1063,9 +1196,9 @@ func (s *Server) handleGetModelInfo(w http.ResponseWriter, r *http.Request) {
 	`, borderBottom, tooltipAttr, displayText, sizeStr, memoryCompatHTML, fileListHTML, urlsJSON, modelData.ID, group.Quantization,
 				func() string {
 					if group.IsMultiPart {
-						return fmt.Sprintf("Download All (%d)", len(group.Files))
+						return fmt.Sprintf("FIXED: Download All %d Parts", len(group.Files))
 					}
-					return "Download"
+					return "Download Single File"
 				}())
 		}
 
@@ -1097,6 +1230,11 @@ func extractQuantization(filename string) string {
 	// Remove .gguf extension
 	name := strings.TrimSuffix(filename, ".gguf")
 
+	// Strip multi-part suffix first (e.g., "-00001-of-00003")
+	// This prevents the part number from being detected as quantization
+	re := regexp.MustCompile(`-\d{5}-of-\d{5}$`)
+	name = re.ReplaceAllString(name, "")
+
 	// Try splitting by dot (e.g., llama-2-7b.Q4_K_M.gguf)
 	parts := strings.Split(name, ".")
 	if len(parts) > 1 {
@@ -1112,9 +1250,16 @@ func extractQuantization(filename string) string {
 	parts = strings.Split(name, "-")
 	if len(parts) > 1 {
 		lastPart := parts[len(parts)-1]
+		lastPartLower := strings.ToLower(lastPart)
 		// Check if it looks like a quantization
-		if strings.HasPrefix(lastPart, "Q") || strings.HasPrefix(lastPart, "IQ") || strings.HasPrefix(lastPart, "f") {
-			return lastPart
+		// Common patterns: Q4_K_M, IQ3_M, f16, f32, mxfp4, mxfp8, etc.
+		if strings.HasPrefix(lastPart, "Q") ||
+			strings.HasPrefix(lastPart, "IQ") ||
+			strings.HasPrefix(lastPart, "f") ||
+			strings.HasPrefix(lastPartLower, "mxfp") ||
+			strings.HasPrefix(lastPartLower, "int") ||
+			strings.HasPrefix(lastPartLower, "fp") {
+			return strings.ToUpper(lastPart) // Normalize to uppercase
 		}
 	}
 
@@ -1999,6 +2144,72 @@ func extractCode(response string) (string, string) {
 					lang = "javascript"
 				}
 				return code, lang
+			}
+		}
+	}
+
+	// Second: Try simplified XML <code language> tags (without quotes) - NEW FORMAT
+	for _, lang := range languages {
+		tag := fmt.Sprintf(`<code %s>`, lang)
+		if strings.Contains(response, tag) {
+			start := strings.Index(response, tag) + len(tag)
+			end := strings.Index(response[start:], "</code>")
+			if end > 0 {
+				code := strings.TrimSpace(response[start : start+end])
+				// Normalize js -> javascript
+				if lang == "js" {
+					lang = "javascript"
+				} else if lang == "golang" {
+					lang = "go"
+				}
+				return code, lang
+			}
+			// Handle unclosed code tag
+			code := strings.TrimSpace(response[start:])
+			if len(code) > 0 {
+				if lang == "js" {
+					lang = "javascript"
+				} else if lang == "golang" {
+					lang = "go"
+				}
+				return code, lang
+			}
+		}
+	}
+
+	// Also check for malformed tags: <code language (missing >)
+	for _, lang := range languages {
+		tag := fmt.Sprintf(`<code %s`, lang)
+		tagIdx := strings.Index(response, tag)
+		if tagIdx >= 0 {
+			// Check if next character is whitespace or newline (indicating incomplete tag)
+			start := tagIdx + len(tag)
+			if start < len(response) && (response[start] == ' ' || response[start] == '\n' || response[start] == '\r' || response[start] == '\t') {
+				// Skip whitespace
+				for start < len(response) && (response[start] == ' ' || response[start] == '\n' || response[start] == '\r' || response[start] == '\t') {
+					start++
+				}
+				// Try to find closing tag
+				end := strings.Index(response[start:], "</code>")
+				if end > 0 {
+					code := strings.TrimSpace(response[start : start+end])
+					if lang == "js" {
+						lang = "javascript"
+					} else if lang == "golang" {
+						lang = "go"
+					}
+					return code, lang
+				}
+				// No closing tag, take rest of response
+				code := strings.TrimSpace(response[start:])
+				if len(code) > 0 {
+					if lang == "js" {
+						lang = "javascript"
+					} else if lang == "golang" {
+						lang = "go"
+					}
+					return code, lang
+				}
 			}
 		}
 	}

@@ -38,10 +38,74 @@ func min(a, b int) int {
 	return b
 }
 
+func formatLogLine(line string, theme *glitter.UI, width int) string {
+	if len(line) < 9 {
+		return line
+	}
+
+	var level string
+	var message string
+
+	if len(line) > 15 && line[8] == ' ' {
+		rest := line[9:]
+		if len(rest) > 7 && rest[0] == '[' {
+			if rest[1:8] == "DEBUG] " {
+				level = "DEBUG"
+				message = rest[8:]
+			} else if len(rest) > 6 && rest[1:7] == "INFO] " {
+				level = "INFO"
+				message = rest[7:]
+			} else if len(rest) > 6 && rest[1:7] == "WARN] " {
+				level = "WARN"
+				message = rest[7:]
+			} else if len(rest) > 7 && rest[1:8] == "ERROR] " {
+				level = "ERROR"
+				message = rest[8:]
+			} else {
+				return line
+			}
+		} else {
+			return line
+		}
+	} else {
+		return line
+	}
+
+	var color lipgloss.Color
+	switch level {
+	case "DEBUG":
+		color = lipgloss.Color(theme.Theme.Normal.Cyan)
+	case "INFO":
+		color = lipgloss.Color(theme.Theme.Normal.Green)
+	case "WARN":
+		color = lipgloss.Color(theme.Theme.Normal.Yellow)
+	case "ERROR":
+		color = lipgloss.Color(theme.Theme.Normal.Red)
+	default:
+		return line
+	}
+
+	style := lipgloss.NewStyle().
+		Foreground(color).
+		Background(lipgloss.Color(theme.Theme.Primary.Background))
+
+	rendered := style.Render(message)
+
+	if lipgloss.Width(rendered) < width {
+		wrapper := lipgloss.NewStyle().
+			Width(width).
+			Background(lipgloss.Color(theme.Theme.Primary.Background))
+		rendered = wrapper.Render(rendered)
+	}
+
+	return rendered
+}
+
 type Model struct {
 	Chat          ChatModel
 	Log           viewport.Model
 	logBuffer     string
+	AgentStatus   *AgentStatusView
 	Err           error
 	Width         int
 	Height        int
@@ -59,6 +123,7 @@ type Model struct {
 	DB            interface{}
 	Conversation  interface{}
 	Agent         *llm.Agent
+	statusChan    chan tea.Msg
 }
 
 type (
@@ -66,13 +131,16 @@ type (
 	LLMResponseMsg     struct{ Resp llm.Response }
 	StreamUpdateMsg    string
 	CodeBlockMsg       struct{ Blocks []llm.CodeBlock }
-	CodeResultMsg      struct{ Result string }
 	TickMsg            struct{}
 	HealthCheckMsg     struct{ Err error }
 	HealthCheckDoneMsg struct{}
 	errorMsg           struct{ err error }
 	clearErrorMsg      struct{}
 	smoothScrollMsg    struct{}
+	AgentStatusMsg     struct {
+		Status AgentStatus
+		Code   string
+	}
 )
 
 func executeCodeBlocksCmd(blocks []llm.CodeBlock) tea.Cmd {
@@ -97,7 +165,7 @@ func executeCodeBlocksCmd(blocks []llm.CodeBlock) tea.Cmd {
 			}
 		}
 
-		return CodeResultMsg{Result: combined}
+		return CodeBlockMsg{Blocks: blocks}
 	}
 }
 
@@ -160,6 +228,12 @@ func readLogChanCmd(logChan chan tea.Msg) tea.Cmd {
 	return func() tea.Msg { return <-logChan }
 }
 
+func readStatusChanCmd(statusChan chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		return <-statusChan
+	}
+}
+
 func StartsWithLLMError(s string) bool {
 	return len(s) >= 11 && s[:11] == "[LLM ERROR]"
 }
@@ -179,6 +253,7 @@ func getThemeName(currentTheme *glitter.UI) string {
 }
 
 func (m *Model) Init() tea.Cmd {
+	m.statusChan = make(chan tea.Msg, 100)
 	return tea.Batch(TailLogFileCmd(m), m.Chat.Init(), tea.WindowSize())
 }
 
@@ -196,9 +271,20 @@ func (m *Model) updateDimensions() {
 	}
 
 	m.Chat.Width = max(chatPaneWidth-chatPaneStyle.GetHorizontalFrameSize(), 10)
-	m.Log.Width = max(logPaneWidth-logPaneStyle.GetHorizontalFrameSize(), 10)
+
+	// Log pane contains both agent status and log viewport
+	logPaneInnerWidth := max(logPaneWidth-logPaneStyle.GetHorizontalFrameSize(), 10)
+	logPaneInnerHeight := max(contentHeight-logPaneStyle.GetVerticalFrameSize(), 3)
+
+	// Agent status gets 8 rows, rest goes to log
+	agentStatusHeight := 8
+	m.AgentStatus.Width = logPaneInnerWidth
+	m.AgentStatus.Height = agentStatusHeight
+
+	m.Log.Width = logPaneInnerWidth
+	m.Log.Height = max(logPaneInnerHeight-agentStatusHeight, 3)
+
 	m.Chat.Height = max(contentHeight-chatPaneStyle.GetVerticalFrameSize(), 3)
-	m.Log.Height = max(contentHeight-logPaneStyle.GetVerticalFrameSize(), 3)
 
 	m.Chat.Viewport.Width = m.Chat.Width
 	// Note: Viewport.Height is set by chat.updateViewportHeight() in chat.Update()
@@ -240,6 +326,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					blocks := llm.ParseCodeBlocks(lastMsg.Content)
 					if len(blocks) > 0 {
 						logger.Info("Detected %d code blocks in completed message", len(blocks))
+						if len(blocks) > 0 {
+							m.AgentStatus.SetExecutingCode(blocks[0].Language, blocks[0].Code)
+						}
 						return m, executeCodeBlocksCmd(blocks)
 					}
 				}
@@ -266,24 +355,64 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if StartsWithLLMError(chunk) {
 			m.Chat.Streaming = false
 		}
-	case CodeResultMsg:
-		logger.Debug("CodeResultMsg received: %s", msg.Result)
+	case CodeBlockMsg:
+		logger.Debug("CodeBlockMsg received: %d blocks", len(msg.Blocks))
 
 		// Strip code tags from last assistant message
 		if len(m.Chat.Messages) > 0 && m.Chat.Messages[len(m.Chat.Messages)-1].Role == "assistant" {
 			m.Chat.Messages[len(m.Chat.Messages)-1].Content = llm.StripCodeTags(m.Chat.Messages[len(m.Chat.Messages)-1].Content)
 		}
 
+		// Execute code blocks sequentially and collect results
+		var results []string
+		for i, block := range msg.Blocks {
+			logger.Info("Executing code block %d/%d (language=%s)", i+1, len(msg.Blocks), block.Language)
+
+			// Update agent status to show code execution
+			if i > 0 {
+				m.AgentStatus.SetExecutingCode(block.Language, block.Code)
+			}
+
+			output, err := tools.ExecuteCode(block.Language, block.Code)
+
+			if err != nil {
+				m.AgentStatus.FailCodeExecution(fmt.Sprintf("Error: %v\n%s", err, output))
+				results = append(results, fmt.Sprintf("Code block %d (error):\n```\n%s\n```\nError: %v", i+1, output, err))
+			} else {
+				m.AgentStatus.CompleteCodeExecution(output)
+				truncated := tools.TruncateForHistory(output)
+				results = append(results, fmt.Sprintf("Code block %d output:\n```\n%s\n```", i+1, truncated))
+			}
+		}
+
+		// Combine all results
+		combined := fmt.Sprintf("%d code block(s) executed:\n\n%s", len(msg.Blocks), results[0])
+		if len(results) > 1 {
+			for i := 1; i < len(results); i++ {
+				combined += "\n\n" + results[i]
+			}
+		}
+
 		// Add code result as tool message
 		m.Chat.Messages = append(m.Chat.Messages, llm.Message{
 			Role:    "tool",
-			Content: msg.Result,
+			Content: combined,
 		})
 		m.Chat.ContentDirty = true
 
+		// Save conversation
+		if conv, ok := m.Conversation.(*db.Conversation); ok {
+			conv.Messages = m.Chat.Messages
+			if store, ok := m.DB.(*db.Store); ok {
+				if err := store.SaveConversation(conv); err != nil {
+					logger.Info("[DB] Failed to save conversation: %v", err)
+				}
+			}
+		}
+
 		// Send updated conversation back to agent for final response
 		m.Chat.Streaming = true
-		return m, RunAgentCmd(m.Agent, "continue")
+		return m, tea.Batch(RunAgentCmd(m.Agent, "continue", m.statusChan), readStatusChanCmd(m.statusChan))
 	case smoothScrollMsg:
 		if m.Chat.SmoothScrollActive {
 			currentOffset := m.Chat.Viewport.YOffset
@@ -310,7 +439,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case LogUpdateMsg:
-		m.logBuffer += string(msg) + "\n"
+		formattedLine := formatLogLine(string(msg), m.Theme, m.Log.Width)
+		m.logBuffer += formattedLine + "\n"
 		m.Log.SetContent(m.logBuffer)
 		m.Log.GotoBottom()
 		return m, readLogChanCmd(m.logChan)
@@ -332,12 +462,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Role:    "assistant",
 				Content: fmt.Sprintf("Agent error: %v", msg.Err),
 			})
+			m.AgentStatus.FailCurrentAction()
+			m.AgentStatus.CompleteCurrentTask()
 		} else {
 			logger.Info("[AGENT-RESPONSE] Agent completed: %s", msg.Response)
 			m.Chat.Messages = append(m.Chat.Messages, llm.Message{
 				Role:    "assistant",
 				Content: msg.Response,
 			})
+			m.AgentStatus.CompleteCurrentAction()
+			m.AgentStatus.CompleteCurrentTask()
 		}
 		m.Chat.ContentDirty = true
 
@@ -350,6 +484,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+	case AgentStatusMsg:
+		// Handle agent status updates
+		logger.Debug("[AGENT-STATUS] Iteration: %d, Executing: %t", msg.Status.CurrentIter, msg.Status.ExecutingCode)
+		m.AgentStatus.Update(msg.Status)
+		if msg.Code != "" && msg.Status.ExecutingCode {
+			m.AgentStatus.SetExecutingCode(msg.Status.CodeLanguage, msg.Code)
+		}
+		return m, readStatusChanCmd(m.statusChan)
 	default:
 		var cmd tea.Cmd
 		updatedChat, cmd := m.Chat.Update(msg)
@@ -407,7 +549,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 
 				if m.Agent != nil {
 					logger.Info("[AGENT-MODE] Running query through agent: %s", userMsg)
-					return RunAgentCmd(m.Agent, userMsg)
+					return tea.Batch(RunAgentCmd(m.Agent, userMsg, m.statusChan), readStatusChanCmd(m.statusChan))
 				}
 
 				logger.Warn("[AGENT-MODE] Agent is nil, cannot process query")
@@ -503,6 +645,11 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		m.Chat.Viewport.GotoTop()
 		m.Chat.UserScrolled = false
 		m.Chat.AutoScroll = true
+
+		// Force chat to rebuild content
+		updatedChat, _ := m.Chat.Update(nil)
+		m.Chat = updatedChat
+
 		return nil
 	case "up":
 		if m.Chat.TextInput.Focused() {
@@ -801,23 +948,33 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 	const minViewportWidth = 10
 	const minViewportHeight = 3
 
-	// Calculate pane widths
+	// Calculate pane widths (chat left, agent status + log right)
 	chatPaneWidth := int(float64(m.Width) * 0.6)
-	logPaneWidth := m.Width - chatPaneWidth
+	rightPaneWidth := m.Width - chatPaneWidth
 
 	if chatPaneWidth < minPaneWidth {
 		chatPaneWidth = minPaneWidth
 	}
-	if logPaneWidth < minPaneWidth {
-		logPaneWidth = minPaneWidth
+	if rightPaneWidth < minPaneWidth {
+		rightPaneWidth = minPaneWidth
 	}
 
-	// Distribute dimensions to chat and log panes
-	// Subtract frame sizes because MainPane style will add border around the content
+	// Chat pane uses full content height (left side)
 	m.Chat.Width = chatPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
 	m.Chat.Height = contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
-	m.Log.Width = logPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
-	m.Log.Height = contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
+
+	// Right side has two separate bordered panes stacked vertically
+	// Each pane needs its own border, so we calculate available space for both
+	agentStatusPaneHeight := int(float64(contentHeight) * 0.5)
+	logPaneHeight := contentHeight - agentStatusPaneHeight
+
+	// Agent status pane (top-right, with its own border)
+	m.AgentStatus.Width = rightPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
+	m.AgentStatus.Height = agentStatusPaneHeight - themeStyles.MainPane.GetVerticalFrameSize()
+
+	// Log pane (bottom-right, with its own border)
+	m.Log.Width = rightPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
+	m.Log.Height = logPaneHeight - themeStyles.MainPane.GetVerticalFrameSize()
 
 	logger.Debug("handleWindowSizeMsg: m.Chat.Width: %d, m.Chat.Height: %d (contentHeight=%d, frameSize=%d)",
 		m.Chat.Width, m.Chat.Height, contentHeight, themeStyles.MainPane.GetVerticalFrameSize())
@@ -835,8 +992,6 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 	// Note: Viewport.Height is set by chat.updateViewportHeight() in chat.Update()
 	// to account for input field, spinner, scroll indicator, etc.
 	m.Chat.TextInput.Width = m.Chat.Width - 8
-	m.Log.Width = logPaneWidth - themeStyles.MainPane.GetHorizontalFrameSize()
-	m.Log.Height = contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
 
 	// Mark content dirty so it re-renders, and flag for initial scroll
 	m.Chat.ContentDirty = true
@@ -853,34 +1008,40 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 }
 
 func (m *Model) View() string {
-	chatPaneWidth := int(float64(m.Width) * 0.8)
-
 	// Active pane styling
 	themeStyles := GetThemeStyles(m.Theme)
 	chatPaneStyle := themeStyles.MainPane
+	agentStatusPaneStyle := themeStyles.MainPane
 	logPaneStyle := themeStyles.MainPane
+
 	if m.ActivePane == ChatPane {
 		chatPaneStyle = chatPaneStyle.Copy().BorderForeground(lipgloss.Color(m.Theme.Theme.Bright.Yellow))
-	} else {
-		logPaneStyle = logPaneStyle.Copy().BorderForeground(lipgloss.Color(m.Theme.Theme.Bright.Yellow))
 	}
 
-	// Render panes (dimensions already set in Update())
+	// Render chat pane (left, full height)
 	chatViewInner := m.Chat.View()
 	chatView := chatPaneStyle.Render(chatViewInner)
 
-	// Wrap log viewport content with background to fill the entire pane
+	// Render agent status pane (top-right, separate border)
+	agentStatusView := m.AgentStatus.View()
+	agentStatusPane := agentStatusPaneStyle.Render(agentStatusView)
+
+	// Render log pane (bottom-right, separate border)
 	logContent := m.Log.View()
 	logWrapper := lipgloss.NewStyle().
 		Width(m.Log.Width).
 		Height(m.Log.Height).
 		Background(lipgloss.Color(m.Theme.Theme.Primary.Background))
 	logContentFilled := logWrapper.Render(logContent)
-	logView := logPaneStyle.Render(logContentFilled)
+	logPane := logPaneStyle.Render(logContentFilled)
 
-	mainView := lipgloss.JoinHorizontal(lipgloss.Top, chatView, logView)
+	// Stack agent status and log panes vertically
+	rightColumn := lipgloss.JoinVertical(lipgloss.Left, agentStatusPane, logPane)
+
+	// Combine chat and right column horizontally
+	mainView := lipgloss.JoinHorizontal(lipgloss.Top, chatView, rightColumn)
+
 	statusBarRendered := themeStyles.StatusBar.Width(m.Width).Render(m.StatusBarText)
-
 	layout := lipgloss.JoinVertical(lipgloss.Left, mainView, statusBarRendered)
 
 	if m.ShowError && m.ErrorMessage != "" {
@@ -888,6 +1049,7 @@ func (m *Model) View() string {
 	}
 
 	if m.ShowHelp {
+		chatPaneWidth := int(float64(m.Width) * 0.6)
 		helpBox := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			Padding(1, 2).

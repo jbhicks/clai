@@ -11,13 +11,13 @@ templ Models() {
 			</div>
 
 			<!-- GPU Status Dashboard -->
-			<div 
-				id="gpu_status"
-				hx-get="/api/gpu/status"
-				hx-trigger="load, every 1s, sse:refresh-servers"
-				hx-swap="morph:outerHTML"
-				hx-ext="morph"
-			>
+		<div 
+			id="gpu_status"
+			hx-get="/api/gpu/status"
+			hx-trigger="load, sse:refresh-servers"
+			hx-swap="morph:outerHTML"
+			hx-ext="morph"
+		>
 				<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px 20px; margin-bottom: 20px;">
 					<span style="color: #94a3b8; font-size: 13px;">Loading GPU status...</span>
 				</div>
@@ -33,19 +33,19 @@ templ Models() {
 				<!-- Benchmark Status Messages -->
 				<div id="benchmark_status" style="margin-bottom: 15px;"></div>
 				
-			<div 
-				id="servers_list" 
-				hx-get="/api/servers/list" 
-				hx-trigger="load, every 3s, sse:refresh-servers"
-				hx-swap="outerHTML"
-			>
+		<div 
+			id="servers_list" 
+			hx-get="/api/servers/list" 
+			hx-trigger="load, sse:refresh-servers"
+			hx-swap="morph:outerHTML"
+			hx-ext="morph"
+		>
 				<p style="color: #94a3b8;">Loading servers...</p>
 		</div>
 		</div>
 		</div>
 
 		<!-- Model Downloads Section -->
-		<div hx-ext="sse" sse-connect="/api/models/downloads/stream">
 		<div class="card">
 			<h2 style="margin-bottom: 20px; font-size: 24px;">Download Models</h2>
 			<p style="margin-bottom: 20px; color: #cbd5e1;">
@@ -163,18 +163,68 @@ templ Models() {
 			<!-- Download Status Messages -->
 			<div id="download_status"></div>
 
-			<!-- Active Downloads List -->
+			<!-- Downloads List - Uses SSE for real-time updates -->
+			<!-- Pattern 1: sse-swap - SSE sends content directly -->
 			<div 
 				id="downloads_list"
 				hx-get="/api/models/downloads"
-				hx-trigger="load, sse:downloads_update"
-				hx-swap="morph:outerHTML"
-				hx-ext="morph"
+				hx-trigger="load"
+				hx-swap="innerHTML"
+				hx-ext="sse"
+				sse-connect="/api/models/downloads/stream"
+				sse-swap="download_update"
 			>
 				<p style="color: #64748b; font-size: 13px;">Loading downloads...</p>
 			</div>
+
 		</div>
+
+		<!-- Error Modal -->
+		<div id="error_modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+			<div style="max-width: 900px; width: 90%; max-height: 80vh; overflow-y: auto; background: #0f172a; border: 2px solid #ef4444; border-radius: 8px; padding: 24px;">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #334155; padding-bottom: 12px;">
+					<h3 id="error_modal_title" style="color: #ef4444; margin: 0; font-size: 20px;">Error Details</h3>
+					<button onclick="document.getElementById('error_modal').style.display='none'" style="background: transparent; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; padding: 0 8px;">&times;</button>
+				</div>
+				<div id="error_modal_content" style="color: #e2e8f0;">
+					<!-- Content populated by showErrorModal() -->
+				</div>
+			</div>
 		</div>
+
+		<script>
+			// Event delegation for error status clicks
+			document.addEventListener('click', function(e) {
+				if (e.target.classList.contains('error-status')) {
+					const modelName = e.target.dataset.modelName;
+					const errorMessage = e.target.dataset.errorMessage;
+					showErrorModal(modelName, errorMessage);
+				}
+			});
+			
+			function showErrorModal(modelName, errorMessage) {
+				document.getElementById('error_modal_title').textContent = modelName + ' - Error Details';
+				document.getElementById('error_modal_content').innerHTML = 
+					'<pre style="white-space: pre-wrap; word-wrap: break-word; background: #1e293b; padding: 16px; border-radius: 6px; font-size: 13px; line-height: 1.6; color: #fca5a5; font-family: monospace; overflow-x: auto;">' + 
+					errorMessage + 
+					'</pre>';
+				document.getElementById('error_modal').style.display = 'flex';
+			}
+			
+			// Close modal when clicking outside the content box
+			document.getElementById('error_modal').addEventListener('click', function(e) {
+				if (e.target === this) {
+					this.style.display = 'none';
+				}
+			});
+			
+			// Close modal on Escape key
+			document.addEventListener('keydown', function(e) {
+				if (e.key === 'Escape') {
+					document.getElementById('error_modal').style.display = 'none';
+				}
+			});
+		</script>
 
 	}
 }

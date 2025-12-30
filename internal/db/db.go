@@ -1,10 +1,10 @@
 package db
 
 import (
+	"clai/internal/logger"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"clai/internal/logger"
 	"os"
 	"path/filepath"
 	"time"
@@ -62,7 +62,104 @@ func (s *Store) init() error {
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL
 	);
+	CREATE TABLE IF NOT EXISTS execution_logs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		conversation_id INTEGER NOT NULL,
+		language TEXT NOT NULL,
+		code TEXT NOT NULL,
+		exit_code INTEGER NOT NULL,
+		duration_ms INTEGER NOT NULL,
+		output_size INTEGER NOT NULL,
+		error_message TEXT,
+		executed_at DATETIME NOT NULL,
+		FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+	);
+	CREATE TABLE IF NOT EXISTS benchmark_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		model_name TEXT NOT NULL,
+		model_url TEXT NOT NULL,
+		total_tests INTEGER NOT NULL,
+		passed_tests INTEGER NOT NULL,
+		failed_tests INTEGER NOT NULL,
+		success_rate REAL NOT NULL,
+		total_time_seconds REAL NOT NULL,
+		avg_iterations REAL NOT NULL,
+		started_at DATETIME NOT NULL,
+		completed_at DATETIME NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS benchmark_results (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		run_id INTEGER NOT NULL,
+		test_name TEXT NOT NULL,
+		query TEXT NOT NULL,
+		passed BOOLEAN NOT NULL,
+		iterations INTEGER NOT NULL,
+		time_seconds REAL NOT NULL,
+		response TEXT NOT NULL,
+		failure_reason TEXT,
+		code_executed TEXT,
+		FOREIGN KEY (run_id) REFERENCES benchmark_runs(id) ON DELETE CASCADE
+	);
 	CREATE INDEX IF NOT EXISTS idx_updated_at ON conversations(updated_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_benchmark_runs_started ON benchmark_runs(started_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_benchmark_results_run ON benchmark_results(run_id);
+	CREATE TABLE IF NOT EXISTS quick_tests (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		model_name TEXT NOT NULL,
+		model_path TEXT NOT NULL,
+		prompt TEXT NOT NULL,
+		response TEXT NOT NULL,
+		duration_ms INTEGER NOT NULL,
+		created_at DATETIME NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_quick_tests_created ON quick_tests(created_at DESC);
+	CREATE TABLE IF NOT EXISTS agentic_benchmark_runs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		model_name TEXT NOT NULL,
+		model_path TEXT NOT NULL,
+		total_tests INTEGER NOT NULL,
+		passed_tests INTEGER NOT NULL,
+		failed_tests INTEGER NOT NULL,
+		success_rate REAL NOT NULL,
+		total_duration_ms INTEGER NOT NULL,
+		started_at DATETIME NOT NULL,
+		completed_at DATETIME
+	);
+	CREATE TABLE IF NOT EXISTS agentic_benchmark_results (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		run_id INTEGER NOT NULL,
+		test_name TEXT NOT NULL,
+		task_description TEXT NOT NULL,
+		prompt TEXT NOT NULL,
+		generated_code TEXT,
+		execution_output TEXT,
+		expected_result TEXT NOT NULL,
+		passed BOOLEAN NOT NULL,
+		validation_reason TEXT,
+		duration_ms INTEGER NOT NULL,
+		error_message TEXT,
+		created_at DATETIME NOT NULL,
+		FOREIGN KEY (run_id) REFERENCES agentic_benchmark_runs(id) ON DELETE CASCADE
+	);
+	CREATE INDEX IF NOT EXISTS idx_agentic_runs_started ON agentic_benchmark_runs(started_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_agentic_results_run ON agentic_benchmark_results(run_id);
+	CREATE TABLE IF NOT EXISTS downloads (
+		id TEXT PRIMARY KEY,
+		url TEXT NOT NULL,
+		filename TEXT NOT NULL,
+		status TEXT NOT NULL,
+		progress REAL NOT NULL,
+		bytes_downloaded INTEGER NOT NULL,
+		total_bytes INTEGER NOT NULL,
+		speed INTEGER NOT NULL,
+		error TEXT,
+		started_at DATETIME NOT NULL,
+		completed_at DATETIME,
+		retry_count INTEGER NOT NULL DEFAULT 0,
+		supports_resume BOOLEAN NOT NULL DEFAULT 0
+	);
+	CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status);
+	CREATE INDEX IF NOT EXISTS idx_downloads_started ON downloads(started_at DESC);
 	`
 	_, err := s.db.Exec(schema)
 	if err != nil {
@@ -201,4 +298,19 @@ func GenerateConversationTitle(messages []llm.Message) string {
 		}
 	}
 	return "New Conversation"
+}
+
+func (s *Store) SaveExecutionLog(conversationID int, language, code string, exitCode int, duration int64, outputSize int, execError string) error {
+	executedAt := time.Now()
+
+	_, err := s.db.Exec(
+		"INSERT INTO execution_logs (conversation_id, language, code, exit_code, duration_ms, output_size, error_message, executed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+		conversationID, language, code, exitCode, duration, outputSize, execError, executedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to insert execution log: %w", err)
+	}
+
+	logger.Info("[DB] Saved execution log for conversation %d", conversationID)
+	return nil
 }

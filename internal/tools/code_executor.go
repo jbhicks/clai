@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"time"
 )
@@ -74,6 +76,18 @@ func ExecuteCodeWithTimeout(language, code string, timeout time.Duration) (strin
 		cmd = exec.CommandContext(ctx, "python3", "-c", code)
 	case "javascript", "js", "node":
 		cmd = exec.CommandContext(ctx, "node", "-e", code)
+	case "go", "golang":
+		// For Go, we need to write to a temp file and run it
+		tmpDir := os.TempDir()
+		tmpFile := filepath.Join(tmpDir, fmt.Sprintf("clai_benchmark_%d.go", time.Now().UnixNano()))
+
+		err := os.WriteFile(tmpFile, []byte(code), 0644)
+		if err != nil {
+			return "", fmt.Errorf("failed to write Go code to temp file: %w", err)
+		}
+		defer os.Remove(tmpFile)
+
+		cmd = exec.CommandContext(ctx, "go", "run", tmpFile)
 	default:
 		return "", fmt.Errorf("unsupported language: %s", language)
 	}

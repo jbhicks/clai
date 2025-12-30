@@ -2,17 +2,13 @@ package templates
 
 templ Servers() {
 	@Layout("Model Servers") {
+		<!-- Pattern 1: Native sse-swap - SSE sends content directly -->
+		<!-- Parent div handles SSE connection and defines what to swap -->
+		<div hx-ext="sse" sse-connect="/api/servers/events" sse-swap="servers_update" hx-swap="innerHTML">
+		
 		<!-- GPU Status Dashboard -->
-		<div 
-			id="gpu_status"
-			hx-get="/api/gpu/status"
-			hx-trigger="load, every 3s"
-			hx-swap="morph:outerHTML"
-			hx-ext="morph"
-		>
-			<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px 20px; margin-bottom: 20px;">
-				<span style="color: #94a3b8; font-size: 13px;">Loading GPU status...</span>
-			</div>
+		<div id="gpu_status" class="card" style="margin-bottom: 20px;">
+			Loading GPU status...
 		</div>
 
 		<div class="card">
@@ -21,15 +17,10 @@ templ Servers() {
 				Start and stop model servers. Each model requires its own server process on a unique port (8081-8090).
 			</p>
 			
-		<div 
-			id="servers_list" 
-			hx-get="/api/servers/list" 
-			hx-trigger="load, every 3s"
-			hx-swap="morph:outerHTML"
-			hx-ext="morph"
-		>
-			<p style="color: #94a3b8;">Loading servers...</p>
-		</div>
+			<!-- Server List - rendered by SSE content -->
+			<div id="servers_list">
+				<p style="color: #94a3b8;">Loading servers...</p>
+			</div>
 		</div>
 		
 		<div class="card">
@@ -38,13 +29,7 @@ templ Servers() {
 				These benchmarks test if models can write executable Go code to solve tasks.
 			</p>
 			<div id="benchmark_results"></div>
-			<div 
-				id="benchmark_results_table"
-				hx-get="/api/benchmark/results"
-				hx-trigger="load, every 5s"
-				hx-swap="morph:outerHTML"
-				hx-ext="morph"
-			>
+			<div id="benchmark_results_table">
 				<p style="color: #94a3b8;">Loading...</p>
 			</div>
 		</div>
@@ -52,12 +37,7 @@ templ Servers() {
 		<div class="card">
 			<h3 style="margin-bottom: 15px; font-size: 18px;">Test Results (Quick Tests)</h3>
 			<div id="test_results"></div>
-			<div 
-				id="test_results_table"
-				hx-get="/api/test/results"
-				hx-trigger="load, reload from:body"
-				hx-swap="innerHTML"
-			>
+			<div id="test_results_table">
 				<p style="color: #94a3b8;">Loading...</p>
 			</div>
 		</div>
@@ -78,5 +58,7 @@ templ Servers() {
 				Tip: Keep frequently-used models running. Stop unused models to free VRAM.
 			</p>
 		</div>
+		
+		</div> <!-- Close SSE wrapper -->
 	}
 }

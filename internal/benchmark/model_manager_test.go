@@ -52,7 +52,7 @@ func TestCheckServerHealth(t *testing.T) {
 			}))
 			defer server.Close()
 
-			mm := NewModelManager()
+			mm := NewModelManagerForTest()
 			got := mm.checkServerHealth(server.URL)
 			if got != tt.want {
 				t.Errorf("checkServerHealth() = %v, want %v", got, tt.want)
@@ -62,7 +62,7 @@ func TestCheckServerHealth(t *testing.T) {
 }
 
 func TestFindAvailablePortForModel(t *testing.T) {
-	mm := NewModelManager()
+	mm := NewModelManagerForTest()
 
 	// Test finding an available port
 	port, err := mm.findAvailablePortForModel()
@@ -85,7 +85,7 @@ func TestFindAvailablePortForModel(t *testing.T) {
 }
 
 func TestFindAvailablePortForModel_AllPortsOccupied(t *testing.T) {
-	mm := NewModelManager()
+	mm := NewModelManagerForTest()
 
 	// Check if any ports are already in use (skip test if running servers exist)
 	for port := 8081; port <= 8090; port++ {
@@ -127,7 +127,7 @@ func TestFindAvailablePortForModel_AllPortsOccupied(t *testing.T) {
 }
 
 func TestIsSystemdManaged(t *testing.T) {
-	mm := NewModelManager()
+	mm := NewModelManagerForTest()
 
 	// Test current process (should be able to read own cgroup)
 	currentPID := os.Getpid()
@@ -154,7 +154,7 @@ func TestIsSystemdManaged(t *testing.T) {
 }
 
 func TestGetSystemdServiceName(t *testing.T) {
-	mm := NewModelManager()
+	mm := NewModelManagerForTest()
 
 	tests := []struct {
 		name          string
@@ -255,7 +255,7 @@ func TestGetModelNameFromPort(t *testing.T) {
 			}))
 			defer server.Close()
 
-			mm := NewModelManager()
+			mm := NewModelManagerForTest()
 			// Extract port from server URL
 			parts := strings.Split(server.URL, ":")
 			var port int
@@ -309,7 +309,7 @@ func TestGetContextSizeFromPort(t *testing.T) {
 			}))
 			defer server.Close()
 
-			mm := NewModelManager()
+			mm := NewModelManagerForTest()
 			parts := strings.Split(server.URL, ":")
 			var port int
 			fmt.Sscanf(parts[len(parts)-1], "%d", &port)
@@ -380,7 +380,7 @@ func TestStopServer_SystemdIntegration(t *testing.T) {
 		t.Skip("systemctl not available, skipping systemd integration test")
 	}
 
-	mm := NewModelManager()
+	mm := NewModelManagerForTest()
 	testModelPath := "/tmp/test-model.gguf"
 
 	// Create a mock server entry with a fake PID
@@ -425,7 +425,7 @@ func TestRefreshServerStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	mm := NewModelManager()
+	mm := NewModelManagerForTest()
 
 	// Add a test model to track
 	testModelPath := "/home/josh/models/test-model.gguf"

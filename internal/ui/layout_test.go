@@ -49,6 +49,7 @@ func TestChatModelLayoutDimensions(t *testing.T) {
 		TextInput: ti,
 		Viewport:  viewport.New(80, 20),
 	}
+	_ = chat
 
 	view := chat.View()
 	actualHeight := lipgloss.Height(view)
@@ -70,9 +71,10 @@ func TestMainLayoutDimensions(t *testing.T) {
 	ti.Focus()
 
 	m := &Model{
-		Width:  termWidth,
-		Height: termHeight,
-		Theme:  theme,
+		Width:       termWidth,
+		Height:      termHeight,
+		Theme:       theme,
+		AgentStatus: NewAgentStatusView(theme),
 	}
 
 	// Simulate what handleWindowSizeMsg does:

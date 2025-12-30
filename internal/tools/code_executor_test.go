@@ -49,6 +49,20 @@ func TestExecuteCode(t *testing.T) {
 			wantErr:  true,
 			contains: "",
 		},
+		{
+			name:     "go hello world",
+			language: "go",
+			code:     "package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"hello from go\") }",
+			wantErr:  false,
+			contains: "hello from go",
+		},
+		{
+			name:     "go with calculation",
+			language: "go",
+			code:     "package main\nimport \"fmt\"\nfunc main() { fmt.Println(2 + 2) }",
+			wantErr:  false,
+			contains: "4",
+		},
 	}
 
 	for _, tt := range tests {
@@ -116,6 +130,18 @@ func TestExecuteCodeLanguageVariations(t *testing.T) {
 			name:     "node variant",
 			language: "node",
 			code:     "console.log('test')",
+			wantErr:  false,
+		},
+		{
+			name:     "go variant",
+			language: "go",
+			code:     "package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"test\") }",
+			wantErr:  false,
+		},
+		{
+			name:     "golang variant",
+			language: "golang",
+			code:     "package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"test\") }",
 			wantErr:  false,
 		},
 	}

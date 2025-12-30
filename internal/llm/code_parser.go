@@ -16,46 +16,199 @@ type CodeBlock struct {
 }
 
 func ParseCodeBlocks(content string) []CodeBlock {
-	// Match complete code blocks
-	codeTagRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)</code>`)
-	matches := codeTagRegex.FindAllStringSubmatch(content, -1)
+	// Parse all code block formats and collect them with their positions
+	// This allows mixed formats in the same content
 
-	var blocks []CodeBlock
-	for _, match := range matches {
-		if len(match) >= 3 {
-			blocks = append(blocks, CodeBlock{
-				Language: match[1],
-				Code:     strings.TrimSpace(match[2]),
-			})
-		}
+	type blockWithPosition struct {
+		block CodeBlock
+		pos   int
 	}
 
-	// Also match incomplete code blocks (missing closing tag or partial closing tag)
-	// This handles cases like "</code" without the ">" or no closing tag at all
-	incompleteRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)(?:</code|$)`)
-	if len(blocks) == 0 {
-		// Only look for incomplete blocks if we didn't find complete ones
-		incompleteMatches := incompleteRegex.FindAllStringSubmatch(content, -1)
+	var blocksWithPos []blockWithPosition
 
-		for _, match := range incompleteMatches {
-			if len(match) >= 3 {
-				blocks = append(blocks, CodeBlock{
-					Language: match[1],
-					Code:     strings.TrimSpace(match[2]),
+	// Pattern 1: Full XML format (complete blocks)
+	fullXMLRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)</code>`)
+	for _, match := range fullXMLRegex.FindAllStringSubmatchIndex(content, -1) {
+		lang := content[match[2]:match[3]]
+		code := content[match[4]:match[5]]
+		blocksWithPos = append(blocksWithPos, blockWithPosition{
+			block: CodeBlock{
+				Language: lang,
+				Code:     strings.TrimSpace(code),
+			},
+			pos: match[0],
+		})
+	}
+
+	// Pattern 2: Simplified XML format (complete blocks) - <code python>
+	simplifiedXMLRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>(.+?)</code>`)
+	for _, match := range simplifiedXMLRegex.FindAllStringSubmatchIndex(content, -1) {
+		lang := content[match[2]:match[3]]
+		code := content[match[4]:match[5]]
+
+		// Normalize language names
+		if lang == "js" {
+			lang = "javascript"
+		} else if lang == "py" {
+			lang = "python"
+		} else if lang == "sh" {
+			lang = "bash"
+		}
+
+		blocksWithPos = append(blocksWithPos, blockWithPosition{
+			block: CodeBlock{
+				Language: lang,
+				Code:     strings.TrimSpace(code),
+			},
+			pos: match[0],
+		})
+	}
+
+	// Pattern 3: Markdown code blocks - ```python
+	markdownRegex := regexp.MustCompile("(?s)```(bash|python|javascript|js|sh|py)\\s*\\n(.+?)```")
+	for _, match := range markdownRegex.FindAllStringSubmatchIndex(content, -1) {
+		lang := content[match[2]:match[3]]
+		code := content[match[4]:match[5]]
+
+		// Normalize language names
+		if lang == "js" {
+			lang = "javascript"
+		} else if lang == "py" {
+			lang = "python"
+		} else if lang == "sh" {
+			lang = "bash"
+		}
+
+		blocksWithPos = append(blocksWithPos, blockWithPosition{
+			block: CodeBlock{
+				Language: lang,
+				Code:     strings.TrimSpace(code),
+			},
+			pos: match[0],
+		})
+	}
+
+	// Handle incomplete blocks only if no complete blocks found
+	if len(blocksWithPos) == 0 {
+		// Incomplete full XML: <code language="python">... (no closing tag)
+		incompleteFullXMLRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)(?:</code|$)`)
+		for _, match := range incompleteFullXMLRegex.FindAllStringSubmatchIndex(content, -1) {
+			lang := content[match[2]:match[3]]
+			code := content[match[4]:match[5]]
+			blocksWithPos = append(blocksWithPos, blockWithPosition{
+				block: CodeBlock{
+					Language: lang,
+					Code:     strings.TrimSpace(code),
+				},
+				pos: match[0],
+			})
+		}
+
+		// Incomplete simplified XML: <code python>... (no closing tag)
+		if len(blocksWithPos) == 0 {
+			incompleteSimplifiedRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>(.+?)(?:</code|$)`)
+			for _, match := range incompleteSimplifiedRegex.FindAllStringSubmatchIndex(content, -1) {
+				lang := content[match[2]:match[3]]
+				code := content[match[4]:match[5]]
+
+				if lang == "js" {
+					lang = "javascript"
+				} else if lang == "py" {
+					lang = "python"
+				} else if lang == "sh" {
+					lang = "bash"
+				}
+
+				blocksWithPos = append(blocksWithPos, blockWithPosition{
+					block: CodeBlock{
+						Language: lang,
+						Code:     strings.TrimSpace(code),
+					},
+					pos: match[0],
 				})
 			}
 		}
+
+		// Malformed simplified XML: <code python (missing > on opening tag, no closing tag)
+		// This handles cases where streaming was cut off or the model output is malformed
+		if len(blocksWithPos) == 0 {
+			malformedSimplifiedRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)\s+(.+?)(?:</code|$)`)
+			for _, match := range malformedSimplifiedRegex.FindAllStringSubmatchIndex(content, -1) {
+				lang := content[match[2]:match[3]]
+				code := content[match[4]:match[5]]
+
+				if lang == "js" {
+					lang = "javascript"
+				} else if lang == "py" {
+					lang = "python"
+				} else if lang == "sh" {
+					lang = "bash"
+				}
+
+				blocksWithPos = append(blocksWithPos, blockWithPosition{
+					block: CodeBlock{
+						Language: lang,
+						Code:     strings.TrimSpace(code),
+					},
+					pos: match[0],
+				})
+			}
+		}
+
+		// Incomplete markdown: ```python\n... (no closing backticks)
+		if len(blocksWithPos) == 0 {
+			incompleteMarkdownRegex := regexp.MustCompile("(?s)```(bash|python|javascript|js|sh|py)\\s*\\n(.+?)$")
+			for _, match := range incompleteMarkdownRegex.FindAllStringSubmatchIndex(content, -1) {
+				lang := content[match[2]:match[3]]
+				code := content[match[4]:match[5]]
+
+				if lang == "js" {
+					lang = "javascript"
+				} else if lang == "py" {
+					lang = "python"
+				} else if lang == "sh" {
+					lang = "bash"
+				}
+
+				blocksWithPos = append(blocksWithPos, blockWithPosition{
+					block: CodeBlock{
+						Language: lang,
+						Code:     strings.TrimSpace(code),
+					},
+					pos: match[0],
+				})
+			}
+		}
+	}
+
+	// Sort by position and extract blocks (to maintain document order)
+	// This isn't strictly necessary for most use cases, but maintains consistency
+	var blocks []CodeBlock
+	for _, bp := range blocksWithPos {
+		blocks = append(blocks, bp.block)
 	}
 
 	return blocks
 }
 
 func StripCodeTags(content string) string {
-	codeTagRegex := regexp.MustCompile(`(?s)<code\s+language="[^"]+">.*?</code>`)
-	cleaned := codeTagRegex.ReplaceAllString(content, "")
+	// Strip full XML format
+	cleaned := regexp.MustCompile(`(?s)<code\s+language="[^"]+">.*?</code>`).ReplaceAllString(content, "")
 
-	incompleteTagRegex := regexp.MustCompile(`(?s)<code\s+language="[^"]+">.*`)
-	cleaned = incompleteTagRegex.ReplaceAllString(cleaned, "")
+	// Strip simplified XML format
+	cleaned = regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>.*?</code>`).ReplaceAllString(cleaned, "")
+
+	// Strip markdown code blocks
+	cleaned = regexp.MustCompile("(?s)```(?:bash|python|javascript|js|sh|py)\\s*\\n.*?```").ReplaceAllString(cleaned, "")
+
+	// Strip incomplete full XML
+	cleaned = regexp.MustCompile(`(?s)<code\s+language="[^"]+">.*`).ReplaceAllString(cleaned, "")
+
+	// Strip incomplete simplified XML
+	cleaned = regexp.MustCompile(`(?s)<code\s+(?:bash|python|javascript|js|sh|py)>.*`).ReplaceAllString(cleaned, "")
+
+	// Strip incomplete markdown
+	cleaned = regexp.MustCompile("(?s)```(?:bash|python|javascript|js|sh|py)\\s*\\n.*").ReplaceAllString(cleaned, "")
 
 	return strings.TrimSpace(cleaned)
 }
@@ -63,11 +216,6 @@ func StripCodeTags(content string) string {
 func StripTextBasedFunctionCalls(content string) string {
 	functionCallRegex := regexp.MustCompile(`<function=[a-z_]+>?`)
 	return functionCallRegex.ReplaceAllString(content, "")
-}
-
-func stripTrailingBackgroundPadding(line string) string {
-	re := regexp.MustCompile(`\x1b\[48;[0-9;]+m\s+\x1b\[0m$`)
-	return re.ReplaceAllString(line, "")
 }
 
 func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, codeBlockContainer lipgloss.Style) string {
@@ -79,7 +227,7 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 		markdown := fmt.Sprintf("```%s\n%s\n```", language, code)
 
 		renderer, err := glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
+			glamour.WithStylePath("dark"),
 			glamour.WithWordWrap(codeContainerWidth),
 		)
 		if err != nil {
@@ -96,8 +244,7 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 		lines := strings.Split(rendered, "\n")
 		var cleanLines []string
 		for _, line := range lines {
-			cleanedLine := stripTrailingBackgroundPadding(line)
-			trimmed := strings.TrimRight(cleanedLine, " ")
+			trimmed := strings.TrimRight(line, " ")
 			if trimmed != "" {
 				cleanLines = append(cleanLines, trimmed)
 			}
@@ -114,35 +261,83 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 	result := content
 
 	if len(blocks) > 0 {
-		codeTagRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)</code>`)
-		result = codeTagRegex.ReplaceAllStringFunc(result, func(match string) string {
-			submatches := codeTagRegex.FindStringSubmatch(match)
+		// Replace full XML format
+		fullXMLRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)</code>`)
+		result = fullXMLRegex.ReplaceAllStringFunc(result, func(match string) string {
+			submatches := fullXMLRegex.FindStringSubmatch(match)
 			if len(submatches) < 3 {
 				return match
 			}
-
-			language := submatches[1]
-			code := strings.TrimSpace(submatches[2])
-
-			return renderCodeBlock(language, code)
+			return renderCodeBlock(submatches[1], strings.TrimSpace(submatches[2]))
 		})
 
-		incompleteRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)(?:</code|$)`)
-		result = incompleteRegex.ReplaceAllStringFunc(result, func(match string) string {
-			submatches := incompleteRegex.FindStringSubmatch(match)
+		// Replace simplified XML format
+		simplifiedXMLRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>(.+?)</code>`)
+		result = simplifiedXMLRegex.ReplaceAllStringFunc(result, func(match string) string {
+			submatches := simplifiedXMLRegex.FindStringSubmatch(match)
 			if len(submatches) < 3 {
 				return match
 			}
+			lang := submatches[1]
+			if lang == "js" {
+				lang = "javascript"
+			} else if lang == "py" {
+				lang = "python"
+			} else if lang == "sh" {
+				lang = "bash"
+			}
+			return renderCodeBlock(lang, strings.TrimSpace(submatches[2]))
+		})
 
-			language := submatches[1]
-			code := strings.TrimSpace(submatches[2])
+		// Replace markdown code blocks
+		markdownRegex := regexp.MustCompile("(?s)```(bash|python|javascript|js|sh|py)\\s*\\n(.+?)```")
+		result = markdownRegex.ReplaceAllStringFunc(result, func(match string) string {
+			submatches := markdownRegex.FindStringSubmatch(match)
+			if len(submatches) < 3 {
+				return match
+			}
+			lang := submatches[1]
+			if lang == "js" {
+				lang = "javascript"
+			} else if lang == "py" {
+				lang = "python"
+			} else if lang == "sh" {
+				lang = "bash"
+			}
+			return renderCodeBlock(lang, strings.TrimSpace(submatches[2]))
+		})
 
-			return renderCodeBlock(language, code)
+		// Replace incomplete full XML
+		incompleteFullXMLRegex := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">(.+?)(?:</code|$)`)
+		result = incompleteFullXMLRegex.ReplaceAllStringFunc(result, func(match string) string {
+			submatches := incompleteFullXMLRegex.FindStringSubmatch(match)
+			if len(submatches) < 3 {
+				return match
+			}
+			return renderCodeBlock(submatches[1], strings.TrimSpace(submatches[2]))
+		})
+
+		// Replace incomplete simplified XML
+		incompleteSimplifiedRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>(.+?)(?:</code|$)`)
+		result = incompleteSimplifiedRegex.ReplaceAllStringFunc(result, func(match string) string {
+			submatches := incompleteSimplifiedRegex.FindStringSubmatch(match)
+			if len(submatches) < 3 {
+				return match
+			}
+			lang := submatches[1]
+			if lang == "js" {
+				lang = "javascript"
+			} else if lang == "py" {
+				lang = "python"
+			} else if lang == "sh" {
+				lang = "bash"
+			}
+			return renderCodeBlock(lang, strings.TrimSpace(submatches[2]))
 		})
 	}
 
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStylePath("dark"),
 		glamour.WithWordWrap(maxWidth),
 	)
 	if err != nil {
@@ -159,8 +354,7 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 	lines := strings.Split(rendered, "\n")
 	var cleanLines []string
 	for _, line := range lines {
-		cleanedLine := stripTrailingBackgroundPadding(line)
-		trimmed := strings.TrimRight(cleanedLine, " ")
+		trimmed := strings.TrimRight(line, " ")
 		cleanLines = append(cleanLines, trimmed)
 	}
 

@@ -1,6 +1,7 @@
 package benchmark
 
 import (
+	"clai/internal/db"
 	"clai/internal/gpu"
 	"clai/internal/logger"
 	"encoding/json"
@@ -12,7 +13,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +39,14 @@ type ModelServer struct {
 	ModelSizeBytes  int64  `json:"model_size_bytes"` // Model file size in bytes
 	VocabSize       int    `json:"vocab_size"`       // Vocabulary size (n_vocab)
 	EmbeddingDim    int    `json:"embedding_dim"`    // Embedding dimensions (n_embd)
+
+	// Split model metadata
+	IsSplitModel    bool     `json:"is_split_model"`    // True if this is a multi-part GGUF model
+	SplitPartNumber int      `json:"split_part_number"` // Current part number (1-based)
+	SplitTotalParts int      `json:"split_total_parts"` // Total number of parts
+	SplitPartsFound int      `json:"split_parts_found"` // Number of parts found on disk
+	SplitAllParts   []string `json:"split_all_parts"`   // Paths to all parts (for tracking)
+	SplitIsComplete bool     `json:"split_is_complete"` // True if all parts are present
 }
 
 // ModelManager handles starting/stopping model servers
@@ -51,13 +62,13 @@ type ModelManager struct {
 }
 
 // NewModelManager creates a new model manager
-func NewModelManager() *ModelManager {
+func NewModelManager(dbStore *db.Store) *ModelManager {
 	modelsDir := "/home/josh/models"
 	mm := &ModelManager{
 		servers:         make(map[string]*ModelServer),
 		modelsDir:       modelsDir,
 		llamaServerBin:  "/home/josh/llama.cpp-rocm-wmma/build/bin/llama-server",
-		downloadManager: NewDownloadManager(modelsDir),
+		downloadManager: NewDownloadManager(modelsDir, dbStore),
 		stopRefresh:     make(chan struct{}),
 	}
 
@@ -65,6 +76,11 @@ func NewModelManager() *ModelManager {
 	go mm.backgroundRefresh()
 
 	return mm
+}
+
+// NewModelManagerForTest creates a model manager without database (for testing)
+func NewModelManagerForTest() *ModelManager {
+	return NewModelManager(nil)
 }
 
 // backgroundRefresh periodically refreshes server status in the background
@@ -143,6 +159,7 @@ func (mm *ModelManager) notifyStateChange() {
 }
 
 // ScanAvailableModels scans the models directory for .gguf files
+// For split models (e.g., model-00001-of-00004.gguf), only the first part is shown as launchable
 func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
@@ -151,6 +168,9 @@ func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read models directory: %w", err)
 	}
+
+	// Track split model prefixes we've already processed
+	processedSplitModels := make(map[string]bool)
 
 	var models []*ModelServer
 	for _, file := range files {
@@ -163,19 +183,62 @@ func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 
 		modelPath := filepath.Join(mm.modelsDir, file.Name())
 
+		// Parse split model info
+		splitInfo := parseSplitModelFilename(file.Name())
+
+		// If this is a split model but not the first part, skip it
+		// (we only want to show the first part as a launchable model)
+		if splitInfo.IsSplit {
+			// Check if we've already processed this split model set
+			if processedSplitModels[splitInfo.Prefix] {
+				continue
+			}
+
+			// Only show first part (00001) as the launchable model
+			if splitInfo.PartNumber != 1 {
+				continue
+			}
+
+			// Mark this split model set as processed
+			processedSplitModels[splitInfo.Prefix] = true
+		}
+
 		// Check if we already have this model tracked
 		if server, exists := mm.servers[modelPath]; exists {
+			// Update split model metadata
+			if splitInfo.IsSplit {
+				partsFound, totalParts, isComplete := mm.checkSplitModelComplete(modelPath)
+				server.IsSplitModel = true
+				server.SplitPartNumber = splitInfo.PartNumber
+				server.SplitTotalParts = totalParts
+				server.SplitPartsFound = partsFound
+				server.SplitIsComplete = isComplete
+				server.SplitAllParts = mm.getSplitModelParts(modelPath)
+			}
 			models = append(models, server)
 			continue
 		}
 
 		// New model - add to tracking
 		server := &ModelServer{
-			ModelPath: modelPath,
-			ModelName: file.Name(),
-			Status:    "stopped",
-			APIType:   "llamacpp",
+			ModelPath:      modelPath,
+			ModelName:      file.Name(),
+			Status:         "stopped",
+			APIType:        "llamacpp",
+			ModelSizeBytes: file.Size(),
 		}
+
+		// Set split model metadata if applicable
+		if splitInfo.IsSplit {
+			partsFound, totalParts, isComplete := mm.checkSplitModelComplete(modelPath)
+			server.IsSplitModel = true
+			server.SplitPartNumber = splitInfo.PartNumber
+			server.SplitTotalParts = totalParts
+			server.SplitPartsFound = partsFound
+			server.SplitIsComplete = isComplete
+			server.SplitAllParts = mm.getSplitModelParts(modelPath)
+		}
+
 		mm.servers[modelPath] = server
 		models = append(models, server)
 	}
@@ -452,14 +515,17 @@ func (mm *ModelManager) UpdateVRAMUsage() error {
 	processes, err := gpu.GetProcessGPUMemory()
 	if err != nil {
 		// Don't fail if GPU info isn't available, just log
-		log.Printf("Failed to get GPU process info: %v", err)
+		log.Printf("UpdateVRAMUsage: Failed to get GPU process info: %v", err)
 		return nil
 	}
+
+	log.Printf("UpdateVRAMUsage: Found %d GPU processes", len(processes))
 
 	// Create a map of PID -> VRAM usage for quick lookup
 	pidToVRAM := make(map[int]int64)
 	for _, proc := range processes {
 		pidToVRAM[proc.PID] = proc.VRAMUsed
+		log.Printf("UpdateVRAMUsage: GPU Process - PID: %d, Name: %s, VRAM: %d bytes", proc.PID, proc.ProcessName, proc.VRAMUsed)
 	}
 
 	// Update VRAM for all running servers
@@ -468,8 +534,12 @@ func (mm *ModelManager) UpdateVRAMUsage() error {
 
 	for _, server := range mm.servers {
 		if server.PID > 0 {
+			log.Printf("UpdateVRAMUsage: Checking server %s (PID: %d)", server.ModelName, server.PID)
 			if vram, exists := pidToVRAM[server.PID]; exists {
 				server.VRAMUsageBytes = vram
+				log.Printf("UpdateVRAMUsage: Updated server %s VRAM to %d bytes", server.ModelName, vram)
+			} else {
+				log.Printf("UpdateVRAMUsage: No VRAM data found for PID %d", server.PID)
 			}
 		}
 	}
@@ -528,6 +598,12 @@ func (mm *ModelManager) StartServer(modelPath string) error {
 		return fmt.Errorf("server already running on port %d", port)
 	}
 
+	// Check if this is a split model and verify all parts exist
+	isSplit := server.IsSplitModel
+	splitComplete := server.SplitIsComplete
+	partsFound := server.SplitPartsFound
+	totalParts := server.SplitTotalParts
+
 	// Find available port
 	port, err := mm.findAvailablePortForModel()
 	if err != nil {
@@ -539,6 +615,11 @@ func (mm *ModelManager) StartServer(modelPath string) error {
 	modelName := server.ModelName
 	isEmbeddingModel := strings.Contains(strings.ToLower(modelName), "embed")
 	mm.mu.Unlock()
+
+	// Verify split model is complete before starting
+	if isSplit && !splitComplete {
+		return fmt.Errorf("cannot start split model: only %d of %d parts found - download all parts first", partsFound, totalParts)
+	}
 
 	// Step 2: Do ALL I/O operations WITHOUT holding lock
 	logFile := filepath.Join("/tmp", fmt.Sprintf("llama-server-%d.log", port))
@@ -639,11 +720,36 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 	mm.mu.Lock()
 	if server, exists := mm.servers[modelPath]; exists {
 		server.Status = "error"
+
+		// Try to read the last 20 lines of the log file to get the actual error
+		logFile := filepath.Join("/tmp", fmt.Sprintf("llama-server-%d.log", port))
+		logContent := ""
+		if data, err := os.ReadFile(logFile); err == nil {
+			lines := strings.Split(string(data), "\n")
+			// Get last 20 non-empty lines
+			var lastLines []string
+			for i := len(lines) - 1; i >= 0 && len(lastLines) < 20; i-- {
+				line := strings.TrimSpace(lines[i])
+				if line != "" {
+					lastLines = append([]string{line}, lastLines...)
+				}
+			}
+			if len(lastLines) > 0 {
+				logContent = strings.Join(lastLines, "\n")
+			}
+		}
+
 		if lastError != nil {
 			server.ErrorMessage = fmt.Sprintf("Failed to start: %v", lastError)
 		} else {
 			server.ErrorMessage = fmt.Sprintf("Server failed to respond within %v", timeout)
 		}
+
+		// Append log content if available
+		if logContent != "" {
+			server.ErrorMessage += "\n\nLast 20 lines from log:\n" + logContent
+		}
+
 		log.Printf("Model server failed to start: %s on port %d - %s", server.ModelName, port, server.ErrorMessage)
 	}
 	mm.mu.Unlock()
@@ -734,17 +840,130 @@ func (mm *ModelManager) DeleteModel(modelPath string) error {
 		return fmt.Errorf("cannot delete running server - stop it first")
 	}
 
-	// Delete the file from disk
-	if err := os.Remove(modelPath); err != nil {
-		return fmt.Errorf("failed to delete model file: %w", err)
+	// For split models, delete all parts
+	if server.IsSplitModel && len(server.SplitAllParts) > 0 {
+		deletedParts := 0
+		missingParts := 0
+		for _, partPath := range server.SplitAllParts {
+			if err := os.Remove(partPath); err != nil {
+				if os.IsNotExist(err) {
+					missingParts++
+					log.Printf("Split model part already gone: %s", partPath)
+				} else {
+					log.Printf("Warning: failed to delete split model part %s: %v", partPath, err)
+				}
+			} else {
+				deletedParts++
+				log.Printf("Deleted split model part: %s", partPath)
+			}
+		}
+		if missingParts > 0 {
+			log.Printf("Deleted %d/%d split model parts (%d were already missing)", deletedParts, len(server.SplitAllParts), missingParts)
+		} else {
+			log.Printf("Deleted all %d split model parts", deletedParts)
+		}
+	} else {
+		// Single file - delete it
+		if err := os.Remove(modelPath); err != nil {
+			return fmt.Errorf("failed to delete model file: %w", err)
+		}
+		log.Printf("Deleted model file: %s", modelPath)
 	}
-
-	log.Printf("Deleted model file: %s", modelPath)
 
 	// Remove from tracking
 	delete(mm.servers, modelPath)
 
 	return nil
+}
+
+// splitModelInfo contains metadata about a split GGUF file
+type splitModelInfo struct {
+	Prefix     string // e.g., "model-name"
+	PartNumber int    // e.g., 1 (from 00001)
+	TotalParts int    // e.g., 4 (from 00004)
+	IsSplit    bool   // true if this is a split model file
+}
+
+// parseSplitModelFilename detects and parses split GGUF filenames
+// Pattern: model-name-00001-of-00004.gguf
+// Returns splitModelInfo with IsSplit=true if it matches, IsSplit=false otherwise
+func parseSplitModelFilename(filename string) splitModelInfo {
+	// Pattern: anything ending with -NNNNN-of-NNNNN.gguf
+	re := regexp.MustCompile(`^(.+)-(\d{5})-of-(\d{5})\.gguf$`)
+	matches := re.FindStringSubmatch(filename)
+
+	if len(matches) != 4 {
+		return splitModelInfo{IsSplit: false}
+	}
+
+	prefix := matches[1]
+	partNum, err1 := strconv.Atoi(matches[2])
+	totalParts, err2 := strconv.Atoi(matches[3])
+
+	if err1 != nil || err2 != nil || partNum < 1 || totalParts < 1 || partNum > totalParts {
+		return splitModelInfo{IsSplit: false}
+	}
+
+	return splitModelInfo{
+		Prefix:     prefix,
+		PartNumber: partNum,
+		TotalParts: totalParts,
+		IsSplit:    true,
+	}
+}
+
+// buildSplitModelFilename constructs a split model filename from components
+// e.g., buildSplitModelFilename("model-name", 1, 4) => "model-name-00001-of-00004.gguf"
+func buildSplitModelFilename(prefix string, partNum, totalParts int) string {
+	return fmt.Sprintf("%s-%05d-of-%05d.gguf", prefix, partNum, totalParts)
+}
+
+// getSplitModelParts returns paths to all parts of a split model
+// Given any part of a split model, returns paths to all parts (including non-existent ones)
+func (mm *ModelManager) getSplitModelParts(modelPath string) []string {
+	filename := filepath.Base(modelPath)
+	info := parseSplitModelFilename(filename)
+
+	if !info.IsSplit {
+		return []string{modelPath} // Not a split model, return as-is
+	}
+
+	dir := filepath.Dir(modelPath)
+	var parts []string
+
+	for i := 1; i <= info.TotalParts; i++ {
+		partFilename := buildSplitModelFilename(info.Prefix, i, info.TotalParts)
+		partPath := filepath.Join(dir, partFilename)
+		parts = append(parts, partPath)
+	}
+
+	return parts
+}
+
+// checkSplitModelComplete verifies all parts of a split model exist
+// Returns (existingParts, totalParts, allExist)
+func (mm *ModelManager) checkSplitModelComplete(modelPath string) (int, int, bool) {
+	parts := mm.getSplitModelParts(modelPath)
+
+	if len(parts) == 1 {
+		// Not a split model - just check if the single file exists
+		_, err := os.Stat(modelPath)
+		if err == nil {
+			return 1, 1, true
+		}
+		return 0, 1, false
+	}
+
+	// Split model - check all parts
+	existingCount := 0
+	for _, part := range parts {
+		if _, err := os.Stat(part); err == nil {
+			existingCount++
+		}
+	}
+
+	allExist := existingCount == len(parts)
+	return existingCount, len(parts), allExist
 }
 
 // GetServerStatus returns the current status of all servers
@@ -803,6 +1022,7 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 				<th style="text-align: left; padding: 12px; color: #94a3b8;">Port</th>
 				<th style="text-align: left; padding: 12px; color: #94a3b8;" title="Context window size (tokens)">Context</th>
 				<th style="text-align: left; padding: 12px; color: #94a3b8;" title="GPU-accessible memory (VRAM + System RAM)">Memory</th>
+				<th style="text-align: left; padding: 12px; color: #94a3b8;" title="Last benchmark score (% of tests passed)">Score</th>
 				<th style="text-align: left; padding: 12px; color: #94a3b8;">Actions</th>
 			</tr>
 		</thead>
@@ -813,6 +1033,7 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		statusColor := "#94a3b8"
 		statusText := model.Status
 		statusTooltip := ""
+		statusHTML := ""
 		switch model.Status {
 		case "running":
 			statusColor = "#10b981"
@@ -827,7 +1048,37 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 			statusColor = "#ef4444"
 			statusText = "Error"
 			if model.ErrorMessage != "" {
-				statusTooltip = model.ErrorMessage
+				statusTooltip = "Click to view error details"
+				// Make error clickable to show modal with full error
+				// Use data attributes to avoid complex escaping issues
+				escapedModelName := htmlEscape(model.ModelName)
+				escapedError := htmlEscape(model.ErrorMessage)
+				statusHTML = fmt.Sprintf(`<span style="color: %s; font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: underline;" class="error-status" data-model-name="%s" data-error-message="%s">%s ⓘ</span>`,
+					statusColor, escapedModelName, escapedError, statusText)
+			}
+		}
+
+		// Default status HTML if not set above
+		if statusHTML == "" {
+			statusHTML = fmt.Sprintf(`<span style="color: %s; font-size: 13px; font-weight: 500;">%s</span>`, statusColor, statusText)
+		}
+
+		// Fetch last benchmark score for this model
+		var scoreText string
+		var scoreColor string
+		lastBenchmark, err := s.store.GetLastBenchmarkForModel(model.ModelName)
+		if err != nil || lastBenchmark == nil {
+			scoreText = "-"
+			scoreColor = "#64748b"
+		} else {
+			scoreText = fmt.Sprintf("%.1f%%", lastBenchmark.SuccessRate)
+			// Color based on score: green (>80%), yellow (50-80%), red (<50%)
+			if lastBenchmark.SuccessRate >= 80 {
+				scoreColor = "#10b981"
+			} else if lastBenchmark.SuccessRate >= 50 {
+				scoreColor = "#f59e0b"
+			} else {
+				scoreColor = "#ef4444"
 			}
 		}
 
@@ -894,9 +1145,14 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 			} else {
 				memoryTooltip = "Primarily using GPU VRAM - small model/embedding"
 			}
+		} else if model.ModelSizeBytes > 0 {
+			// For stopped models, show file size instead of "-"
+			vramText = gpu.FormatBytes(model.ModelSizeBytes)
+			memoryTooltip = "Model file size (start server to see actual memory usage)"
 		}
 
 		actionButton := ""
+		benchmarkButton := ""
 		testButton := ""
 		deleteButton := ""
 
@@ -905,25 +1161,40 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 
 		if model.Status == "running" {
 			actionButton = fmt.Sprintf(`
-		<form style="display: inline;" hx-post="/api/servers/stop">
-			<input type="hidden" name="model_path" value="%s" />
-			<button 
-				type="submit" 
-				style="padding: 6px 12px; background: #dc2626; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
-				hx-indicator="#stop-spinner-%s"
-			>
-				<span id="stop-spinner-%s" class="spinner htmx-indicator"></span>
-				<span>Stop</span>
-			</button>
-		</form>
-	`, model.ModelPath, modelID, modelID)
+	<form style="display: inline;" hx-post="/api/servers/stop">
+		<input type="hidden" name="model_path" value="%s" />
+		<button 
+			type="submit" 
+			style="padding: 6px 12px; background: #dc2626; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
+			hx-indicator="#stop-spinner-%s"
+		>
+			<span id="stop-spinner-%s" class="spinner htmx-indicator"></span>
+			<span>Stop</span>
+		</button>
+	</form>
+`, model.ModelPath, modelID, modelID)
+			// Add Run Benchmark button for running servers
+			benchmarkButton = fmt.Sprintf(`
+	<form style="display: inline;" hx-post="/api/benchmark/run" hx-target="#benchmark_status_%s" hx-swap="innerHTML">
+		<input type="hidden" name="model_path" value="%s" />
+		<button 
+			type="submit" 
+			style="padding: 6px 12px; background: #7c3aed; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
+			hx-indicator="#benchmark-spinner-%s"
+		>
+			<span id="benchmark-spinner-%s" class="spinner htmx-indicator"></span>
+			<span>Run Benchmark</span>
+		</button>
+	</form>
+	<div id="benchmark_status_%s"></div>
+`, modelID, model.ModelPath, modelID, modelID, modelID)
 			// Add Logs button for running servers
 			testButton = fmt.Sprintf(`
-		<a href="/api/servers/logs?port=%d" target="_blank" 
-		   style="display: inline-block; padding: 6px 12px; background: #64748b; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;">
-			Logs
-		</a>
-	`, model.Port)
+	<a href="/api/servers/logs?port=%d" target="_blank" 
+	   style="display: inline-block; padding: 6px 12px; background: #64748b; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;">
+		Logs
+	</a>
+`, model.Port)
 			// Can't delete while running
 			deleteButton = `<span style="color: #64748b; font-size: 12px;">Stop first to delete</span>`
 		} else if model.Status == "stopped" || model.Status == "error" {
@@ -946,8 +1217,18 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		</form>
 	`, model.ModelPath, modelID, modelID, buttonText)
 			// Allow delete when stopped or error
+			deleteConfirmMsg := fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove the file from disk.", model.ModelName)
+			if model.IsSplitModel && model.SplitTotalParts > 1 {
+				if model.SplitIsComplete {
+					deleteConfirmMsg = fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove all %d part files from disk.", model.ModelName, model.SplitTotalParts)
+				} else {
+					deleteConfirmMsg = fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove the %d downloaded part file(s) from disk. %d part(s) are still missing.",
+						model.ModelName, model.SplitPartsFound, model.SplitTotalParts-model.SplitPartsFound)
+				}
+			}
+
 			deleteButton = fmt.Sprintf(`
-			<form style="display: inline;" hx-delete="/api/servers/delete" hx-confirm="Are you sure you want to delete %s? This will permanently remove the file from disk.">
+			<form style="display: inline;" hx-delete="/api/servers/delete" hx-confirm="%s">
 				<input type="hidden" name="model_path" value="%s" />
 				<button 
 					type="submit" 
@@ -958,21 +1239,44 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 					<span>Delete</span>
 				</button>
 			</form>
-		`, model.ModelName, model.ModelPath, modelID, modelID)
+		`, deleteConfirmMsg, model.ModelPath, modelID, modelID)
 		} else {
 			actionButton = `<span style="color: #64748b;">Please wait...</span>`
 		}
 
+		// Format model name with split model indicator if applicable
+		modelNameDisplay := model.ModelName
+		modelNameTooltip := ""
+		if model.IsSplitModel {
+			if model.SplitIsComplete {
+				modelNameDisplay = fmt.Sprintf("%s <span style=\"color: #10b981; font-size: 11px;\">(%d parts)</span>",
+					model.ModelName, model.SplitTotalParts)
+				modelNameTooltip = fmt.Sprintf("Split model with %d parts - all parts present", model.SplitTotalParts)
+			} else {
+				modelNameDisplay = fmt.Sprintf("%s <span style=\"color: #f59e0b; font-size: 11px;\">(%d/%d parts)</span>",
+					model.ModelName, model.SplitPartsFound, model.SplitTotalParts)
+				modelNameTooltip = fmt.Sprintf("Split model: %d of %d parts found - download remaining parts to start",
+					model.SplitPartsFound, model.SplitTotalParts)
+
+				// If split model is incomplete, disable Start button
+				if model.Status == "stopped" {
+					actionButton = `<span style="color: #f59e0b; font-size: 12px;">Download all parts first</span>`
+					deleteButton = "" // Don't show delete for incomplete downloads
+				}
+			}
+		}
+
 		html += fmt.Sprintf(`
 		<tr style="border-bottom: 1px solid #1e293b;">
-			<td style="padding: 14px 12px; color: #e2e8f0; font-size: 13px; font-family: monospace;">%s</td>
-			<td style="padding: 14px 12px;" title="%s"><span style="color: %s; font-size: 13px; font-weight: 500;">%s</span></td>
+			<td style="padding: 14px 12px; color: #e2e8f0; font-size: 13px; font-family: monospace;" title="%s">%s</td>
+			<td style="padding: 14px 12px;" title="%s">%s</td>
 			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;">%s</td>
 			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;" title="%s">%s</td>
 			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;" title="%s">%s</td>
-			<td style="padding: 14px 12px;">%s%s%s</td>
+			<td style="padding: 14px 12px; color: %s; font-size: 13px; font-weight: 500;">%s</td>
+			<td style="padding: 14px 12px;">%s%s%s%s</td>
 		</tr>
-	`, model.ModelName, statusTooltip, statusColor, statusText, portText, contextTooltip, contextText, memoryTooltip, vramText, actionButton, testButton, deleteButton)
+	`, modelNameTooltip, modelNameDisplay, statusTooltip, statusHTML, portText, contextTooltip, contextText, memoryTooltip, vramText, scoreColor, scoreText, actionButton, benchmarkButton, testButton, deleteButton)
 	}
 
 	html += `
@@ -1006,7 +1310,9 @@ func (s *Server) HandleStartServer(w http.ResponseWriter, r *http.Request) {
 	// Wait briefly for server to start, then refresh status
 	time.Sleep(500 * time.Millisecond)
 	s.modelManager.RefreshServerStatus()
-	// Note: SSE broadcast happens automatically via state change callback
+	s.modelManager.UpdateVRAMUsage()
+	// Trigger SSE broadcast for state change
+	s.modelManager.notifyStateChange()
 
 	// Return updated server list with current status
 	s.HandleListModels(w, r)
@@ -1036,7 +1342,9 @@ func (s *Server) HandleStopServer(w http.ResponseWriter, r *http.Request) {
 
 	// Refresh status to get updated GPU memory
 	s.modelManager.RefreshServerStatus()
-	// Note: SSE broadcast happens automatically via state change callback
+	s.modelManager.UpdateVRAMUsage()
+	// Trigger SSE broadcast for state change
+	s.modelManager.notifyStateChange()
 
 	// Return updated server list with current GPU status
 	s.HandleListModels(w, r)

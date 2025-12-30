@@ -25,7 +25,7 @@ func TestHandleStartServer_ReturnsUpdatedList(t *testing.T) {
 
 	// Create server with model manager
 	server := &Server{
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	// Manually add the test model to the model manager
@@ -124,7 +124,7 @@ func TestHandleStartServer_AlreadyRunning(t *testing.T) {
 	f.Close()
 
 	server := &Server{
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	// Manually add a server in "running" state (simulate already running)
@@ -171,7 +171,7 @@ func TestHandleStopServer_ReturnsUpdatedList(t *testing.T) {
 	f.Close()
 
 	server := &Server{
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	// Manually add a server in "stopped" state (not running)
@@ -241,7 +241,7 @@ func TestHandleStopServer_ReturnsUpdatedList(t *testing.T) {
 // TestHandleStartServer_MissingModelPath tests error handling when model_path is missing
 func TestHandleStartServer_MissingModelPath(t *testing.T) {
 	server := &Server{
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	// Create request without model_path
@@ -261,7 +261,7 @@ func TestHandleStartServer_MissingModelPath(t *testing.T) {
 // TestHandleStartServer_WrongMethod tests that non-POST requests are rejected
 func TestHandleStartServer_WrongMethod(t *testing.T) {
 	server := &Server{
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	req := httptest.NewRequest("GET", "/api/servers/start", nil)
