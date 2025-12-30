@@ -373,28 +373,31 @@ html := `<div id="content">...</div>`  // ❌ WRONG
 
 **Pattern 1: Native sse-swap (Direct Content Swap)**
 ```html
-<div sse-connect="/api/updates" sse-swap="update">
-  <span id="counter">Connecting...</span>
+<div hx-ext="sse" sse-connect="/api/updates" sse-swap="update">
+  <span class="counter">Connecting...</span>
 </div>
 ```
-Server sends:
+Server sends (incrementing counter every 2 seconds):
 ```
 event: update
-data: <span id="counter">42</span>
+data: 42
 ```
 
 **Pattern 2: SSE with hx-trigger**
 ```html
-<div sse-connect="/api/updates" sse-swap="refresh">
-  <div hx-trigger="load, sse:refresh" hx-swap="innerHTML">
-    <span>Connecting...</span>
-  </div>
+<div hx-ext="sse" sse-connect="/api/events">
+  <span hx-get="/api/counter" hx-trigger="sse:refresh" hx-swap="innerHTML" class="counter">
+    Connecting...
+  </span>
 </div>
 ```
-Server sends:
+Server sends events (separate endpoint):
 ```
 event: refresh
-data: (empty - triggers hx-trigger)
+data: (empty - triggers hx-get)
+
+GET /api/counter returns:
+<span class="counter">43</span>
 ```
 
 #### HTMX Action Handlers Must Return Complete Replacements
