@@ -645,6 +645,28 @@ window.location.reload(true)
 // Or use the MCP tool with ignoreCache: true
 ```
 
+**4. Don't Use JSON.stringify on Event Detail Objects**
+
+HTMX event `detail` objects contain circular references (e.g., element references that point back to themselves). Using `JSON.stringify(e.detail)` will throw "Converting circular structure to JSON" errors.
+
+**❌ WRONG:**
+```javascript
+document.body.addEventListener('htmx:sseMessage', function(e) {
+    logEvent('SSE: ' + JSON.stringify(e.detail));  // ERROR!
+});
+```
+
+**✅ CORRECT:**
+```javascript
+document.body.addEventListener('htmx:sseMessage', function(e) {
+    logEvent('SSE Message received');
+});
+// Or extract specific safe properties:
+document.body.addEventListener('htmx:sseError', function(e) {
+    logEvent('Error: ' + (e.detail.error ? e.detail.error.message : 'unknown'));
+});
+```
+
 ### Alpine.js + HTMX Integration
 
 **Alpine.js and HTMX work perfectly together.** Use Alpine.js for local UI state (loading indicators, show/hide, form validation) and HTMX for server communication (fetching HTML, form submissions, real-time updates).
