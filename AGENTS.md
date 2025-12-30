@@ -371,19 +371,57 @@ html := `<div id="content">...</div>`  // ❌ WRONG
 
 #### SSE Usage Patterns
 
-**Pattern 1: Native sse-swap (Direct Content Swap)**
+**Pattern 1: Native sse-swap (PREFERRED)** - Use this for most real-time updates
+
+The canonical HTMX SSE pattern. SSE sends the content directly, replacing the element's innerHTML:
+
 ```html
 <div hx-ext="sse" sse-connect="/api/updates" sse-swap="update">
   <span class="counter">Connecting...</span>
 </div>
 ```
+
 Server sends (incrementing counter every 2 seconds):
 ```
 event: update
 data: 42
 ```
 
-**Pattern 2: SSE with hx-trigger**
+**Why Pattern 1 is preferred:**
+- Simpler server (single endpoint handles both connection and content)
+- Lower latency (no extra HTTP round-trip per update)
+- Less complexity to debug
+- HTMX docs use this as the canonical example
+
+**Go server implementation:**
+```go
+http.HandleFunc("/api/updates", func(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "text/event-stream")
+    w.Header().Set("Cache-Control", "no-cache")
+    w.Header().Set("Connection", "keep-alive")
+    w.Header().Set("Access-Control-Allow-Origin", "*")
+
+    flusher := w.(http.Flusher)
+    counter := 0
+
+    for {
+        counter++
+        fmt.Fprintf(w, "event: update\n")
+        fmt.Fprintf(w, "data: %d\n\n", counter)
+        flusher.Flush()
+        time.Sleep(2 * time.Second)
+
+        if r.Context().Err() != nil {
+            break
+        }
+    }
+})
+```
+
+**Pattern 2: SSE with hx-trigger** - Use when you need separate content endpoints
+
+When SSE should trigger an hx-get to fetch content from a different endpoint:
+
 ```html
 <div hx-ext="sse" sse-connect="/api/events">
   <span hx-get="/api/counter" hx-trigger="sse:refresh" hx-swap="innerHTML" class="counter">
@@ -391,6 +429,7 @@ data: 42
   </span>
 </div>
 ```
+
 Server sends events (separate endpoint):
 ```
 event: refresh
@@ -399,6 +438,12 @@ data: (empty - triggers hx-get)
 GET /api/counter returns:
 <span class="counter">43</span>
 ```
+
+**When to use Pattern 2:**
+- Content comes from a different API/service
+- Requires authentication/session data not available in SSE endpoint
+- You need to transform/process data before rendering
+- Event signaling and content fetching should be decoupled
 
 #### HTMX Action Handlers Must Return Complete Replacements
 
