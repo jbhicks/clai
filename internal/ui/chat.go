@@ -98,27 +98,27 @@ func (c *ChatModel) rebuildContentIfDirty() {
 	logger.Debug("[CHAT] Rendering %d messages, c.Width=%d", len(c.Messages), c.Width)
 	chatContent := ""
 	maxBubbleWidth := int(float64(c.Width) * 0.95)
-	maxInnerTextWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
 
 	for i, msg := range c.Messages {
 		var rendered string
 		switch msg.Role {
 		case "user":
 			userInnerWidth := maxBubbleWidth - themeStyles.UserMessage.GetHorizontalFrameSize()
-			wrappedContent := lipgloss.NewStyle().Width(userInnerWidth).Render(msg.Content)
+			wrapperStyle := lipgloss.NewStyle().
+				Width(userInnerWidth).
+				Background(lipgloss.Color(c.Theme.Theme.Primary.Background))
+			wrappedContent := wrapperStyle.Render(msg.Content)
 			bubble := themeStyles.UserMessage.Render(wrappedContent)
-			wrapper := lipgloss.NewStyle().
-				Width(c.Width).
-				Align(lipgloss.Left)
-			rendered = wrapper.Render(bubble)
+			// Pad each line to full chat width with background
+			rendered = c.padLinesToWidth(bubble, c.Width)
 		case "assistant":
+			assistantInnerWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
 			cleanedContent := llm.StripTextBasedFunctionCalls(msg.Content)
-			contentWithHighlighting := llm.RenderWithSyntaxHighlighting(cleanedContent, maxInnerTextWidth, themeStyles.CodeBlockBadge, themeStyles.CodeBlockContainer)
-			bubble := themeStyles.AssistantMessage.Render(contentWithHighlighting)
-			wrapper := lipgloss.NewStyle().
-				Width(c.Width).
-				Align(lipgloss.Right)
-			rendered = wrapper.Render(bubble)
+			contentWithHighlighting := llm.RenderWithSyntaxHighlighting(cleanedContent, assistantInnerWidth, themeStyles.CodeBlockBadge, themeStyles.CodeBlockContainer)
+			paddedContent := contentWithHighlighting
+			bubble := themeStyles.AssistantMessage.Render(paddedContent)
+			// Pad each line to full chat width with background
+			rendered = c.padLinesToWidth(bubble, c.Width)
 		case "tool":
 			toolInnerWidth := maxBubbleWidth - themeStyles.ToolMessage.GetHorizontalFrameSize()
 			cleanContent := ansiRegex.ReplaceAllString(msg.Content, "")
@@ -140,9 +140,13 @@ func (c *ChatModel) rebuildContentIfDirty() {
 				displayContent = displayContent[:maxToolOutputLength] + "\n... (output truncated)"
 			}
 			toolHeader := themeStyles.ToolBadge.Render(languageIcon + " " + header)
-			wrappedContent := lipgloss.NewStyle().Width(toolInnerWidth).Render(displayContent)
+			wrapperStyle := lipgloss.NewStyle().
+				Width(toolInnerWidth).
+				Background(lipgloss.Color(c.Theme.Theme.Dim.Black))
+			wrappedContent := wrapperStyle.Render(displayContent)
 			bubble := themeStyles.ToolMessage.Render(toolHeader + "\n" + wrappedContent)
-			rendered = bubble
+			// Pad each line to full chat width with background
+			rendered = c.padLinesToWidth(bubble, c.Width)
 		default:
 			rendered = msg.Content
 		}
@@ -157,12 +161,13 @@ func (c *ChatModel) rebuildContentIfDirty() {
 }
 
 func (c *ChatModel) updateViewportHeight() {
-	themeStyles := GetThemeStyles(c.Theme)
-
-	// Calculate input height (always account for focused state to prevent height jumping)
+	// Calculate input height
 	// When focused: border adds 2 lines (top + bottom) + 1 line for input = 3
-	// When unfocused: 1 line for input + 1 line for tooltip = 2, but we'll use 3 for consistency
+	// When unfocused: 1 line for input + 1 line for tooltip = 2
 	inputHeight := 3
+	if !c.TextInput.Focused() {
+		inputHeight = 2
+	}
 
 	// Calculate spinner height
 	spinnerHeight := 0
@@ -192,11 +197,27 @@ func (c *ChatModel) updateViewportHeight() {
 		logger.Debug("[CHAT] Initial scroll to bottom: YOffset=%d, Height=%d, TotalLines=%d",
 			c.Viewport.YOffset, c.Viewport.Height, c.Viewport.TotalLineCount())
 	}
+}
 
-	_ = themeStyles // Suppress unused warning if needed
+func (c *ChatModel) padLinesToWidth(content string, width int) string {
+	bg := lipgloss.Color(c.Theme.Theme.Primary.Background)
+	bgStyle := lipgloss.NewStyle().Background(bg)
+	lines := strings.Split(content, "\n")
+
+	for i, line := range lines {
+		lineWidth := lipgloss.Width(line)
+		if lineWidth < width {
+			// Add background-colored spaces to fill the remaining width
+			padding := width - lineWidth
+			lines[i] = line + bgStyle.Render(strings.Repeat(" ", padding))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (c *ChatModel) View() string {
+	c.rebuildContentIfDirty()
+
 	themeStyles := GetThemeStyles(c.Theme)
 	inputStyle := lipgloss.NewStyle()
 	if c.TextInput.Focused() {

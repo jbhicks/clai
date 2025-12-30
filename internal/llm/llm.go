@@ -122,16 +122,10 @@ func (c *Client) detectAPIFormat() {
 	c.apiFormat = FormatOllama
 }
 
-type ToolCall struct {
-	Name       string          `json:"name"`
-	Parameters json.RawMessage `json:"parameters"`
-}
 
 type Message struct {
-	Role          string     `json:"role"`
-	Content       string     `json:"content"`
-	ToolCalls     []ToolCall `json:"tool_calls,omitempty"`
-	SelectedTools []string   `json:"selected_tools,omitempty"`
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 type Request struct {
@@ -145,22 +139,9 @@ type Response struct {
 	Done    bool    `json:"done"`
 }
 
-type OpenAIToolCallDelta struct {
-	Index    int                          `json:"index"`
-	ID       string                       `json:"id,omitempty"`
-	Type     string                       `json:"type,omitempty"`
-	Function *OpenAIToolFunctionCallDelta `json:"function,omitempty"`
-}
-
-type OpenAIToolFunctionCallDelta struct {
-	Name      string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
-}
-
 type OpenAIDelta struct {
-	Content   string                `json:"content"`
-	Role      string                `json:"role,omitempty"`
-	ToolCalls []OpenAIToolCallDelta `json:"tool_calls,omitempty"`
+	Content string `json:"content"`
+	Role    string `json:"role,omitempty"`
 }
 
 type OpenAIChoice struct {

@@ -36,6 +36,53 @@ def hello():
 </code>`,
 			expected: 1,
 		},
+		// NEW TESTS: Simplified XML format
+		{
+			name:     "simplified XML - bash",
+			content:  `Here's some text <code bash>ls -la</code> more text`,
+			expected: 1,
+		},
+		{
+			name:     "simplified XML - python",
+			content:  `<code python>print("hello")</code>`,
+			expected: 1,
+		},
+		{
+			name:     "simplified XML - javascript",
+			content:  `<code javascript>console.log("hi")</code>`,
+			expected: 1,
+		},
+		{
+			name:     "simplified XML - js shorthand",
+			content:  `<code js>alert("test")</code>`,
+			expected: 1,
+		},
+		{
+			name:     "simplified XML - py shorthand",
+			content:  `<code py>print(42)</code>`,
+			expected: 1,
+		},
+		{
+			name:     "simplified XML - sh shorthand",
+			content:  `<code sh>echo test</code>`,
+			expected: 1,
+		},
+		// NEW TESTS: Markdown format
+		{
+			name:     "markdown - bash",
+			content:  "Here's some code:\n```bash\nls -la\n```\nMore text",
+			expected: 1,
+		},
+		{
+			name:     "markdown - python",
+			content:  "```python\nprint('hello')\n```",
+			expected: 1,
+		},
+		{
+			name:     "markdown - javascript",
+			content:  "```javascript\nconsole.log('test')\n```",
+			expected: 1,
+		},
 	}
 
 	for _, tt := range tests {
@@ -72,6 +119,56 @@ func TestParseCodeBlocksDetailed(t *testing.T) {
 			content:      "<code language=\"javascript\">console.log(`template ${var}`)</code>",
 			wantLanguage: "javascript",
 			wantCode:     "console.log(`template ${var}`)",
+		},
+		// NEW TESTS: Simplified XML
+		{
+			name:         "simplified python",
+			content:      `<code python>print(42 + 58)</code>`,
+			wantLanguage: "python",
+			wantCode:     `print(42 + 58)`,
+		},
+		{
+			name:         "simplified bash",
+			content:      `<code bash>cat /etc/hosts</code>`,
+			wantLanguage: "bash",
+			wantCode:     `cat /etc/hosts`,
+		},
+		{
+			name:         "simplified js (normalized to javascript)",
+			content:      `<code js>alert('test')</code>`,
+			wantLanguage: "javascript",
+			wantCode:     `alert('test')`,
+		},
+		{
+			name:         "simplified py (normalized to python)",
+			content:      `<code py>import sys</code>`,
+			wantLanguage: "python",
+			wantCode:     `import sys`,
+		},
+		{
+			name:         "simplified sh (normalized to bash)",
+			content:      `<code sh>pwd</code>`,
+			wantLanguage: "bash",
+			wantCode:     `pwd`,
+		},
+		// NEW TESTS: Markdown
+		{
+			name:         "markdown python",
+			content:      "```python\nfor i in range(10):\n    print(i)\n```",
+			wantLanguage: "python",
+			wantCode:     "for i in range(10):\n    print(i)",
+		},
+		{
+			name:         "markdown bash",
+			content:      "```bash\nls -la | grep .go\n```",
+			wantLanguage: "bash",
+			wantCode:     "ls -la | grep .go",
+		},
+		{
+			name:         "markdown js (normalized)",
+			content:      "```js\nconst x = 5;\n```",
+			wantLanguage: "javascript",
+			wantCode:     "const x = 5;",
 		},
 	}
 
@@ -146,6 +243,34 @@ func TestParseCodeBlocksEdgeCases(t *testing.T) {
 			name:     "newlines and tabs",
 			content:  "<code language=\"python\">def func():\n\tprint(\"test\")\n\treturn True</code>",
 			expected: 1,
+		},
+		// NEW TESTS: Simplified XML incomplete
+		{
+			name:     "incomplete simplified bash",
+			content:  `<code bash>echo hello`,
+			expected: 1,
+		},
+		{
+			name:     "incomplete simplified python",
+			content:  `<code python>print(42)`,
+			expected: 1,
+		},
+		// NEW TESTS: Markdown incomplete
+		{
+			name:     "incomplete markdown - no closing backticks",
+			content:  "```python\nprint('test')",
+			expected: 1,
+		},
+		{
+			name:     "incomplete markdown - no newline after lang",
+			content:  "```bashls -la\n```",
+			expected: 0, // Markdown requires newline after language
+		},
+		// NEW TESTS: Mixed formats (only first format found should match)
+		{
+			name:     "full XML takes priority over simplified",
+			content:  `<code language="python">full</code> and <code bash>simplified</code>`,
+			expected: 2, // Both should be detected
 		},
 	}
 

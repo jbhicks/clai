@@ -12,7 +12,7 @@ import (
 func TestBroadcastServerUpdate(t *testing.T) {
 	server := &Server{
 		sseClients:   make(map[chan string]bool),
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	// Create mock SSE clients
@@ -48,7 +48,7 @@ func TestBroadcastServerUpdate(t *testing.T) {
 func TestBroadcastServerUpdate_NoClients(t *testing.T) {
 	server := &Server{
 		sseClients:   make(map[chan string]bool),
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	// Should not panic when no clients connected
@@ -58,7 +58,7 @@ func TestBroadcastServerUpdate_NoClients(t *testing.T) {
 func TestBroadcastServerUpdate_FullBuffer(t *testing.T) {
 	server := &Server{
 		sseClients:   make(map[chan string]bool),
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	// Create client with no buffer (will block immediately)
@@ -83,7 +83,7 @@ func TestBroadcastServerUpdate_FullBuffer(t *testing.T) {
 func TestSSEConcurrentBroadcast(t *testing.T) {
 	server := &Server{
 		sseClients:   make(map[chan string]bool),
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	// Add multiple clients
@@ -130,7 +130,7 @@ func TestSSEConcurrentBroadcast(t *testing.T) {
 func TestSSEClientConnection(t *testing.T) {
 	server := &Server{
 		sseClients:   make(map[chan string]bool),
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	// Create test HTTP server

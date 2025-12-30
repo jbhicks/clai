@@ -1,2 +1,5 @@
-This is a sample file with several words.
-We will count these words using Python.
+Hello World
+This is a test file.
+Line 3: Important data
+Line 4: More content
+TOTAL_COUNT: 42

@@ -14,13 +14,13 @@ func TestLogUpdateMsg(t *testing.T) {
 	theme := AvailableThemes[0] // Use Gruvbox theme
 
 	m := &Model{
-		Width:  100,
-		Height: 40,
-		Theme:  theme,
-		Log:    viewport.New(50, 20),
+		Width:       100,
+		Height:      40,
+		Theme:       theme,
+		Log:         viewport.New(50, 20),
+		AgentStatus: NewAgentStatusView(theme),
 	}
 
-	// Initialize log channel
 	m.logChan = make(chan tea.Msg, 10)
 
 	// Send a few log messages
@@ -64,10 +64,11 @@ func TestLogBufferAccumulation(t *testing.T) {
 	theme := AvailableThemes[0] // Use Gruvbox theme
 
 	m := &Model{
-		Width:  100,
-		Height: 40,
-		Theme:  theme,
-		Log:    viewport.New(50, 20),
+		Width:       100,
+		Height:      40,
+		Theme:       theme,
+		Log:         viewport.New(50, 20),
+		AgentStatus: NewAgentStatusView(theme),
 	}
 
 	m.logChan = make(chan tea.Msg, 10)
@@ -98,14 +99,12 @@ func TestLogBufferAccumulation(t *testing.T) {
 func TestLogViewportDimensions(t *testing.T) {
 	theme := AvailableThemes[0] // Use Gruvbox theme
 
-	logWidth := 50
-	logHeight := 20
-
 	m := &Model{
-		Width:  100,
-		Height: 40,
-		Theme:  theme,
-		Log:    viewport.New(logWidth, logHeight),
+		Width:       100,
+		Height:      40,
+		Theme:       theme,
+		Log:         viewport.New(50, 20),
+		AgentStatus: NewAgentStatusView(theme),
 	}
 
 	m.logChan = make(chan tea.Msg, 10)

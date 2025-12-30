@@ -8,7 +8,7 @@ import (
 func TestAgentParseThought(t *testing.T) {
 	agent := NewAgent(nil)
 
-	response := "Thought: I need to calculate 5 + 3 using JavaScript.\n\nCode:\n```javascript\n5 + 3\n```\n\nFinal Answer: The result is 8."
+	response := "I need to calculate 5 + 3 using JavaScript.\n\n<code language=\"javascript\">\n5 + 3\n</code>"
 
 	parsed, err := agent.parseResponse(response)
 	if err != nil {
@@ -23,34 +23,34 @@ func TestAgentParseThought(t *testing.T) {
 		t.Errorf("Expected code '5 + 3', got: %s", parsed.Code)
 	}
 
-	if parsed.Final != "The result is 8." {
-		t.Errorf("Expected final answer, got: %s", parsed.Final)
+	if parsed.Final != "" {
+		t.Errorf("Expected no final answer, got: %s", parsed.Final)
 	}
 }
 
-func TestAgentParseDelegation(t *testing.T) {
+func TestAgentParseFinal(t *testing.T) {
 	agent := NewAgent(nil)
 
-	response := "Thought: I need to delegate this task to multiple sub-agents.\n\nDelegation: [{\"subtask\": \"Calculate 5 + 3\", \"role\": \"math\"}, {\"subtask\": \"Calculate 10 * 2\", \"role\": \"math\"}]"
+	response := "The result is 8."
 
 	parsed, err := agent.parseResponse(response)
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
 
-	if len(parsed.Delegation) != 2 {
-		t.Errorf("Expected 2 subtasks, got: %d", len(parsed.Delegation))
+	if parsed.Final != "The result is 8." {
+		t.Errorf("Expected final answer, got: %s", parsed.Final)
 	}
 
-	if len(parsed.Delegation) > 0 && parsed.Delegation[0].Description != "Calculate 5 + 3" {
-		t.Errorf("Expected first subtask description, got: %s", parsed.Delegation[0].Description)
+	if parsed.Code != "" {
+		t.Errorf("Expected no code, got: %s", parsed.Code)
 	}
 }
 
 func TestAgentParseCodeBlock(t *testing.T) {
 	agent := NewAgent(nil)
 
-	response := "Thought: Need to execute JavaScript\n\nCode:\n```javascript\nvar x = 10;\nvar y = 20;\nx + y\n```\n\nFinal Answer: Result is 30"
+	response := "Need to execute JavaScript\n\n<code language=\"javascript\">\nvar x = 10;\nvar y = 20;\nx + y\n</code>"
 
 	parsed, err := agent.parseResponse(response)
 	if err != nil {
@@ -69,14 +69,14 @@ func TestAgentParseCodeBlock(t *testing.T) {
 func TestAgentParseFinalAnswerOnly(t *testing.T) {
 	agent := NewAgent(nil)
 
-	response := "Thought: The answer is obvious.\n\nFinal Answer: 42"
+	response := "The answer is 42."
 
 	parsed, err := agent.parseResponse(response)
 	if err != nil {
 		t.Fatalf("Parse error: %v", err)
 	}
 
-	if parsed.Final != "42" {
-		t.Errorf("Expected final answer '42', got: %s", parsed.Final)
+	if parsed.Final != "The answer is 42." {
+		t.Errorf("Expected final answer, got: %s", parsed.Final)
 	}
 }

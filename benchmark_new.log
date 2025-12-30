@@ -1,0 +1,169 @@
+2025/12/30 09:24:12 Restored 1 downloads from database
+Starting benchmark server...
+2025/12/30 09:24:12 Starting benchmark server on http://localhost:8080
+Benchmark server running at http://localhost:8080
+Server reloaded - browser tab should auto-refresh
+Press Ctrl+C to stop the server
+2025/12/30 09:24:12 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:13 HandleGPUStatus: Starting...
+2025/12/30 09:24:13 HandleListModels: Starting...
+2025/12/30 09:24:13 HandleListModels: Scanned models
+2025/12/30 09:24:13 HandleListModels: Getting server status...
+2025/12/30 09:24:13 HandleListModels: Done with setup
+2025/12/30 09:24:13 SSE client connected, total clients: 1
+2025/12/30 09:24:13 SSE client connected to downloads stream
+2025/12/30 09:24:14 HandleGPUStatus: Got GPU info
+2025/12/30 09:24:14 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:14 HandleGPUStatus: Starting...
+2025/12/30 09:24:14 HandleListModels: Starting...
+2025/12/30 09:24:14 HandleListModels: Scanned models
+2025/12/30 09:24:14 HandleListModels: Getting server status...
+2025/12/30 09:24:14 HandleListModels: Done with setup
+2025/12/30 09:24:14 SSE client connected, total clients: 2
+2025/12/30 09:24:14 SSE client connected to downloads stream
+2025/12/30 09:24:14 HandleGPUStatus: Got GPU info
+2025/12/30 09:24:14 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:15 SSE client connected, total clients: 3
+2025/12/30 09:24:15 SSE client connected to downloads stream
+2025/12/30 09:24:15 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:15 Broadcasting refresh-servers event to 3 SSE clients
+2025/12/30 09:24:15 Sent refresh-servers event to client
+2025/12/30 09:24:15 Sent refresh-servers event to client
+2025/12/30 09:24:15 Sent refresh-servers event to client
+2025/12/30 09:24:15 SSE: Sending event 'refresh-servers' to client
+2025/12/30 09:24:15 SSE: Sending event 'refresh-servers' to client
+2025/12/30 09:24:15 SSE: Sending event 'refresh-servers' to client
+2025/12/30 09:24:18 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:21 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:24 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:27 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:29 SSE: Client context done, closing connection
+2025/12/30 09:24:29 SSE client disconnected, remaining clients: 2
+2025/12/30 09:24:29 SSE client disconnected from downloads stream
+2025/12/30 09:24:29 HandleGPUStatus: Starting...
+2025/12/30 09:24:29 HandleListModels: Starting...
+2025/12/30 09:24:29 HandleListModels: Scanned models
+2025/12/30 09:24:29 HandleListModels: Getting server status...
+2025/12/30 09:24:29 HandleListModels: Done with setup
+2025/12/30 09:24:29 SSE client connected, total clients: 3
+2025/12/30 09:24:29 SSE client connected to downloads stream
+2025/12/30 09:24:30 HandleGPUStatus: Got GPU info
+2025/12/30 09:24:30 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:30 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:33 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:36 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:39 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:42 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:45 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:48 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:51 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:54 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:24:57 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:00 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:03 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:06 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:09 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:12 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:15 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:18 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:21 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:24 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:27 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:30 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:33 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:36 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:39 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:42 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:45 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:48 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:51 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:54 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:25:57 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:00 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:03 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:06 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:09 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:12 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:15 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:18 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:21 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:24 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:27 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:30 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:33 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:36 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:39 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:42 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:45 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:48 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:51 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:54 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:26:57 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:00 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:03 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:06 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:09 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:12 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:15 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:18 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:21 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:24 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:27 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:30 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:33 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:36 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:39 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:42 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:45 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:48 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:51 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:54 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:27:57 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:00 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:03 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:06 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:09 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:12 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:15 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:18 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:19 SSE client disconnected from downloads stream
+2025/12/30 09:28:19 SSE: Client context done, closing connection
+2025/12/30 09:28:19 SSE client disconnected, remaining clients: 2
+2025/12/30 09:28:19 HandleGPUStatus: Starting...
+2025/12/30 09:28:19 HandleListModels: Starting...
+2025/12/30 09:28:19 HandleListModels: Scanned models
+2025/12/30 09:28:19 HandleListModels: Getting server status...
+2025/12/30 09:28:19 HandleListModels: Done with setup
+2025/12/30 09:28:19 SSE client connected, total clients: 3
+2025/12/30 09:28:20 HandleGPUStatus: Got GPU info
+2025/12/30 09:28:20 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:20 SSE client connected to downloads stream
+2025/12/30 09:28:21 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:24 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:27 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:30 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:33 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:36 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:39 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:42 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:45 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:48 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:51 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:54 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:28:57 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:29:00 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:29:03 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:29:06 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:29:09 UpdateVRAMUsage: Found 0 GPU processes
+2025/12/30 09:29:10 SSE client disconnected from downloads stream
+2025/12/30 09:29:10 SSE: Client context done, closing connection
+2025/12/30 09:29:10 SSE client disconnected, remaining clients: 2
+2025/12/30 09:29:11 HandleGPUStatus: Starting...
+2025/12/30 09:29:11 HandleListModels: Starting...
+2025/12/30 09:29:11 HandleListModels: Scanned models
+2025/12/30 09:29:11 HandleListModels: Getting server status...
+2025/12/30 09:29:11 HandleListModels: Done with setup
+2025/12/30 09:29:11 SSE client connected, total clients: 3
+2025/12/30 09:29:11 SSE client connected to downloads stream
+2025/12/30 09:29:11 HandleGPUStatus: Got GPU info
+2025/12/30 09:29:11 UpdateVRAMUsage: Found 0 GPU processes

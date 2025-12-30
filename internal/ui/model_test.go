@@ -25,6 +25,7 @@ func newTestModel() *Model {
 
 	m := &Model{
 		Log:         viewport.New(0, 0),
+		AgentStatus: NewAgentStatusView(theme),
 		Help:        help.New(),
 		Keys:        DefaultKeyMap,
 		ActivePane:  ChatPane,

@@ -1,0 +1,164 @@
+=== RUN   TestModelBenchmark_CurrentModel
+    model_benchmark_test.go:294: Testing model at: http://localhost:8081
+    model_benchmark_test.go:295: Running 10 benchmark tests...
+=== RUN   TestModelBenchmark_CurrentModel/Simple_File_Read
+12:48:28 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:29 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:29 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:30 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:30 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:33 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:140: ✗ FAIL: Simple File Read - Response missing expected content: 'cat' (5.08s, 3 iterations)
+    model_benchmark_test.go:142: Response: Based on the directory listing, there is no file named "sample.txt" in the current directory. The files present are related to Go source code for an AI system, but no sample.txt file is found.
+        
+        If you...
+=== RUN   TestModelBenchmark_CurrentModel/File_Search
+12:48:33 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:34 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:34 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:36 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:36 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:37 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:37 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:37 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:37 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:40 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:40 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:42 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:42 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:55 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:140: ✗ FAIL: File Search - Response missing expected content: 'find' (21.77s, 7 iterations)
+    model_benchmark_test.go:142: Response: I've found and examined the LLM-related Go code. Here are the key details:
+        
+        ## LLM Implementation
+        
+        The main LLM client implementation is in `llm.go` which contains:
+        
+        1. **Core LLM Client Structure**:
+        ...
+=== RUN   TestModelBenchmark_CurrentModel/Directory_Listing
+12:48:55 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:55 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:55 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:57 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:140: ✗ FAIL: Directory Listing - Response missing expected content: 'ls' (1.97s, 2 iterations)
+    model_benchmark_test.go:142: Response: Here are all the files in the current directory:
+        
+        - agent.go
+        - agent_test.go
+        - code_parser.go
+        - code_parser_test.go
+        - enhanced_delegation_test.go
+        - format_test.go
+        - js_executor.go
+        - js_executor_test.g...
+=== RUN   TestModelBenchmark_CurrentModel/Simple_Calculation
+12:48:57 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:58 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:58 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:48:58 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:48:58 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:01 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:01 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:02 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:02 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:05 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:05 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:07 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:07 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:09 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:09 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:11 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:11 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:14 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:14 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:17 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:140: ✗ FAIL: Simple Calculation - Response missing expected content: '392' (19.58s, 10 iterations)
+    model_benchmark_test.go:142: Response: Task stopped: Loop detected: same code executed 3 times consecutively
+        
+        Last observation:
+        Observation (Code output): 345
+        
+=== RUN   TestModelBenchmark_CurrentModel/Multi-Step_Analysis
+12:49:17 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:17 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:17 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:18 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:137: ✓ PASS: Multi-Step Analysis (1.54s, 2 iterations)
+=== RUN   TestModelBenchmark_CurrentModel/JSON_Parsing
+12:49:18 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:19 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:20 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:23 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:23 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:28 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:137: ✓ PASS: JSON Parsing (9.48s, 3 iterations)
+=== RUN   TestModelBenchmark_CurrentModel/Python_Code_Execution
+12:49:28 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:28 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:28 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:31 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:137: ✓ PASS: Python Code Execution (2.98s, 2 iterations)
+=== RUN   TestModelBenchmark_CurrentModel/No_Code_Needed_-_General_Knowledge
+12:49:31 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:31 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:137: ✓ PASS: No Code Needed - General Knowledge (0.21s, 1 iterations)
+=== RUN   TestModelBenchmark_CurrentModel/Grep_Pattern_Search
+12:49:31 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:32 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:32 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:32 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:32 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:37 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:140: ✗ FAIL: Grep Pattern Search - Response missing expected content: 'grep' (6.26s, 3 iterations)
+    model_benchmark_test.go:142: Response: I've found all occurrences of the word 'Agent' in the agent.go file. Here are the results:
+        
+        1. Line 11: `type AgentResponse struct {`
+        2. Line 18: `type Agent struct {`
+        3. Line 34: `func NewAgent(clien...
+=== RUN   TestModelBenchmark_CurrentModel/Error_Recovery
+12:49:37 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:37 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:49:37 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:49:39 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:140: ✗ FAIL: Error Recovery - Response missing expected content: 'not found' (1.73s, 2 iterations)
+    model_benchmark_test.go:142: Response: The error "exit status 1" indicates that the file "nonexistent_file_12345.txt" does not exist in the current directory. Please provide the full path to the file or create the file before attempting to...
+=== NAME  TestModelBenchmark_CurrentModel
+    model_benchmark_test.go:300: 
+        ================================================================================
+        MODEL BENCHMARK SUMMARY
+        ================================================================================
+        
+        ✗ Simple File Read                           5.08s   3 iter  Response missing expected content: 'cat'
+        ✗ File Search                               21.77s   7 iter  Response missing expected content: 'find'
+        ✗ Directory Listing                          1.97s   2 iter  Response missing expected content: 'ls'
+        ✗ Simple Calculation                        19.58s  10 iter  Response missing expected content: '392'
+        ✓ Multi-Step Analysis                        1.54s   2 iter
+        ✓ JSON Parsing                               9.48s   3 iter
+        ✓ Python Code Execution                      2.98s   2 iter
+        ✓ No Code Needed - General Knowledge         0.21s   1 iter
+        ✗ Grep Pattern Search                        6.26s   3 iter  Response missing expected content: 'grep'
+        ✗ Error Recovery                             1.73s   2 iter  Response missing expected content: 'not found'
+        
+        --------------------------------------------------------------------------------
+        TOTAL: 10 tests, 4 passed, 6 failed
+        Total time: 70.61s, Avg time: 7.06s
+        Total iterations: 35, Avg iterations: 3.5
+        Success rate: 40.0%
+        ================================================================================
+        
+    model_benchmark_test.go:312: Model success rate too low: 40.0% (expected at least 50%)
+--- FAIL: TestModelBenchmark_CurrentModel (70.83s)
+    --- FAIL: TestModelBenchmark_CurrentModel/Simple_File_Read (5.08s)
+    --- FAIL: TestModelBenchmark_CurrentModel/File_Search (21.77s)
+    --- FAIL: TestModelBenchmark_CurrentModel/Directory_Listing (1.97s)
+    --- FAIL: TestModelBenchmark_CurrentModel/Simple_Calculation (19.58s)
+    --- PASS: TestModelBenchmark_CurrentModel/Multi-Step_Analysis (1.54s)
+    --- PASS: TestModelBenchmark_CurrentModel/JSON_Parsing (9.48s)
+    --- PASS: TestModelBenchmark_CurrentModel/Python_Code_Execution (2.98s)
+    --- PASS: TestModelBenchmark_CurrentModel/No_Code_Needed_-_General_Knowledge (0.21s)
+    --- FAIL: TestModelBenchmark_CurrentModel/Grep_Pattern_Search (6.26s)
+    --- FAIL: TestModelBenchmark_CurrentModel/Error_Recovery (1.73s)
+FAIL
+FAIL	clai/internal/llm	70.840s
+FAIL

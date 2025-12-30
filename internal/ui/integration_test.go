@@ -28,8 +28,10 @@ func TestChatIntegrationSimpleConversation(t *testing.T) {
 	ti.Focus()
 
 	m := &Model{
-		Width:  80,
-		Height: 24,
+		Width:       80,
+		Height:      24,
+		AgentStatus: NewAgentStatusView(AvailableThemes[0]),
+		Log:         viewport.New(80, 10),
 		Chat: ChatModel{
 			Width:     80,
 			Height:    20,
@@ -119,8 +121,10 @@ func TestChatIntegrationCodeExecution(t *testing.T) {
 			Spinner:   spinner.New(),
 			Theme:     AvailableThemes[0],
 		},
-		Theme: AvailableThemes[0],
-		Agent: llm.NewAgent(mockLLM),
+		Theme:       AvailableThemes[0],
+		Agent:       llm.NewAgent(mockLLM),
+		AgentStatus: NewAgentStatusView(AvailableThemes[0]),
+		Log:         viewport.New(80, 10),
 	}
 
 	p := tea.NewProgram(m,
@@ -189,15 +193,19 @@ func TestChatIntegrationEmptyState(t *testing.T) {
 
 	mockLLM := uitesting.NewMockLLM()
 
+	ti := textinput.New()
+
 	m := &Model{
-		Width:  80,
-		Height: 24,
+		Width:       80,
+		Height:      24,
+		AgentStatus: NewAgentStatusView(AvailableThemes[0]),
+		Log:         viewport.New(80, 10),
 		Chat: ChatModel{
 			Width:     80,
 			Height:    20,
 			LlmClient: mockLLM,
 			Messages:  []llm.Message{},
-			TextInput: textinput.New(),
+			TextInput: ti,
 			Viewport:  viewport.New(80, 15),
 			Spinner:   spinner.New(),
 			Theme:     AvailableThemes[0],
@@ -265,8 +273,10 @@ func TestChatIntegrationMultipleMessages(t *testing.T) {
 			Spinner:   spinner.New(),
 			Theme:     AvailableThemes[0],
 		},
-		Theme: AvailableThemes[0],
-		Agent: llm.NewAgent(mockLLM),
+		Theme:       AvailableThemes[0],
+		Agent:       llm.NewAgent(mockLLM),
+		AgentStatus: NewAgentStatusView(AvailableThemes[0]),
+		Log:         viewport.New(80, 10),
 	}
 
 	p := tea.NewProgram(m,
@@ -326,8 +336,10 @@ func TestChatIntegrationErrorHandling(t *testing.T) {
 	ti.Focus()
 
 	m := &Model{
-		Width:  80,
-		Height: 24,
+		Width:       80,
+		Height:      24,
+		AgentStatus: NewAgentStatusView(AvailableThemes[0]),
+		Log:         viewport.New(80, 10),
 		Chat: ChatModel{
 			Width:     80,
 			Height:    20,

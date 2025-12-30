@@ -1,0 +1,167 @@
+=== RUN   TestModelBenchmark_CurrentModel
+    model_benchmark_test.go:313: Testing model at: http://localhost:8081
+    model_benchmark_test.go:314: Running 12 benchmark tests...
+=== RUN   TestModelBenchmark_CurrentModel/Extract_Specific_Value_from_File
+12:52:01 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:03 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:03 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:04 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:04 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:06 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:159: ✗ FAIL: Extract Specific Value from File - Response missing expected content: '42' (4.27s, 3 iterations)
+    model_benchmark_test.go:161: Response: I apologize for the confusion. It seems I don't have access to a file named "sample.txt" in the current environment. 
+        
+        To help you find the TOTAL_COUNT value, I'll need to know:
+        1. Where the sample.tx...
+=== RUN   TestModelBenchmark_CurrentModel/Count_Files_by_Extension
+12:52:06 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:06 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:06 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:07 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:07 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:07 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:07 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:08 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:156: ✓ PASS: Count Files by Extension (2.60s, 4 iterations)
+=== RUN   TestModelBenchmark_CurrentModel/Mathematical_Calculation
+12:52:08 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:09 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:09 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:10 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:10 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:13 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:159: ✗ FAIL: Mathematical Calculation - Response contains forbidden content: '345' (4.28s, 3 iterations)
+    model_benchmark_test.go:161: Response: I notice there's a discrepancy in the calculation. Let me double-check the math:
+        
+        15 * 23 = 345
+        345 + 47 = 392
+        
+        The calculation is actually correct. The result of 15 * 23 + 47 is indeed 392.
+        
+        Let me v...
+=== RUN   TestModelBenchmark_CurrentModel/JSON_Data_Extraction
+12:52:13 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:15 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:15 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:17 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:159: ✗ FAIL: JSON Data Extraction - Response missing expected content: '2' (3.94s, 2 iterations)
+    model_benchmark_test.go:161: Response: Apologies for the error in code execution. It looks like the test_data.json file is missing. Could you please provide the test_data.json file so I can count the number of users with the 'engineer' rol...
+=== RUN   TestModelBenchmark_CurrentModel/JSON_Data_Analysis
+12:52:17 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:20 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:20 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:25 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:25 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:31 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:31 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:36 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:36 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:42 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:42 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:45 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:159: ✗ FAIL: JSON Data Analysis - Response missing expected content: '30' (28.67s, 6 iterations)
+    model_benchmark_test.go:161: Response: I'm glad the sample code provided the expected output. If you have a different JSON structure in your test_data.json file, you can adjust the code as needed.
+        
+        For example, if your JSON file contains d...
+=== RUN   TestModelBenchmark_CurrentModel/Complex_Python_Calculation
+12:52:45 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:46 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:46 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:48 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:159: ✗ FAIL: Complex Python Calculation - Response contains forbidden content: '100' (2.48s, 2 iterations)
+    model_benchmark_test.go:161: Response: The sum of squares of numbers 1 through 10 is 385.
+        
+        This was calculated using the formula: 1² + 2² + 3² + 4² + 5² + 6² + 7² + 8² + 9² + 10² = 1 + 4 + 9 + 16 + 25 + 36 + 49 + 64 + 81 + 100 = ...
+=== RUN   TestModelBenchmark_CurrentModel/File_Content_Verification
+12:52:48 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:48 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:48 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:51 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:51 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:53 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:159: ✗ FAIL: File Content Verification - Response missing expected content: 'yes' (5.23s, 3 iterations)
+    model_benchmark_test.go:161: Response: I'm encountering issues trying to access and read the sample.txt file. The command is exiting with an error status of 1, which suggests there may be a problem with the file path or permissions.
+        
+        Witho...
+=== RUN   TestModelBenchmark_CurrentModel/Multi-Step_Text_Processing
+12:52:53 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:53 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:53 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:56 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:156: ✓ PASS: Multi-Step Text Processing (2.81s, 2 iterations)
+=== RUN   TestModelBenchmark_CurrentModel/JSON_Field_Extraction
+12:52:56 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:58 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:58 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:52:59 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:52:59 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:53:09 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:53:09 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:53:13 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:53:13 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:53:17 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:53:17 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:53:18 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:159: ✗ FAIL: JSON Field Extraction - Response missing expected content: 'Charlie' (22.56s, 6 iterations)
+    model_benchmark_test.go:161: Response: I'm glad to hear that the code executed successfully and printed the name "Bob Johnson" for the user with id 3. Is there anything else you need help with regarding the test_data.json file or extractin...
+=== RUN   TestModelBenchmark_CurrentModel/Error_Handling
+12:53:18 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:53:20 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:53:20 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:53:22 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:156: ✓ PASS: Error Handling (3.60s, 2 iterations)
+=== RUN   TestModelBenchmark_CurrentModel/Code_File_Analysis
+12:53:22 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:53:23 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:53:23 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:53:23 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+12:53:23 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:53:26 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:156: ✓ PASS: Code File Analysis (4.45s, 3 iterations)
+=== RUN   TestModelBenchmark_CurrentModel/No_Code_Needed_-_General_Knowledge
+12:53:26 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)
+12:53:27 [INFO] [LLM-OPENAI-STREAM] Stream completed with reason: stop
+    model_benchmark_test.go:156: ✓ PASS: No Code Needed - General Knowledge (0.16s, 1 iterations)
+=== NAME  TestModelBenchmark_CurrentModel
+    model_benchmark_test.go:319: 
+        ================================================================================
+        MODEL BENCHMARK SUMMARY
+        ================================================================================
+        
+        ✗ Extract Specific Value from File           4.27s   3 iter  Response missing expected content: '42'
+        ✓ Count Files by Extension                   2.60s   4 iter
+        ✗ Mathematical Calculation                   4.28s   3 iter  Response contains forbidden content: '345'
+        ✗ JSON Data Extraction                       3.94s   2 iter  Response missing expected content: '2'
+        ✗ JSON Data Analysis                        28.67s   6 iter  Response missing expected content: '30'
+        ✗ Complex Python Calculation                 2.48s   2 iter  Response contains forbidden content: '100'
+        ✗ File Content Verification                  5.23s   3 iter  Response missing expected content: 'yes'
+        ✓ Multi-Step Text Processing                 2.81s   2 iter
+        ✗ JSON Field Extraction                     22.56s   6 iter  Response missing expected content: 'Charlie'
+        ✓ Error Handling                             3.60s   2 iter
+        ✓ Code File Analysis                         4.45s   3 iter
+        ✓ No Code Needed - General Knowledge         0.16s   1 iter
+        
+        --------------------------------------------------------------------------------
+        TOTAL: 12 tests, 5 passed, 7 failed
+        Total time: 85.07s, Avg time: 7.09s
+        Total iterations: 37, Avg iterations: 3.1
+        Success rate: 41.7%
+        ================================================================================
+        
+    model_benchmark_test.go:331: Model success rate too low: 41.7% (expected at least 50%)
+--- FAIL: TestModelBenchmark_CurrentModel (86.03s)
+    --- FAIL: TestModelBenchmark_CurrentModel/Extract_Specific_Value_from_File (4.27s)
+    --- PASS: TestModelBenchmark_CurrentModel/Count_Files_by_Extension (2.60s)
+    --- FAIL: TestModelBenchmark_CurrentModel/Mathematical_Calculation (4.28s)
+    --- FAIL: TestModelBenchmark_CurrentModel/JSON_Data_Extraction (3.94s)
+    --- FAIL: TestModelBenchmark_CurrentModel/JSON_Data_Analysis (28.68s)
+    --- FAIL: TestModelBenchmark_CurrentModel/Complex_Python_Calculation (2.48s)
+    --- FAIL: TestModelBenchmark_CurrentModel/File_Content_Verification (5.23s)
+    --- PASS: TestModelBenchmark_CurrentModel/Multi-Step_Text_Processing (2.81s)
+    --- FAIL: TestModelBenchmark_CurrentModel/JSON_Field_Extraction (22.56s)
+    --- PASS: TestModelBenchmark_CurrentModel/Error_Handling (3.60s)
+    --- PASS: TestModelBenchmark_CurrentModel/Code_File_Analysis (4.45s)
+    --- PASS: TestModelBenchmark_CurrentModel/No_Code_Needed_-_General_Knowledge (0.16s)
+FAIL
+FAIL	clai/internal/llm	86.045s
+FAIL

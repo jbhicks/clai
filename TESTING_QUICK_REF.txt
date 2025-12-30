@@ -1,0 +1,56 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                    MODEL TESTING - QUICK REFERENCE                         ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+📦 AVAILABLE MODELS FOR DOWNLOAD:
+
+  [0] Meta Llama 3.1 8B              4.9GB  - Official tool calling support
+  [1] Hermes 3 8B                    4.9GB  - Specialized for tool calling
+  [2] Mistral Nemo 12B               7.1GB  - 128k context
+  [3] Qwen 2.5 14B                   8.5GB  - General purpose with tools
+  [4] GPT-OSS-120B                   68GB   - OpenAI reasoning (fast on Strix!)
+  [5] Llama 3.1 70B                  40GB   - Most capable general model
+
+🚀 QUICK START:
+
+  1. Download a model:
+     ./download_models.sh
+
+  2. Test current model (baseline):
+     ./test_current_model.sh
+
+  3. Test specific model:
+     ./test_models.sh <model-name>.gguf
+
+  4. Test all models:
+     ./test_models.sh --all
+
+📊 CURRENT SETUP:
+
+  • Open WebUI:     http://localhost:3000
+  • llama-server:   http://localhost:8081 (main model)
+  • llama-server:   http://localhost:8082 (embeddings)
+  • Current model:  Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+  • Models dir:     /home/josh/models/
+  • Results dir:    ./model_test_results/
+
+🎯 RECOMMENDED TESTING ORDER:
+
+  1. Test baseline (Qwen3-Coder) → expect 30-50% success
+  2. Download & test Hermes 3 8B → expect 70-90% success
+  3. If Hermes passes, you're done!
+  4. If not, try GPT-OSS-120B → heavy duty option
+
+✅ SUCCESS CRITERIA:
+
+  • >70% test pass rate
+  • <5 average iterations
+  • <30s average response time
+  • No infinite loops
+
+📝 DOCUMENTATION:
+
+  • MODEL_TESTING_PLAN.md       - Full testing strategy
+  • GPT_OSS_120B_ADDITION.md    - Why we added GPT-OSS-120B
+  
+╚════════════════════════════════════════════════════════════════════════════╝

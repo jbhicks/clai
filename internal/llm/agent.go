@@ -3,106 +3,46 @@ package llm
 import (
 	"clai/internal/logger"
 	"clai/internal/tools"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 )
 
-const AgentSystemPrompt = `You are a powerful autonomous agent with full code execution capabilities and an embedded JavaScript runtime powered by Goja (pure-Go ECMAScript 5.1+ implementation).
-
-Your goal is to solve complex tasks through step-by-step reasoning, dynamic action-taking, and hierarchical orchestration when needed.
-
-**Capabilities:**
-- Full code execution: You can execute bash, python, and javascript/node code directly on the system.
-- Internet access: Use curl, wget, or python requests in bash/python code to fetch web content.
-- File system access: Read/write files, run commands, install packages if needed.
-- Parallel sub-agent delegation: You can spawn multiple independent sub-agents that run concurrently.
-- Iterative feedback loop: Observations from code execution or sub-agents are fed back to you for refinement.
-
-**CRITICAL: You are an EXECUTOR, not a tutor. DO NOT explain how to do things — ACTUALLY DO THEM using code execution.**
-
-**Strict response format — always use exactly ONE of these structures per response:**
-
-OPTION A (Execution):
-Thought: [Detailed reasoning about the current state, what you know, what needs to be done next, and your plan.]
-Code:
-'''bash
-# Actual code to execute - NO explanatory echo statements, NO tutorials
-# Use bash for: file operations, curl/wget for HTTP requests, command-line tools
-'''
-
-OPTION B (Final response after task completion):
-Thought: [Brief summary of what was accomplished]
-Final Answer: [The complete, final response to the user query based on observations from executed code. NEVER include code blocks here.]
-
-**STRICT RULES:**
-- ALWAYS start with Thought.
-- NEVER output "Final Answer" AND "Code" in the same response — they are mutually exclusive.
-- NEVER put code blocks inside "Final Answer" — code must be in the Code section to be executed.
-- DO NOT write tutorial code with echo statements explaining concepts — write ACTUAL code that accomplishes the task.
-- DO NOT apologize or explain limitations — just execute code and use observations to continue.
-- If you need data from the internet, JUST FETCH IT with curl/wget/requests — don't explain how.
-- Choose the best language: bash for HTTP/files, Python for data processing, Node for JS-specific tasks.
-- After code execution, you will receive an Observation with the output — use it to continue or finalize.
-- Only output "Final Answer" when you have actual results from executed code to present.
-- Keep code minimal, practical, and error-resilient.
-- You HAVE internet access via curl/wget/requests - use it confidently!
-
-**Examples of CORRECT behavior:**
-User: "Get today's news"
-Thought: I need to fetch current news headlines from a public API.
-Code:
-'''bash
-curl -s "https://newsapi.org/v2/top-headlines?country=us&apiKey=573e69b5b03c430d87d8f74b38399113" | jq -r '.articles[0:5] | .[] | "- " + .title'
-'''
-
-User: "What's in TODO.md?"
-Thought: I need to read the TODO.md file.
-Code:
-'''bash
-cat TODO.md
-'''
-
-**Examples of INCORRECT behavior (NEVER do this):**
-❌ Final Answer: Here's how you can fetch news: [code example]
-❌ Code: echo "Here's how to fetch news..."
-❌ Thought: I can't do this because... Final Answer: [explanation]
-
-**Default behavior when uncertain:**
-- If asked about project status, plans, or "what's next", use Code to read TODO.md, README.md, or AGENTS.md
-- If asked about code structure or how something works, use Code to read the relevant source files
-- If asked about configuration or setup, use Code to read config files (.yaml, .json, .toml, Makefile, package.json, etc.)
-- When you don't know something about the project, explore the filesystem first (ls, find, grep, cat via Code) rather than guessing
-- Be proactive: if a question implies file knowledge, read those files before answering`
-
 type AgentResponse struct {
-	Thought    string
-	Delegation []Subtask
-	Code       string
-	Language   string
-	Final      string
-}
-
-type Subtask struct {
-	Description string `json:"subtask"`
-	Role        string `json:"role"`
+	Thought  string
+	Code     string
+	Language string
+	Final    string
 }
 
 type Agent struct {
-	client     LLMClientInterface
-	messages   []Message
-	jsExecutor *JSExecutor
-	maxIters   int
+	client         LLMClientInterface
+	messages       []Message
+	jsExecutor     *JSExecutor
+	statusCallback func(iteration int, thought string, executingCode bool, language string, code string)
+	taskHistory    []string
+	loopDetector   *LoopDetector
+	maxMessages    int
+}
+
+type LoopDetector struct {
+	codeHistory        []string
+	observationHistory []string
+	maxRepeats         int
 }
 
 func NewAgent(client LLMClientInterface) *Agent {
 	return &Agent{
-		client:     client,
-		messages:   []Message{},
-		jsExecutor: NewJSExecutor(),
-		maxIters:   20,
+		client:      client,
+		messages:    []Message{},
+		jsExecutor:  NewJSExecutor(),
+		taskHistory: []string{},
+		maxMessages: 20, // Keep last 20 messages to prevent context overflow
+		loopDetector: &LoopDetector{
+			codeHistory:        []string{},
+			observationHistory: []string{},
+			maxRepeats:         3,
+		},
 	}
 }
 
@@ -111,72 +51,154 @@ func (a *Agent) AddMessage(role, content string) {
 		Role:    role,
 		Content: content,
 	})
+	a.trimMessages()
+}
+
+func (a *Agent) trimMessages() {
+	if len(a.messages) <= a.maxMessages {
+		return
+	}
+
+	// Keep system message and last N messages
+	var trimmed []Message
+
+	// Always keep the first message if it's a system message
+	if len(a.messages) > 0 && a.messages[0].Role == "system" {
+		trimmed = append(trimmed, a.messages[0])
+		// Keep last maxMessages-1 messages (excluding system)
+		start := len(a.messages) - (a.maxMessages - 1)
+		if start < 1 {
+			start = 1
+		}
+		trimmed = append(trimmed, a.messages[start:]...)
+	} else {
+		// Keep last maxMessages messages
+		start := len(a.messages) - a.maxMessages
+		if start < 0 {
+			start = 0
+		}
+		trimmed = append(trimmed, a.messages[start:]...)
+	}
+
+	a.messages = trimmed
+	logger.Debug("[AGENT-TRIM] Trimmed messages from %d to %d", len(a.messages)+a.maxMessages-len(a.messages), len(a.messages))
+}
+
+func (a *Agent) SetStatusCallback(cb func(iteration int, thought string, executingCode bool, language string, code string)) {
+	a.statusCallback = cb
 }
 
 func (a *Agent) parseResponse(response string) (*AgentResponse, error) {
 	result := &AgentResponse{}
 
-	thoughtRe := regexp.MustCompile(`(?s)Thought:\s*(.+?)(?:\n\n|$)`)
-	if matches := thoughtRe.FindStringSubmatch(response); len(matches) > 1 {
-		result.Thought = strings.TrimSpace(matches[1])
-	}
+	// Try multiple code block formats in priority order:
+	// 1. Full XML: <code language="python">
+	// 2. Simplified XML: <code python>
+	// 3. Malformed simplified: <code python (missing >)
+	// 4. Markdown: ```python
 
-	delegationRe := regexp.MustCompile(`(?s)Delegation:\s*(\[.+?\])`)
-	if matches := delegationRe.FindStringSubmatch(response); len(matches) > 1 {
-		var subtasks []Subtask
-		if err := json.Unmarshal([]byte(matches[1]), &subtasks); err == nil {
-			result.Delegation = subtasks
-		} else {
-			logger.Debug("[AGENT-PARSE] Failed to parse delegation JSON: %v", err)
-		}
-	}
-
-	codeRe := regexp.MustCompile("(?s)Code:\\s*```(\\w+)?\\s*(.+?)```")
-	if matches := codeRe.FindStringSubmatch(response); len(matches) > 2 {
+	// Pattern 1: Full XML format
+	fullXMLRe := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">\s*(.+?)\s*</code>`)
+	if matches := fullXMLRe.FindStringSubmatch(response); len(matches) > 2 {
 		result.Language = strings.TrimSpace(matches[1])
 		result.Code = strings.TrimSpace(matches[2])
 		if result.Language == "" {
-			result.Language = "bash" // default to bash if no language specified
+			result.Language = "bash"
 		}
+
+		// Extract thought as everything before the code block
+		parts := strings.Split(response, "<code")
+		if len(parts) > 0 {
+			result.Thought = strings.TrimSpace(parts[0])
+		}
+
+		logger.Debug("[AGENT-PARSE] Matched full XML format: %s", result.Language)
+		return result, nil
 	}
 
-	finalRe := regexp.MustCompile(`(?s)Final Answer:\s*(.+)$`)
-	if matches := finalRe.FindStringSubmatch(response); len(matches) > 1 {
-		result.Final = strings.TrimSpace(matches[1])
+	// Pattern 2: Simplified XML format - <code python>
+	simplifiedXMLRe := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>\s*(.+?)\s*</code>`)
+	if matches := simplifiedXMLRe.FindStringSubmatch(response); len(matches) > 2 {
+		result.Language = strings.TrimSpace(matches[1])
+		result.Code = strings.TrimSpace(matches[2])
+
+		// Normalize language names
+		if result.Language == "js" {
+			result.Language = "javascript"
+		} else if result.Language == "py" {
+			result.Language = "python"
+		} else if result.Language == "sh" {
+			result.Language = "bash"
+		}
+
+		// Extract thought as everything before the code block
+		parts := strings.Split(response, "<code")
+		if len(parts) > 0 {
+			result.Thought = strings.TrimSpace(parts[0])
+		}
+
+		logger.Debug("[AGENT-PARSE] Matched simplified XML format: %s", result.Language)
+		return result, nil
 	}
 
-	logger.Debug("[AGENT-PARSE] Thought: %q, Delegation: %d subtasks, Code: %d chars (%s), Final: %q",
-		result.Thought, len(result.Delegation), len(result.Code), result.Language, result.Final)
+	// Pattern 3: Malformed simplified XML - <code python (missing > on opening tag)
+	malformedXMLRe := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)\s+(.+?)(?:</code|$)`)
+	if matches := malformedXMLRe.FindStringSubmatch(response); len(matches) > 2 {
+		result.Language = strings.TrimSpace(matches[1])
+		result.Code = strings.TrimSpace(matches[2])
+
+		// Normalize language names
+		if result.Language == "js" {
+			result.Language = "javascript"
+		} else if result.Language == "py" {
+			result.Language = "python"
+		} else if result.Language == "sh" {
+			result.Language = "bash"
+		}
+
+		// Extract thought as everything before the code block
+		parts := strings.Split(response, "<code")
+		if len(parts) > 0 {
+			result.Thought = strings.TrimSpace(parts[0])
+		}
+
+		logger.Debug("[AGENT-PARSE] Matched malformed simplified XML format: %s", result.Language)
+		return result, nil
+	}
+
+	// Pattern 4: Markdown code blocks - ```python
+	markdownRe := regexp.MustCompile("(?s)```(bash|python|javascript|js|sh|py)\\s*\\n(.+?)```")
+	if matches := markdownRe.FindStringSubmatch(response); len(matches) > 2 {
+		result.Language = strings.TrimSpace(matches[1])
+		result.Code = strings.TrimSpace(matches[2])
+
+		// Normalize language names
+		if result.Language == "js" {
+			result.Language = "javascript"
+		} else if result.Language == "py" {
+			result.Language = "python"
+		} else if result.Language == "sh" {
+			result.Language = "bash"
+		}
+
+		// Extract thought as everything before the code block
+		parts := strings.Split(response, "```")
+		if len(parts) > 0 {
+			result.Thought = strings.TrimSpace(parts[0])
+		}
+
+		logger.Debug("[AGENT-PARSE] Matched markdown format: %s", result.Language)
+		return result, nil
+	}
+
+	// No code block found, treat entire response as final answer
+	result.Final = strings.TrimSpace(response)
+	result.Thought = strings.TrimSpace(response)
+
+	logger.Debug("[AGENT-PARSE] Thought: %q, Code: %d chars (%s), Final: %q",
+		result.Thought, len(result.Code), result.Language, result.Final)
 
 	return result, nil
-}
-
-func (a *Agent) delegateInParallel(subtasks []Subtask) []string {
-	results := make([]string, len(subtasks))
-	var wg sync.WaitGroup
-
-	for i, task := range subtasks {
-		wg.Add(1)
-		go func(idx int, t Subtask) {
-			defer wg.Done()
-
-			logger.Debug("[AGENT-DELEGATE] Starting subtask %d: %s (role: %s)", idx, t.Description, t.Role)
-
-			subAgent := NewAgent(a.client)
-			subAgent.maxIters = 5
-			result, err := subAgent.Run(t.Description)
-			if err != nil {
-				results[idx] = fmt.Sprintf("Error: %v", err)
-			} else {
-				results[idx] = result
-			}
-
-			logger.Debug("[AGENT-DELEGATE] Completed subtask %d: %s", idx, results[idx])
-		}(i, task)
-	}
-
-	wg.Wait()
-	return results
 }
 
 func (a *Agent) Think() (string, error) {
@@ -198,14 +220,74 @@ func (a *Agent) Think() (string, error) {
 	return response, nil
 }
 
+func (ld *LoopDetector) detectLoop(code, observation string) (bool, string) {
+	if code != "" {
+		ld.codeHistory = append(ld.codeHistory, code)
+		if len(ld.codeHistory) >= ld.maxRepeats {
+			recent := ld.codeHistory[len(ld.codeHistory)-ld.maxRepeats:]
+			allSame := true
+			for i := 1; i < len(recent); i++ {
+				if recent[i] != recent[0] {
+					allSame = false
+					break
+				}
+			}
+			if allSame {
+				return true, fmt.Sprintf("Loop detected: same code executed %d times consecutively", ld.maxRepeats)
+			}
+		}
+	}
+
+	if observation != "" {
+		ld.observationHistory = append(ld.observationHistory, observation)
+		if len(ld.observationHistory) >= ld.maxRepeats {
+			recent := ld.observationHistory[len(ld.observationHistory)-ld.maxRepeats:]
+			allSame := true
+			for i := 1; i < len(recent); i++ {
+				if recent[i] != recent[0] {
+					allSame = false
+					break
+				}
+			}
+			if allSame {
+				return true, fmt.Sprintf("Loop detected: same observation received %d times consecutively", ld.maxRepeats)
+			}
+		}
+
+		permanentErrors := []string{
+			"permission denied",
+			"no such file or directory",
+			"command not found",
+			"cannot access",
+		}
+		obsLower := strings.ToLower(observation)
+		for _, errPattern := range permanentErrors {
+			if strings.Contains(obsLower, errPattern) {
+				count := 0
+				for _, obs := range ld.observationHistory {
+					if strings.Contains(strings.ToLower(obs), errPattern) {
+						count++
+					}
+				}
+				if count >= ld.maxRepeats {
+					return true, fmt.Sprintf("Loop detected: permanent error '%s' encountered %d times", errPattern, count)
+				}
+			}
+		}
+	}
+
+	return false, ""
+}
+
 func (a *Agent) Run(query string) (string, error) {
-	a.AddMessage("system", AgentSystemPrompt)
 	a.AddMessage("user", query)
 
 	logger.Debug("[AGENT-RUN] Starting agent loop with query: %s", query)
 
-	for i := 0; i < a.maxIters; i++ {
-		logger.Debug("[AGENT-ITER] Iteration %d/%d", i+1, a.maxIters)
+	iteration := 0
+	for {
+		iteration++
+		logger.Debug("[AGENT-ITER] Iteration %d", iteration)
 
 		response, err := a.Think()
 		if err != nil {
@@ -217,21 +299,29 @@ func (a *Agent) Run(query string) (string, error) {
 			return "", fmt.Errorf("failed to parse response: %w", err)
 		}
 
+		// If no code block found, treat as final answer
+		if parsed.Code == "" {
+			logger.Debug("[AGENT-NO-CODE] No code block found, treating as final answer")
+			parsed.Final = response
+		}
+
+		if parsed.Thought != "" {
+			a.taskHistory = append(a.taskHistory, parsed.Thought)
+		}
+
+		if a.statusCallback != nil {
+			a.statusCallback(iteration, parsed.Thought, parsed.Code != "", parsed.Language, parsed.Code)
+		}
+
 		if parsed.Final != "" {
 			logger.Debug("[AGENT-COMPLETE] Final answer reached: %s", parsed.Final)
+			if a.statusCallback != nil {
+				a.statusCallback(0, "", false, "", "")
+			}
 			return parsed.Final, nil
 		}
 
 		var observation strings.Builder
-
-		if len(parsed.Delegation) > 0 {
-			logger.Debug("[AGENT-DELEGATION] Delegating %d subtasks", len(parsed.Delegation))
-			results := a.delegateInParallel(parsed.Delegation)
-			observation.WriteString("Observation (Delegation results):\n")
-			for idx, result := range results {
-				observation.WriteString(fmt.Sprintf("Subtask %d: %s\n", idx+1, result))
-			}
-		}
 
 		if parsed.Code != "" {
 			logger.Debug("[AGENT-CODE] Executing %s code", parsed.Language)
@@ -244,14 +334,23 @@ func (a *Agent) Run(query string) (string, error) {
 		}
 
 		if observation.Len() > 0 {
+			obsStr := observation.String()
+
+			isLoop, loopReason := a.loopDetector.detectLoop(parsed.Code, obsStr)
+			if isLoop {
+				logger.Debug("[AGENT-LOOP] %s", loopReason)
+				if a.statusCallback != nil {
+					a.statusCallback(0, "", false, "", "")
+				}
+				return fmt.Sprintf("Task stopped: %s\n\nLast observation:\n%s", loopReason, obsStr), nil
+			}
+
 			a.AddMessage("assistant", response)
-			a.AddMessage("user", observation.String())
-			logger.Debug("[AGENT-OBSERVATION] Added observation: %s", observation.String())
+			a.AddMessage("user", obsStr)
+			logger.Debug("[AGENT-OBSERVATION] Added observation: %s", obsStr)
 		} else {
 			logger.Debug("[AGENT-WARNING] No delegation or code found, but no final answer either - returning full response")
 			return response, nil
 		}
 	}
-
-	return "Task incomplete: maximum iterations reached", nil
 }

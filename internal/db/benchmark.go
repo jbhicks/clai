@@ -153,6 +153,47 @@ func (s *Store) GetBenchmarkRun(id int) (*BenchmarkRun, error) {
 	return &run, nil
 }
 
+// GetLastBenchmarkForModel gets the most recent benchmark run for a specific model
+func (s *Store) GetLastBenchmarkForModel(modelName string) (*BenchmarkRun, error) {
+	var run BenchmarkRun
+
+	// Try agentic_benchmark_runs first (newer table)
+	err := s.db.QueryRow(`
+		SELECT id, model_name, '' as model_url, total_tests, passed_tests, failed_tests,
+			success_rate, 0 as total_time_seconds, 0 as avg_iterations, started_at, completed_at
+		FROM agentic_benchmark_runs
+		WHERE model_name = ?
+		ORDER BY started_at DESC
+		LIMIT 1
+	`, modelName).Scan(&run.ID, &run.ModelName, &run.ModelURL, &run.TotalTests,
+		&run.PassedTests, &run.FailedTests, &run.SuccessRate, &run.TotalTimeSeconds,
+		&run.AvgIterations, &run.StartedAt, &run.CompletedAt)
+
+	if err == sql.ErrNoRows {
+		// Fall back to old benchmark_runs table
+		err = s.db.QueryRow(`
+			SELECT id, model_name, model_url, total_tests, passed_tests, failed_tests,
+				success_rate, total_time_seconds, avg_iterations, started_at, completed_at
+			FROM benchmark_runs
+			WHERE model_name = ?
+			ORDER BY started_at DESC
+			LIMIT 1
+		`, modelName).Scan(&run.ID, &run.ModelName, &run.ModelURL, &run.TotalTests,
+			&run.PassedTests, &run.FailedTests, &run.SuccessRate, &run.TotalTimeSeconds,
+			&run.AvgIterations, &run.StartedAt, &run.CompletedAt)
+
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last benchmark for model: %w", err)
+	}
+
+	return &run, nil
+}
+
 func (s *Store) GetBenchmarkResults(runID int) ([]BenchmarkResult, error) {
 	rows, err := s.db.Query(`
 		SELECT id, run_id, test_name, query, passed, iterations, time_seconds,

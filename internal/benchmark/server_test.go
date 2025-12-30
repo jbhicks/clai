@@ -259,7 +259,7 @@ func TestHandleGetModelInfo(t *testing.T) {
 
 			// Create server instance
 			server := &Server{
-				modelManager: NewModelManager(),
+				modelManager: NewModelManagerForTest(),
 			}
 
 			// Create request
@@ -302,7 +302,7 @@ func TestHandleGetModelInfo_Integration(t *testing.T) {
 	}
 
 	server := &Server{
-		modelManager: NewModelManager(),
+		modelManager: NewModelManagerForTest(),
 	}
 
 	// Test with a real model that should exist
