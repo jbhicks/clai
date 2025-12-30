@@ -99,6 +99,12 @@ func (s *Server) StartWithPreferredPort(preferredPort int) error {
 	mux.HandleFunc("/new", s.handleNewTest)
 	mux.HandleFunc("/servers", s.handleServersPage)
 
+	// Static files (HTMX wrapper)
+	templatesDir := "internal/benchmark/templates"
+	mux.HandleFunc("/static/htmx-wrapper.js", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, templatesDir+"/htmx-wrapper.js")
+	})
+
 	// API routes
 	mux.HandleFunc("/api/run", s.handleStartRun)
 	mux.HandleFunc("/api/models", s.handleGetModels)
