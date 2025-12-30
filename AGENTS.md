@@ -367,7 +367,35 @@ html := `<div id="content">...</div>`  // ❌ WRONG
        html += fmt.Sprintf(`<div id="item_%d">...</div>`, item.ID)
    }
    ```
-4. **Consider SSE instead of polling** - For real-time updates, use Server-Sent Events with `hx-ext="sse"` instead of polling with `every Xs`
+4. **Use SSE for real-time updates** - For streaming data, use Server-Sent Events instead of polling
+
+#### SSE Usage Patterns
+
+**Pattern 1: Native sse-swap (Direct Content Swap)**
+```html
+<div sse-connect="/api/updates" sse-swap="update">
+  <span id="counter">Connecting...</span>
+</div>
+```
+Server sends:
+```
+event: update
+data: <span id="counter">42</span>
+```
+
+**Pattern 2: SSE with hx-trigger**
+```html
+<div sse-connect="/api/updates" sse-swap="refresh">
+  <div hx-trigger="load, sse:refresh" hx-swap="innerHTML">
+    <span>Connecting...</span>
+  </div>
+</div>
+```
+Server sends:
+```
+event: refresh
+data: (empty - triggers hx-trigger)
+```
 
 #### HTMX Action Handlers Must Return Complete Replacements
 
@@ -486,33 +514,133 @@ function stopServer() {
 
 #### Libraries Required
 
-**CRITICAL**: Use the correct extension versions for HTMX 2.x to avoid compatibility issues.
+**CRITICAL**: SSE extension requires specific HTMX version and proper loading order.
 
 ```html
-<script src="https://unpkg.com/htmx.org@2.0.4"></script>
-<script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+<!-- HTMX 2.0.8 - Works correctly with SSE extension 2.2.4 -->
+<!-- Use full path /dist/htmx.min.js - bare @version URL may redirect incorrectly -->
+<script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz" crossorigin="anonymous"></script>
+
+<!-- SSE extension 2.2.4 - depends on htmx.org ^2.0.x - NOTE: must include /sse.js -->
+<script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.4/sse.js" integrity="sha384-QA9wXqexhwzXTuTvuF5QP82pddm3R2hy81UzXi7ioNTqNF2b75hlkkSGjafohhL3" crossorigin="anonymous"></script>
+
+<!-- Idiomorph for morph swaps -->
 <script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph-ext.min.js"></script>
 ```
 
-**Common mistake - Using HTMX 1.x SSE extension with HTMX 2.x:**
-```html
-<!-- ❌ WRONG - This is the HTMX 1.x extension path -->
-<script src="https://unpkg.com/htmx.org@2.0.4/dist/ext/sse.js"></script>
+**Version Requirements:**
+| Package | Version | Notes |
+|---------|---------|-------|
+| htmx.org | **2.0.8** | Works with SSE 2.2.4 |
+| htmx-ext-sse | **2.2.4** | Correct version for HTMX 2.0.x |
 
-<!-- ✅ CORRECT - Use the standalone HTMX 2.x SSE extension -->
-<script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
+**Common mistake - Wrong HTMX version:**
+```html
+<!-- ❌ WRONG - Old versions without integrity -->
+<script src="https://unpkg.com/htmx.org@2.0.2"></script>
+<script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.3/sse.js"></script>
+
+<!-- ✅ CORRECT - Version 2.0.8 with integrity hash -->
+<script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.8/dist/htmx.min.js" integrity="sha384-/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u/6OCvVKyz1W+idaz" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.4" integrity="sha384-QA9wXqexhwzXTuTvuF5QP82pddm3R2hy81UzXi7ioNTqNF2b75hlkkSGjafohhL3" crossorigin="anonymous"></script>
 ```
 
-**Problem symptoms:**
-- Browser console warning: "WARNING: You are using an htmx 1 extension with htmx 2.0.4"
-- SSE events not triggering HTMX updates
-- `hx-trigger="sse:eventname"` not working
-- SSE connections established but DOM not updating
+**Checking if SSE Extension Loaded:**
+`htmx.ext` doesn't exist in HTMX 2.0.x - extensions are stored internally. Use this pattern:
 
-**Solution:**
-- Always use `htmx-ext-sse` package for HTMX 2.x
-- The old `htmx.org/dist/ext/sse.js` path is for HTMX 1.x only
-- Check browser console for extension version warnings
+```javascript
+// Track registered extensions
+const registeredExtensions = {};
+const originalDefineExtension = htmx.defineExtension.bind(htmx);
+htmx.defineExtension = function(name, extension) {
+    const result = originalDefineExtension(name, extension);
+    registeredExtensions[name] = true;
+    console.log('Extension "' + name + '" registered');
+    return result;
+};
+
+// Later check:
+if (registeredExtensions.sse) {
+    console.log('✓ SSE extension loaded');
+}
+```
+
+**SSE Event Format:**
+```go
+w.Header().Set("Content-Type", "text/event-stream")
+w.Header().Set("Cache-Control", "no-cache")
+w.Header().Set("Connection", "keep-alive")
+w.Header().Set("Access-Control-Allow-Origin", "*")
+
+flusher := w.(http.Flusher)
+
+// Send named event with HTML content
+fmt.Fprintf(w, "event: download_update\n")
+fmt.Fprintf(w, "data: <span class=\"counter\">%d</span>\n\n", counter)
+flusher.Flush()
+```
+
+**Listening for SSE Events:**
+```javascript
+document.body.addEventListener('htmx:sseOpen', function(e) {
+    console.log('SSE Connection opened');
+});
+document.body.addEventListener('htmx:sseError', function(e) {
+    console.log('SSE Error:', e.detail);
+});
+document.body.addEventListener('htmx:sseClose', function(e) {
+    console.log('SSE Connection closed:', e.detail.type);
+});
+document.body.addEventListener('htmx:sseMessage', function(e) {
+    console.log('SSE Message received');
+});
+```
+
+#### Troubleshooting HTMX Extensions
+
+**1. Integrity Hashes Must Be Correct**
+
+When loading HTMX extensions from CDN, always use valid `integrity` hashes. An incorrect hash will silently block the script from executing. The console will show:
+
+```
+Failed to find a valid digest in the 'integrity' attribute for resource '...'
+The resource has been blocked.
+```
+
+The error message includes the *computed* SHA-384 hash - use that value for the correct `integrity` attribute.
+
+**2. Script Loading Order for Extension Wrapping**
+
+If you need to intercept extension registration (e.g., for diagnostics), the wrapper script must load BEFORE the extension:
+
+```html
+<!-- ✅ CORRECT - Wrapper loads first -->
+<script>
+const registeredExtensions = {};
+const originalDefineExtension = htmx.defineExtension.bind(htmx);
+htmx.defineExtension = function(name, extension) {
+    registeredExtensions[name] = true;
+    return originalDefineExtension(name, extension);
+};
+</script>
+<script src="htmx-ext-sse@2.2.4/sse.js"></script>
+
+<!-- ❌ WRONG - Wrapper loads after extension -->
+<script src="htmx-ext-sse@2.2.4/sse.js"></script>
+<script>
+const registeredExtensions = {};
+// SSE already registered, this won't catch it!
+</script>
+```
+
+**3. Browser Cache After Code Changes**
+
+After fixing HTMX/extension issues, force-clear the browser cache:
+```javascript
+// In Chrome DevTools console
+window.location.reload(true)
+// Or use the MCP tool with ignoreCache: true
+```
 
 ### Alpine.js + HTMX Integration
 
