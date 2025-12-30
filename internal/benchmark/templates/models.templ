@@ -2,8 +2,8 @@ package templates
 
 templ Models() {
 	@Layout("Models & GPU") {
-		<!-- SSE Connection for Server Updates - wraps all content that needs SSE -->
-		<div hx-ext="sse" sse-connect="/api/servers/events">
+		<!-- Pattern 1: Native sse-swap - SSE sends content directly -->
+		<div hx-ext="sse" sse-connect="/api/servers/events" sse-swap="servers_update" hx-swap="innerHTML">
 			<!-- Navigation Tabs -->
 			<div class="nav">
 				<a href="/models" class="active">Models & GPU</a>
@@ -11,38 +11,25 @@ templ Models() {
 			</div>
 
 			<!-- GPU Status Dashboard -->
-		<div 
-			id="gpu_status"
-			hx-get="/api/gpu/status"
-			hx-trigger="load, sse:refresh-servers"
-			hx-swap="morph:outerHTML"
-			hx-ext="morph"
-		>
-				<div style="background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px 20px; margin-bottom: 20px;">
-					<span style="color: #94a3b8; font-size: 13px;">Loading GPU status...</span>
-				</div>
+			<div id="gpu_status" class="card" style="margin-bottom: 20px;">
+				Loading GPU status...
 			</div>
 
-		<!-- Model Server Management -->
-		<div class="card">
-			<h2 style="margin-bottom: 20px; font-size: 24px;">Model Servers</h2>
-			<p style="margin-bottom: 20px; color: #cbd5e1;">
-				Manage model servers. Each model requires its own server process on a unique port (8081-8090).
-			</p>
+			<!-- Model Server Management -->
+			<div class="card">
+				<h2 style="margin-bottom: 20px; font-size: 24px;">Model Servers</h2>
+				<p style="margin-bottom: 20px; color: #cbd5e1;">
+					Manage model servers. Each model requires its own server process on a unique port (8081-8090).
+				</p>
 				
 				<!-- Benchmark Status Messages -->
 				<div id="benchmark_status" style="margin-bottom: 15px;"></div>
 				
-		<div 
-			id="servers_list" 
-			hx-get="/api/servers/list" 
-			hx-trigger="load, sse:refresh-servers"
-			hx-swap="morph:outerHTML"
-			hx-ext="morph"
-		>
-				<p style="color: #94a3b8;">Loading servers...</p>
-		</div>
-		</div>
+				<!-- Server List - content replaced by SSE -->
+				<div id="servers_list">
+					<p style="color: #94a3b8;">Loading servers...</p>
+				</div>
+			</div>
 		</div>
 
 		<!-- Model Downloads Section -->
