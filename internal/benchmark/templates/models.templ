@@ -2,33 +2,30 @@ package templates
 
 templ Models() {
 	@Layout("Models & GPU") {
-		<!-- Pattern 1: Native sse-swap - SSE sends content directly -->
-		<div hx-ext="sse" sse-connect="/api/servers/events" sse-swap="servers_update" hx-swap="innerHTML">
-			<!-- Navigation Tabs -->
-			<div class="nav">
-				<a href="/models" class="active">Models & GPU</a>
-				<a href="/testing">Testing & Results</a>
-			</div>
+		<!-- Navigation Tabs -->
+		<div class="nav">
+			<a href="/models" class="active">Models & GPU</a>
+			<a href="/testing">Testing & Results</a>
+		</div>
 
-			<!-- GPU Status Dashboard -->
-			<div id="gpu_status" class="card" style="margin-bottom: 20px;">
-				Loading GPU status...
-			</div>
-
-			<!-- Model Server Management -->
-			<div class="card">
-				<h2 style="margin-bottom: 20px; font-size: 24px;">Model Servers</h2>
-				<p style="margin-bottom: 20px; color: #cbd5e1;">
-					Manage model servers. Each model requires its own server process on a unique port (8081-8090).
-				</p>
-				
-				<!-- Benchmark Status Messages -->
-				<div id="benchmark_status" style="margin-bottom: 15px;"></div>
-				
-				<!-- Server List - content replaced by SSE -->
-				<div id="servers_list">
-					<p style="color: #94a3b8;">Loading servers...</p>
+		<!-- Single SSE Connection for Entire Page - Pattern 2: SSE triggers hx-get -->
+		<div hx-ext="sse" sse-connect="/api/servers/events">
+			
+			<!-- GPU Status -->
+			<div class="card" style="margin-bottom: 20px;" id="gpu_status_container">
+				<div hx-get="/api/gpu/status" hx-trigger="load, sse:gpu_status" hx-swap="outerHTML">
+					<p style="color: #94a3b8;">Loading GPU status...</p>
 				</div>
+			</div>
+
+		<!-- Model Servers -->
+		<div class="card">
+			<h2 style="margin-bottom: 20px; font-size: 24px;">Model Servers</h2>
+			<p style="margin-bottom: 20px; color: #cbd5e1;">
+				Manage model servers. Each model requires its own server process on a unique port (8081-8090).
+			</p>
+			<div id="servers_list" hx-get="/api/servers/list" hx-trigger="load, sse:servers_list" hx-swap="outerHTML">
+				<p style="color: #64748b; padding: 20px; text-align: center;">Loading servers...</p>
 			</div>
 		</div>
 
@@ -122,7 +119,7 @@ templ Models() {
 					}
 				}
 				
-				// Listen to multiple events to catch datalist selection
+				// Listen to multiple events to catch datalist selections
 				modelSearchInput.addEventListener('input', checkForModelSelection);
 				modelSearchInput.addEventListener('change', checkForModelSelection);
 				modelSearchInput.addEventListener('blur', checkForModelSelection);
@@ -150,21 +147,16 @@ templ Models() {
 			<!-- Download Status Messages -->
 			<div id="download_status"></div>
 
-			<!-- Downloads List - Uses SSE for real-time updates -->
-			<!-- Pattern 1: sse-swap - SSE sends content directly -->
-			<div 
-				id="downloads_list"
-				hx-get="/api/models/downloads"
-				hx-trigger="load"
-				hx-swap="innerHTML"
-				hx-ext="sse"
-				sse-connect="/api/models/downloads/stream"
-				sse-swap="download_update"
-			>
-				<p style="color: #64748b; font-size: 13px;">Loading downloads...</p>
+			<!-- Downloads List - Uses parent SSE connection -->
+			<div id="downloads_list">
+				<div hx-get="/api/models/downloads" hx-trigger="load, sse:downloads_update" hx-swap="morph:innerHTML" hx-ext="morph">
+					<p style="color: #64748b; font-size: 13px;">Loading downloads...</p>
+				</div>
 			</div>
 
 		</div>
+		
+		</div><!-- End of SSE connection container -->
 
 		<!-- Error Modal -->
 		<div id="error_modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
