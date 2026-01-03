@@ -46,6 +46,7 @@ type DownloadManager struct {
 	modelsDir           string
 	db                  *db.Store            // Database for persistent state
 	lastSSENotification map[string]time.Time // Throttle SSE notifications per download
+	onSSENotify         func()               // Callback for SSE notifications (called from server)
 }
 
 // NewDownloadManager creates a new download manager
@@ -67,6 +68,13 @@ func NewDownloadManager(modelsDir string, dbStore *db.Store) *DownloadManager {
 	}
 
 	return dm
+}
+
+// SetSSENotifyCallback sets a callback to be called when downloads change
+func (dm *DownloadManager) SetSSENotifyCallback(callback func()) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	dm.onSSENotify = callback
 }
 
 // restoreDownloads loads all downloads from the database and checks file existence
@@ -214,55 +222,231 @@ func (dm *DownloadManager) StartDownload(downloadURL string) (*Download, error) 
 	return download, nil
 }
 
-// downloadFile performs the actual download
+// downloadFile performs the actual download with HTTP Range resume support and automatic retry
 func (dm *DownloadManager) downloadFile(downloadID string) {
+	const maxRetries = 5
+	const initialBackoff = 2 * time.Second
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// If this is a retry, wait with exponential backoff
+		if attempt > 0 {
+			backoff := initialBackoff * time.Duration(1<<uint(attempt-1)) // 2s, 4s, 8s, 16s, 32s
+			log.Printf("Retry attempt %d/%d for download %s after %v", attempt, maxRetries, downloadID, backoff)
+
+			// Update status to show retry countdown
+			dm.mu.Lock()
+			if download, exists := dm.downloads[downloadID]; exists {
+				download.Status = "downloading"
+				download.Error = fmt.Sprintf("Retrying in %v... (attempt %d/%d)", backoff, attempt, maxRetries)
+			}
+			dm.mu.Unlock()
+
+			time.Sleep(backoff)
+
+			// Clear retry message
+			dm.mu.Lock()
+			if download, exists := dm.downloads[downloadID]; exists {
+				download.Error = ""
+			}
+			dm.mu.Unlock()
+		}
+
+		// Attempt the download
+		err := dm.downloadFileAttempt(downloadID)
+		if err == nil {
+			// Success!
+			return
+		}
+
+		// Check if this is a retryable error
+		if !isRetryableError(err) {
+			// Non-retryable error (e.g., 404, permission denied) - fail immediately
+			log.Printf("Non-retryable error for %s: %v", downloadID, err)
+			dm.markFailed(downloadID, err.Error())
+			return
+		}
+
+		log.Printf("Retryable error for %s: %v", downloadID, err)
+
+		// If we've exhausted retries, mark as failed
+		if attempt == maxRetries {
+			dm.markFailed(downloadID, fmt.Sprintf("Failed after %d retries: %v", maxRetries, err))
+			return
+		}
+	}
+}
+
+// isRetryableError determines if an error should trigger automatic retry
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// Network errors that should be retried
+	retryablePatterns := []string{
+		"connection reset by peer",
+		"connection refused",
+		"timeout",
+		"temporary failure",
+		"eof", // Matches both "EOF" and "unexpected EOF"
+		"broken pipe",
+		"network is unreachable",
+		"no route to host",
+	}
+
+	for _, pattern := range retryablePatterns {
+		if strings.Contains(errStr, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// downloadFileAttempt performs a single download attempt (can fail and be retried)
+func (dm *DownloadManager) downloadFileAttempt(downloadID string) error {
 	dm.mu.RLock()
 	download, exists := dm.downloads[downloadID]
 	dm.mu.RUnlock()
 
 	if !exists {
-		return
+		return fmt.Errorf("download not found")
 	}
 
-	// Create destination file
+	// Prepare destination file path
 	destPath := filepath.Join(dm.modelsDir, download.Filename)
-	out, err := os.Create(destPath)
-	if err != nil {
-		dm.markFailed(downloadID, fmt.Sprintf("Failed to create file: %v", err))
-		return
+
+	// Check if partial file exists
+	var bytesDownloaded int64
+	fileInfo, err := os.Stat(destPath)
+	if err == nil {
+		// Partial file exists - we'll try to resume from this point
+		bytesDownloaded = fileInfo.Size()
+		log.Printf("Found partial file for %s: %s downloaded", download.Filename, formatBytes(bytesDownloaded))
 	}
-	defer out.Close()
 
 	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: 0, // No timeout for downloads
 	}
 
-	// Make request
-	resp, err := client.Get(download.URL)
+	// Create request with Range header for resume support
+	req, err := http.NewRequest("GET", download.URL, nil)
 	if err != nil {
-		dm.markFailed(downloadID, fmt.Sprintf("Failed to download: %v", err))
-		os.Remove(destPath) // Clean up partial file
-		return
+		return fmt.Errorf("Failed to create request: %v", err)
+	}
+
+	// If we have a partial file, request only the remaining bytes
+	if bytesDownloaded > 0 {
+		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", bytesDownloaded))
+		log.Printf("Requesting resume from byte %d for %s", bytesDownloaded, download.Filename)
+	}
+
+	// Make request
+	resp, err := client.Do(req)
+	if err != nil {
+		// Don't delete partial file on network error - can be resumed
+		return fmt.Errorf("Failed to download: %v", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		dm.markFailed(downloadID, fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Status))
-		os.Remove(destPath)
-		return
+	// Check response status
+	supportsResume := false
+	needsRestart := false
+	if bytesDownloaded > 0 {
+		if resp.StatusCode == http.StatusPartialContent {
+			// Server supports resume - we're good!
+			supportsResume = true
+			log.Printf("Server supports resume for %s (HTTP 206)", download.Filename)
+		} else if resp.StatusCode == http.StatusOK {
+			// Server doesn't support resume - have to start over
+			log.Printf("Server doesn't support resume for %s (HTTP 200), deleting partial file and restarting", download.Filename)
+			needsRestart = true
+			// Delete the corrupted partial file before starting over
+			if err := os.Remove(destPath); err != nil && !os.IsNotExist(err) {
+				log.Printf("Warning: failed to delete partial file: %v", err)
+			}
+			bytesDownloaded = 0 // Reset - we're starting over
+		} else {
+			return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+		}
+	} else {
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+		}
 	}
 
-	// Get total size
-	totalBytes := resp.ContentLength
+	// Update download record with resume capability info
 	dm.mu.Lock()
-	download.TotalBytes = totalBytes
+	download.SupportsResume = supportsResume
+	download.BytesDownloaded = bytesDownloaded
+	existingTotalBytes := download.TotalBytes // Preserve original total size
 	dm.mu.Unlock()
 
+	// Get total size
+	var totalBytes int64
+	if supportsResume {
+		// For 206 responses, Content-Range header tells us total size
+		// Format: "bytes START-END/TOTAL"
+		contentRange := resp.Header.Get("Content-Range")
+		if contentRange != "" {
+			parts := strings.Split(contentRange, "/")
+			if len(parts) == 2 {
+				if size, err := fmt.Sscanf(parts[1], "%d", &totalBytes); err == nil && size == 1 {
+					log.Printf("Total size from Content-Range: %s", formatBytes(totalBytes))
+				}
+			}
+		}
+		if totalBytes == 0 {
+			// Fallback: add Content-Length to bytes already downloaded
+			totalBytes = bytesDownloaded + resp.ContentLength
+		}
+	} else {
+		// For HTTP 200 responses
+		totalBytes = resp.ContentLength
+
+		// CRITICAL FIX: If this is a restart after failed resume, validate size matches original
+		// This prevents corruption where CDN returns different Content-Length after resume failure
+		if needsRestart && existingTotalBytes > 0 && totalBytes > 0 && totalBytes != existingTotalBytes {
+			log.Printf("WARNING: Server returned different size after resume failure! Original: %s, New: %s",
+				formatBytes(existingTotalBytes), formatBytes(totalBytes))
+			log.Printf("Using original total size to detect incomplete downloads")
+			totalBytes = existingTotalBytes // Keep original size for validation
+		}
+	}
+
+	dm.mu.Lock()
+	download.TotalBytes = totalBytes
+	if totalBytes > 0 && bytesDownloaded > 0 {
+		download.Progress = float64(bytesDownloaded) / float64(totalBytes) * 100
+	}
+	dm.mu.Unlock()
+
+	// Open file for writing
+	var out *os.File
+	if bytesDownloaded > 0 && supportsResume {
+		// Resume: open file in append mode
+		out, err = os.OpenFile(destPath, os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return fmt.Errorf("Failed to open file for resume: %v", err)
+		}
+		log.Printf("Resuming download to %s at %s", download.Filename, formatBytes(bytesDownloaded))
+	} else {
+		// New download: create file (overwrites any partial file if it somehow still exists)
+		out, err = os.Create(destPath)
+		if err != nil {
+			return fmt.Errorf("Failed to create file: %v", err)
+		}
+		bytesDownloaded = 0 // Make sure we start from 0
+		log.Printf("Starting new download for %s", download.Filename)
+	}
+	defer out.Close()
+
 	// Download with progress tracking
-	var bytesDownloaded int64
 	lastUpdate := time.Now()
-	lastBytes := int64(0)
+	lastBytes := bytesDownloaded
 
 	buffer := make([]byte, 32*1024) // 32KB buffer
 	for {
@@ -270,16 +454,15 @@ func (dm *DownloadManager) downloadFile(downloadID string) {
 		if n > 0 {
 			_, writeErr := out.Write(buffer[:n])
 			if writeErr != nil {
-				dm.markFailed(downloadID, fmt.Sprintf("Write error: %v", writeErr))
 				os.Remove(destPath)
-				return
+				return fmt.Errorf("Write error: %v", writeErr)
 			}
 
 			bytesDownloaded += int64(n)
 
-			// Update progress every second
+			// Update progress every 3 seconds to reduce UI flashing
 			now := time.Now()
-			if now.Sub(lastUpdate) >= time.Second {
+			if now.Sub(lastUpdate) >= 3*time.Second {
 				elapsed := now.Sub(lastUpdate).Seconds()
 				speed := int64(float64(bytesDownloaded-lastBytes) / elapsed)
 
@@ -302,10 +485,25 @@ func (dm *DownloadManager) downloadFile(downloadID string) {
 			break
 		}
 		if err != nil {
-			dm.markFailed(downloadID, fmt.Sprintf("Read error: %v", err))
-			os.Remove(destPath)
-			return
+			// Don't delete partial file - can be resumed
+			return fmt.Errorf("Read error: %v", err)
 		}
+	}
+
+	// Validate: Check if downloaded bytes matches expected total
+	// This catches cases where server sent wrong Content-Length
+	if totalBytes > 0 && bytesDownloaded != totalBytes {
+		errMsg := fmt.Sprintf("Download size mismatch: expected %s but got %s (file may be corrupted)",
+			formatBytes(totalBytes), formatBytes(bytesDownloaded))
+		log.Printf("ERROR: %s", errMsg)
+		// Don't mark as failed immediately - try to verify file actually exists and has correct size
+		fileInfo, statErr := os.Stat(destPath)
+		if statErr == nil && fileInfo.Size() == bytesDownloaded {
+			log.Printf("File size on disk matches bytes downloaded, but expected %s total", formatBytes(totalBytes))
+			// Mark as failed so user knows something is wrong
+			return fmt.Errorf(errMsg)
+		}
+		return fmt.Errorf(errMsg)
 	}
 
 	// Mark as completed
@@ -316,10 +514,13 @@ func (dm *DownloadManager) downloadFile(downloadID string) {
 	download.BytesDownloaded = bytesDownloaded
 	download.CompletedAt = &completedAt
 	download.Speed = 0
+	download.FileExists = true
 	dm.mu.Unlock()
 
 	dm.notifyListeners(download)
+	dm.saveDownloadState(download)
 	log.Printf("Download completed: %s (%s)", download.Filename, formatBytes(bytesDownloaded))
+	return nil
 }
 
 // markFailed marks a download as failed
@@ -336,6 +537,7 @@ func (dm *DownloadManager) markFailed(downloadID string, errorMsg string) {
 
 	if exists {
 		dm.notifyListeners(download)
+		dm.saveDownloadState(download)
 		log.Printf("Download failed: %s - %s", download.Filename, errorMsg)
 	}
 }
@@ -502,8 +704,9 @@ func (dm *DownloadManager) saveDownloadState(download *Download) {
 		return
 	}
 
-	// Update file existence status
-	if download.FilePath != "" {
+	// Only update file existence for completed/failed downloads
+	// During active downloads, file I/O checks can cause race conditions
+	if (download.Status == "completed" || download.Status == "failed") && download.FilePath != "" {
 		if _, err := os.Stat(download.FilePath); err == nil {
 			download.FileExists = true
 		} else {
@@ -572,6 +775,11 @@ func (dm *DownloadManager) notifyListeners(download *Download) {
 			// Skip if channel is full
 			log.Printf("Warning: SSE listener channel full, skipping update")
 		}
+	}
+
+	// Also call the SSE notify callback for the main SSE endpoint
+	if dm.onSSENotify != nil {
+		dm.onSSENotify()
 	}
 }
 
@@ -732,24 +940,23 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 	allDownloads := s.modelManager.downloadManager.GetDownloads()
 	showAll := r.URL.Query().Get("show_all") == "true"
 
-	// Show active downloads, recent completions (60s), and recent failures (5min)
-	// OR show all if toggled
-	// Interrupted downloads (error contains "interrupted") show indefinitely until user clears/resumes
+	// Show only active downloads and failed downloads (interrupted or recent failures)
+	// Completed downloads are hidden immediately
+	// Show all downloads if toggled with "show_all=true"
 	var downloads []*Download
 	for _, d := range allDownloads {
 		if showAll {
 			downloads = append(downloads, d)
 		} else if d.Status == "downloading" {
 			downloads = append(downloads, d)
-		} else if d.Status == "completed" && d.CompletedAt != nil && time.Since(*d.CompletedAt) < 60*time.Second {
+		} else if d.Status == "failed" && strings.Contains(d.Error, "interrupted") {
+			// Interrupted downloads show indefinitely until user clears/resumes
 			downloads = append(downloads, d)
 		} else if d.Status == "failed" && d.CompletedAt != nil && time.Since(*d.CompletedAt) < 5*time.Minute {
-			// Recently failed downloads
-			downloads = append(downloads, d)
-		} else if d.Status == "failed" && strings.Contains(d.Error, "interrupted") {
-			// Interrupted downloads show indefinitely
+			// Recently failed downloads (non-interrupted) show for 5 minutes
 			downloads = append(downloads, d)
 		}
+		// Completed downloads are hidden - user can toggle "Show All" to see them
 	}
 
 	w.Header().Set("Content-Type", "text/html")
@@ -763,8 +970,8 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 				class="btn"
 				style="padding: 4px 10px; font-size: 11px; background: #475569; border: 1px solid #64748b;"
 				hx-get="/api/models/downloads"
-				hx-target="#downloads_list"
-				hx-swap="morph:outerHTML"
+				hx-target="#downloads_list > div"
+				hx-swap="innerHTML"
 			>
 				Show Recent
 			</button>`
@@ -774,8 +981,8 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 				class="btn"
 				style="padding: 4px 10px; font-size: 11px; background: #475569; border: 1px solid #64748b;"
 				hx-get="/api/models/downloads?show_all=true"
-				hx-target="#downloads_list"
-				hx-swap="morph:outerHTML"
+				hx-target="#downloads_list > div"
+				hx-swap="innerHTML"
 			>
 				Show All
 			</button>`
@@ -786,19 +993,13 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 			emptyMessage = "No downloads in history"
 		}
 
-		html := fmt.Sprintf(`<div 
-			id="downloads_list"
-			hx-get="/api/models/downloads"
-			hx-trigger="load"
-			hx-swap="morph:outerHTML"
-			hx-ext="morph"
-		>
+		// Return just the inner content, not the full element with hx attributes
+		html := fmt.Sprintf(`
 			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
 				<h3 style="margin: 0; font-size: 16px; color: #e2e8f0;">%s</h3>
 				%s
 			</div>
-			<p style="color: #64748b; font-size: 13px; text-align: center; padding: 20px;">%s</p>
-		</div>`,
+			<p style="color: #64748b; font-size: 13px; text-align: center; padding: 20px;">%s</p>`,
 			func() string {
 				if showAll {
 					return "All Downloads"
@@ -845,37 +1046,35 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 	}
 
 	html := fmt.Sprintf(`<div 
-		id="downloads_list"
-	>
-		<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-			<h3 style="margin: 0; font-size: 16px; color: #e2e8f0;">%s</h3>
-			<div style="display: flex; gap: 8px;">
-				%s
-				<form 
-					hx-post="/api/models/downloads/clear-all"
-					hx-target="#downloads_list"
-					hx-swap="morph:outerHTML"
-					style="margin: 0;"
-					hx-confirm="This will delete partial files for failed downloads. Continue?"
+		style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+		<h3 style="margin: 0; font-size: 16px; color: #e2e8f0;">%s</h3>
+		<div style="display: flex; gap: 8px;">
+			%s
+			<form 
+				hx-post="/api/models/downloads/clear-all"
+				hx-target="#downloads_list > div"  
+				hx-swap="outerHTML"
+				style="margin: 0;"
+				hx-confirm="This will delete partial files for failed downloads. Continue?"
+			>
+				<button 
+					type="submit"
+					class="btn"
+					style="padding: 4px 10px; font-size: 11px; background: #64748b; border: 1px solid #94a3b8;"
+					title="Clear all completed and failed downloads (deletes partial files)"
 				>
-					<button 
-						type="submit"
-						class="btn"
-						style="padding: 4px 10px; font-size: 11px; background: #64748b; border: 1px solid #94a3b8;"
-						title="Clear all completed and failed downloads (deletes partial files)"
-					>
-						Clear All
-					</button>
-				</form>
-			</div>
+					Clear All
+				</button>
+			</form>
 		</div>
-		<style>
-		@keyframes shimmer {
-			0%% { transform: translateX(-100%%); }
-			100%% { transform: translateX(100%%); }
-		}
-		</style>
-		<div style="display: flex; flex-direction: column; gap: 12px;">`, title, toggleButton)
+	</div>
+	<style>
+	@keyframes shimmer {
+		0%% { transform: translateX(-100%%); }
+		100%% { transform: translateX(100%%); }
+	}
+	</style>
+	<div style="display: flex; flex-direction: column; gap: 12px;">`, title, toggleButton)
 
 	for _, d := range downloads {
 		statusColor := "#3b82f6" // blue for downloading
@@ -934,8 +1133,8 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 					<form 
 						hx-post="/api/models/downloads/resume"
 						hx-vals='{"id": "%s"}'
-						hx-target="#downloads_list"
-						hx-swap="morph:outerHTML"
+						hx-target="#download_%s"
+						hx-swap="outerHTML"
 						style="margin: 0; display: inline-block; margin-left: 8px;"
 					>
 						<button 
@@ -947,7 +1146,7 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 						</button>
 					</form>
 				</div>`,
-				htmlEscape(d.Error), d.ID)
+				htmlEscape(d.Error), d.ID, d.ID)
 		}
 
 		// Add Clear button for completed/failed downloads
@@ -1009,19 +1208,9 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Add polling for active downloads only
-		pollingAttrs := ""
-		if d.Status == "downloading" {
-			pollingAttrs = fmt.Sprintf(`
-				hx-get="/api/models/downloads/single?id=%s"
-				hx-trigger="every 2s"
-				hx-swap="morph:outerHTML"
-				hx-ext="morph"
-			`, d.ID)
-		}
-
+		// No individual polling - rely entirely on SSE for updates
 		html += fmt.Sprintf(`
-			<div id="download_%s"%s style="background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 12px;">
+			<div id="download_%s" style="background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 12px;">
 				<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
 					<div style="width: 8px; height: 8px; background: %s; border-radius: 50%%;"></div>
 					<span style="color: #e2e8f0; font-size: 13px; font-weight: 500;">%s</span>
@@ -1032,8 +1221,7 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 				%s
 				%s
 			</div>`,
-			d.ID, // Add stable ID for idiomorph tracking
-			pollingAttrs,
+			d.ID,
 			statusColor,
 			htmlEscape(d.Filename),
 			d.Status,
@@ -1135,9 +1323,12 @@ func (s *Server) handleGetSingleDownload(w http.ResponseWriter, r *http.Request)
 			htmlEscape(download.Error), download.ID)
 	}
 
+	// File existence indicator (only for completed/failed downloads)
 	fileStatusText := ""
-	if download.FileExists {
-		fileStatusText = `<div style="color: #10b981; font-size: 10px; margin-top: 4px;">✓ File exists on disk</div>`
+	if download.Status == "completed" || download.Status == "failed" {
+		if download.FileExists {
+			fileStatusText = `<div style="color: #10b981; font-size: 10px; margin-top: 4px;">✓ File exists on disk</div>`
+		}
 	}
 
 	clearButton := ""
@@ -1192,19 +1383,9 @@ func (s *Server) handleGetSingleDownload(w http.ResponseWriter, r *http.Request)
 			</div>`, htmlEscape(download.FilePath), download.ID)
 	}
 
-	// Add polling for active downloads only
-	pollingAttrs := ""
-	if download.Status == "downloading" {
-		pollingAttrs = fmt.Sprintf(`
-			hx-get="/api/models/downloads/single?id=%s"
-			hx-trigger="every 2s"
-			hx-swap="morph:outerHTML"
-			hx-ext="morph"
-		`, download.ID)
-	}
-
+	// No individual polling - rely entirely on SSE for updates
 	html := fmt.Sprintf(`
-		<div id="download_%s"%s style="background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 12px;">
+		<div id="download_%s" style="background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 12px;">
 			<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
 				<div style="width: 8px; height: 8px; background: %s; border-radius: 50%%;"></div>
 				<span style="color: #e2e8f0; font-size: 13px; font-weight: 500;">%s</span>
@@ -1216,7 +1397,6 @@ func (s *Server) handleGetSingleDownload(w http.ResponseWriter, r *http.Request)
 			%s
 		</div>`,
 		download.ID,
-		pollingAttrs,
 		statusColor,
 		htmlEscape(download.Filename),
 		download.Status,
@@ -1390,17 +1570,17 @@ func (s *Server) handleResumeDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clear the old failed download
-	if err := s.modelManager.downloadManager.ClearDownload(downloadID); err != nil {
-		log.Printf("Warning: Failed to clear old download: %v", err)
-	}
+	// Update status to "downloading" and clear error
+	s.modelManager.downloadManager.mu.Lock()
+	download.Status = "downloading"
+	download.Error = ""
+	download.CompletedAt = nil
+	s.modelManager.downloadManager.mu.Unlock()
 
-	// Start a new download with the same URL (supports resume via HTTP Range)
-	_, err := s.modelManager.downloadManager.StartDownload(download.URL)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to resume download: %v", err), http.StatusInternalServerError)
-		return
-	}
+	// Start download goroutine (will resume from partial file if it exists)
+	go s.modelManager.downloadManager.downloadFile(downloadID)
+
+	log.Printf("Resuming download: %s", download.Filename)
 
 	// Return updated downloads list
 	s.handleGetDownloads(w, r)
