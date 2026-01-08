@@ -23,22 +23,24 @@ import (
 
 // ModelServer represents a running or available model server
 type ModelServer struct {
-	ModelPath       string `json:"model_path"`
-	ModelName       string `json:"model_name"`
-	Port            int    `json:"port"`
-	PID             int    `json:"pid"`
-	Status          string `json:"status"`        // "running", "stopped", "starting", "error"
-	ErrorMessage    string `json:"error_message"` // Error details when status is "error"
-	URL             string `json:"url"`
-	APIType         string `json:"api_type"`
-	LastChecked     int64  `json:"last_checked"`
-	VRAMUsageBytes  int64  `json:"vram_usage_bytes"` // VRAM used by this server in bytes
-	ContextSize     int    `json:"context_size"`     // Active context window size (n_ctx)
-	ContextTrain    int    `json:"context_train"`    // Training context size (n_ctx_train)
-	ParametersCount int64  `json:"parameters_count"` // Total parameters (n_params)
-	ModelSizeBytes  int64  `json:"model_size_bytes"` // Model file size in bytes
-	VocabSize       int    `json:"vocab_size"`       // Vocabulary size (n_vocab)
-	EmbeddingDim    int    `json:"embedding_dim"`    // Embedding dimensions (n_embd)
+	ModelPath       string  `json:"model_path"`
+	ModelName       string  `json:"model_name"`
+	Port            int     `json:"port"`
+	PID             int     `json:"pid"`
+	Status          string  `json:"status"`        // "running", "loading", "stopped", "starting", "error"
+	ErrorMessage    string  `json:"error_message"` // Error details when status is "error"
+	URL             string  `json:"url"`
+	APIType         string  `json:"api_type"`
+	LastChecked     int64   `json:"last_checked"`
+	VRAMUsageBytes  int64   `json:"vram_usage_bytes"` // VRAM used by this server in bytes
+	CPUPercent      float64 `json:"cpu_percent"`      // CPU usage percentage
+	MemoryBytes     int64   `json:"memory_bytes"`     // RAM (RSS) used by this process in bytes
+	ContextSize     int     `json:"context_size"`     // Active context window size (n_ctx)
+	ContextTrain    int     `json:"context_train"`    // Training context size (n_ctx_train)
+	ParametersCount int64   `json:"parameters_count"` // Total parameters (n_params)
+	ModelSizeBytes  int64   `json:"model_size_bytes"` // Model file size in bytes
+	VocabSize       int     `json:"vocab_size"`       // Vocabulary size (n_vocab)
+	EmbeddingDim    int     `json:"embedding_dim"`    // Embedding dimensions (n_embd)
 
 	// Split model metadata
 	IsSplitModel    bool     `json:"is_split_model"`    // True if this is a multi-part GGUF model
@@ -91,6 +93,7 @@ func (mm *ModelManager) backgroundRefresh() {
 	// Do an initial refresh immediately
 	mm.RefreshServerStatus()
 	mm.UpdateVRAMUsage()
+	mm.UpdateCPUAndMemory()
 	mm.notifyStateChange()
 
 	for {
@@ -98,6 +101,7 @@ func (mm *ModelManager) backgroundRefresh() {
 		case <-ticker.C:
 			mm.RefreshServerStatus()
 			mm.UpdateVRAMUsage()
+			mm.UpdateCPUAndMemory()
 			mm.notifyStateChange()
 		case <-mm.stopRefresh:
 			return
@@ -169,6 +173,19 @@ func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 		return nil, fmt.Errorf("failed to read models directory: %w", err)
 	}
 
+	// Get list of files that are currently being downloaded
+	activeDownloads := make(map[string]bool)
+	if mm.downloadManager != nil {
+		downloads := mm.downloadManager.GetDownloads()
+		for _, dl := range downloads {
+			// Only exclude files with "downloading" status
+			// Completed and failed downloads should be shown in model list
+			if dl.Status == "downloading" {
+				activeDownloads[dl.FilePath] = true
+			}
+		}
+	}
+
 	// Track split model prefixes we've already processed
 	processedSplitModels := make(map[string]bool)
 
@@ -182,6 +199,11 @@ func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 		}
 
 		modelPath := filepath.Join(mm.modelsDir, file.Name())
+
+		// Skip files that are currently being downloaded
+		if activeDownloads[modelPath] {
+			continue
+		}
 
 		// Parse split model info
 		splitInfo := parseSplitModelFilename(file.Name())
@@ -214,6 +236,8 @@ func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 				server.SplitPartsFound = partsFound
 				server.SplitIsComplete = isComplete
 				server.SplitAllParts = mm.getSplitModelParts(modelPath)
+				// Recalculate total size of all parts
+				server.ModelSizeBytes = mm.calculateTotalSize(server.SplitAllParts)
 			}
 			models = append(models, server)
 			continue
@@ -237,6 +261,8 @@ func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 			server.SplitPartsFound = partsFound
 			server.SplitIsComplete = isComplete
 			server.SplitAllParts = mm.getSplitModelParts(modelPath)
+			// Calculate total size of all parts
+			server.ModelSizeBytes = mm.calculateTotalSize(server.SplitAllParts)
 		}
 
 		mm.servers[modelPath] = server
@@ -339,7 +365,15 @@ func (mm *ModelManager) RefreshServerStatus() error {
 		for _, server := range mm.servers {
 			if strings.Contains(info.modelName, filepath.Base(server.ModelName)) ||
 				strings.Contains(filepath.Base(server.ModelName), filepath.Base(info.modelName)) {
-				server.Status = "running"
+
+				// Check if server is loading or ready
+				isLoading := mm.checkIfServerLoading(info.port)
+				if isLoading {
+					server.Status = "loading"
+				} else {
+					server.Status = "running"
+				}
+
 				server.Port = info.port
 				server.URL = fmt.Sprintf("http://localhost:%d", info.port)
 				server.APIType = "llamacpp"
@@ -393,16 +427,34 @@ func (mm *ModelManager) getModelNameFromPort(port int) string {
 
 // findPIDForPort attempts to find the PID of the process listening on a port
 func (mm *ModelManager) findPIDForPort(port int) int {
-	// This is a simple approach - in production you'd use lsof or netstat parsing
+	// Use lsof to find process listening on port
 	cmd := exec.Command("lsof", "-t", "-i", fmt.Sprintf(":%d", port))
 	output, err := cmd.Output()
 	if err != nil {
 		return 0
 	}
 
-	var pid int
-	fmt.Sscanf(string(output), "%d", &pid)
-	return pid
+	// lsof can return multiple PIDs (one per line), find the llama-server process
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		var pid int
+		if _, err := fmt.Sscanf(line, "%d", &pid); err == nil && pid > 0 {
+			// Check if this PID is a llama-server process
+			cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+			if err == nil && strings.Contains(string(cmdline), "llama-server") {
+				return pid
+			}
+		}
+	}
+
+	// Fallback: return the first PID if no llama-server found
+	if len(lines) > 0 {
+		var pid int
+		fmt.Sscanf(lines[0], "%d", &pid)
+		return pid
+	}
+
+	return 0
 }
 
 // getContextSizeFromPort fetches the context size (n_ctx) from a running llama.cpp server
@@ -443,6 +495,27 @@ func (mm *ModelManager) checkServerHealth(url string) bool {
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
+}
+
+// checkIfServerLoading checks if a server port is responding but still loading
+// Returns true if the server is loading (503 with "Loading model" message)
+func (mm *ModelManager) checkIfServerLoading(port int) bool {
+	healthURL := fmt.Sprintf("http://localhost:%d/health", port)
+	client := &http.Client{Timeout: 200 * time.Millisecond}
+	resp, err := client.Get(healthURL)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	// Check if it's specifically "Loading model" (503 status)
+	if resp.StatusCode == http.StatusServiceUnavailable {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err == nil && strings.Contains(string(body), "Loading model") {
+			return true
+		}
+	}
+	return false
 }
 
 // findAvailablePortForModel finds an available port starting from 8081
@@ -547,6 +620,54 @@ func (mm *ModelManager) UpdateVRAMUsage() error {
 	return nil
 }
 
+// UpdateCPUAndMemory updates CPU and memory usage for all running servers
+func (mm *ModelManager) UpdateCPUAndMemory() error {
+	mm.mu.Lock()
+	defer mm.mu.Unlock()
+
+	for _, server := range mm.servers {
+		if server.PID > 0 && (server.Status == "running" || server.Status == "loading") {
+			// Read /proc/[pid]/stat for CPU and memory info
+			statPath := fmt.Sprintf("/proc/%d/stat", server.PID)
+			statData, err := ioutil.ReadFile(statPath)
+			if err != nil {
+				// Process may have exited
+				continue
+			}
+
+			// Parse stat file - fields are space-separated
+			// We need RSS (field 24, 0-indexed = 23)
+			statFields := strings.Fields(string(statData))
+			if len(statFields) < 24 {
+				continue
+			}
+
+			// Get RSS (Resident Set Size) in pages
+			rssPages, err := strconv.ParseInt(statFields[23], 10, 64)
+			if err != nil {
+				continue
+			}
+
+			// Convert pages to bytes (typical page size is 4096 bytes)
+			pageSize := int64(4096)
+			server.MemoryBytes = rssPages * pageSize
+
+			// Get CPU usage by reading utime + stime
+			// For simplicity, we'll use ps command to get accurate CPU percentage
+			cmd := exec.Command("ps", "-p", fmt.Sprintf("%d", server.PID), "-o", "%cpu=")
+			output, err := cmd.Output()
+			if err == nil {
+				cpuStr := strings.TrimSpace(string(output))
+				if cpuPercent, err := strconv.ParseFloat(cpuStr, 64); err == nil {
+					server.CPUPercent = cpuPercent
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // isSystemdManaged checks if a process is managed by a systemd user service
 func (mm *ModelManager) isSystemdManaged(pid int) bool {
 	// Check if process is in a systemd cgroup
@@ -582,8 +703,13 @@ func (mm *ModelManager) getSystemdServiceName(pid int) string {
 	return ""
 }
 
-// StartServer starts a model server on an available port
+// StartServer starts a model server on an available port with default context size
 func (mm *ModelManager) StartServer(modelPath string) error {
+	return mm.StartServerWithContext(modelPath, 131072, 999) // 999 = all GPU layers
+}
+
+// StartServerWithContext starts a model server with a custom context size and GPU layer count
+func (mm *ModelManager) StartServerWithContext(modelPath string, contextSize int, ngl int) error {
 	// Step 1: Get server info and port with brief lock
 	mm.mu.Lock()
 	server, exists := mm.servers[modelPath]
@@ -628,11 +754,12 @@ func (mm *ModelManager) StartServer(modelPath string) error {
 		"-m", modelPath,
 		"--host", "0.0.0.0",
 		"--port", fmt.Sprintf("%d", port),
-		"-c", "131072",
-		"-ngl", "999",
+		"-c", fmt.Sprintf("%d", contextSize),
+		"-ngl", fmt.Sprintf("%d", ngl),
 		"-fa", "on",
 		"-b", "2048",
 		"-ub", "512",
+		"--verbose", // Enable verbose logging for detailed tensor loading progress
 	}
 
 	// Check if it's an embedding model
@@ -682,14 +809,16 @@ func (mm *ModelManager) StartServer(modelPath string) error {
 	mm.mu.Unlock()
 
 	// Wait for server to be ready (in background)
-	go mm.waitForServerReady(modelPath, port, 60*time.Second)
+	// Use 2-hour timeout for large models (78B+ can take 30-60+ minutes to load)
+	go mm.waitForServerReady(modelPath, port, 2*time.Hour)
 
 	return nil
 }
 
 // waitForServerReady polls the server until it's ready or timeout
+// Uses /health endpoint which correctly returns 503 during loading and 200 when ready
 func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout time.Duration) {
-	url := fmt.Sprintf("http://localhost:%d/v1/models", port)
+	url := fmt.Sprintf("http://localhost:%d/health", port)
 	deadline := time.Now().Add(timeout)
 	var lastError error
 
@@ -966,6 +1095,17 @@ func (mm *ModelManager) checkSplitModelComplete(modelPath string) (int, int, boo
 	return existingCount, len(parts), allExist
 }
 
+// calculateTotalSize sums up the file sizes of all provided paths
+func (mm *ModelManager) calculateTotalSize(paths []string) int64 {
+	var totalSize int64
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil {
+			totalSize += info.Size()
+		}
+	}
+	return totalSize
+}
+
 // GetServerStatus returns the current status of all servers
 func (mm *ModelManager) GetServerStatus() []*ModelServer {
 	mm.mu.RLock()
@@ -1037,7 +1177,11 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		switch model.Status {
 		case "running":
 			statusColor = "#10b981"
-			statusText = "Running"
+			statusText = "🟢 Running"
+		case "loading":
+			statusColor = "#f59e0b"
+			statusText = "⏳ Loading..."
+			statusTooltip = "Model is loading into memory"
 		case "starting":
 			statusColor = "#f59e0b"
 			statusText = "Starting..."
@@ -1089,7 +1233,7 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 
 		contextText := "-"
 		contextTooltip := ""
-		if model.Status == "running" {
+		if model.Status == "running" || model.Status == "loading" {
 			if model.ContextSize > 0 {
 				// Format active context size in K (thousands)
 				if model.ContextSize >= 1000 {
@@ -1135,7 +1279,7 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 
 		vramText := "-"
 		memoryTooltip := ""
-		if model.Status == "running" && model.VRAMUsageBytes > 0 {
+		if (model.Status == "running" || model.Status == "loading") && model.VRAMUsageBytes > 0 {
 			vramText = gpu.FormatBytes(model.VRAMUsageBytes)
 			// Add helpful tooltip based on size
 			// Models using >1GB are likely using GTT (system RAM)
@@ -1159,7 +1303,7 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		// Generate stable ID for this model (use index)
 		modelID := fmt.Sprintf("%d", i)
 
-		if model.Status == "running" {
+		if model.Status == "running" || model.Status == "loading" {
 			actionButton = fmt.Sprintf(`
 	<form style="display: inline;" hx-post="/api/servers/stop">
 		<input type="hidden" name="model_path" value="%s" />
@@ -1173,8 +1317,10 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		</button>
 	</form>
 `, model.ModelPath, modelID, modelID)
-			// Add Run Benchmark button for running servers
-			benchmarkButton = fmt.Sprintf(`
+
+			// Only show Run Benchmark for fully loaded models
+			if model.Status == "running" {
+				benchmarkButton = fmt.Sprintf(`
 	<form style="display: inline;" hx-post="/api/benchmark/run" hx-target="#benchmark_status_%s" hx-swap="innerHTML">
 		<input type="hidden" name="model_path" value="%s" />
 		<button 
@@ -1188,6 +1334,13 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 	</form>
 	<div id="benchmark_status_%s"></div>
 `, modelID, model.ModelPath, modelID, modelID, modelID)
+			} else {
+				// Loading state - show disabled message
+				benchmarkButton = fmt.Sprintf(`
+	<span style="color: #64748b; font-size: 12px; font-style: italic;">Wait for model to load...</span>
+	<div id="benchmark_status_%s"></div>
+`, modelID)
+			}
 			// Add Logs button for running servers
 			testButton = fmt.Sprintf(`
 	<a href="/api/servers/logs?port=%d" target="_blank" 
@@ -1204,18 +1357,58 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 				buttonText = "Retry"
 			}
 			actionButton = fmt.Sprintf(`
-		<form style="display: inline;" hx-post="/api/servers/start">
-			<input type="hidden" name="model_path" value="%s" />
-			<button 
-				type="submit" 
-				style="padding: 6px 12px; background: #2563eb; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
-				hx-indicator="#start-spinner-%s"
-			>
-				<span id="start-spinner-%s" class="spinner htmx-indicator"></span>
-				<span>%s</span>
-			</button>
+		<form 
+			style="display: flex; flex-direction: column; gap: 8px;" 
+			hx-post="/api/servers/start"
+			data-model-size="%d"
+			data-parameters="%d"
+		>
+			<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+				<input type="hidden" name="model_path" value="%s" />
+				<select 
+					name="context_size" 
+					style="padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;"
+					title="Context window size - smaller contexts load faster and use less memory"
+				>
+					<option value="">Default (131K)</option>
+					<option value="2048">2K - Minimal</option>
+					<option value="4096">4K - Small</option>
+					<option value="8192">8K - Standard</option>
+					<option value="16384">16K - Medium</option>
+					<option value="32768">32K - Large</option>
+					<option value="65536">65K - Very Large</option>
+					<option value="131072">131K - Huge</option>
+				</select>
+				<select 
+					name="ngl" 
+					style="padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;"
+					title="GPU layers - fewer layers = less VRAM usage"
+				>
+					<option value="999">Auto (All Layers)</option>
+					<option value="0">CPU Only (0 Layers)</option>
+					<option value="10">10 Layers</option>
+					<option value="20">20 Layers</option>
+					<option value="30">30 Layers</option>
+					<option value="40">40 Layers</option>
+					<option value="50">50 Layers ⭐</option>
+					<option value="60">60 Layers</option>
+					<option value="70">70 Layers</option>
+					<option value="80">80 Layers</option>
+				</select>
+				<button 
+					type="submit" 
+					style="padding: 6px 12px; background: #2563eb; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px;"
+					hx-indicator="#start-spinner-%s"
+				>
+					<span id="start-spinner-%s" class="spinner htmx-indicator"></span>
+					<span>%s</span>
+				</button>
+			</div>
+			<div class="memory-estimate" style="margin-top: 4px;">
+				<!-- Memory estimate will be dynamically populated by JavaScript -->
+			</div>
 		</form>
-	`, model.ModelPath, modelID, modelID, buttonText)
+	`, model.ModelSizeBytes, model.ParametersCount, model.ModelPath, modelID, modelID, buttonText)
 			// Allow delete when stopped or error
 			deleteConfirmMsg := fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove the file from disk.", model.ModelName)
 			if model.IsSplitModel && model.SplitTotalParts > 1 {
@@ -1266,6 +1459,19 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Add toggle button for logs if model is starting, loading, or running
+		logsToggleButton := ""
+		if model.Status == "running" || model.Status == "loading" || model.Status == "starting" {
+			logsToggleButton = fmt.Sprintf(`
+				<button 
+					onclick="document.getElementById('logs-%s').classList.toggle('hidden')" 
+					style="padding: 6px 12px; background: #475569; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
+				>
+					📋 Logs
+				</button>
+			`, modelID)
+		}
+
 		html += fmt.Sprintf(`
 		<tr style="border-bottom: 1px solid #1e293b;">
 			<td style="padding: 14px 12px; color: #e2e8f0; font-size: 13px; font-family: monospace;" title="%s">%s</td>
@@ -1274,9 +1480,31 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;" title="%s">%s</td>
 			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;" title="%s">%s</td>
 			<td style="padding: 14px 12px; color: %s; font-size: 13px; font-weight: 500;">%s</td>
-			<td style="padding: 14px 12px;">%s%s%s%s</td>
+			<td style="padding: 14px 12px;">%s%s%s%s%s</td>
 		</tr>
-	`, modelNameTooltip, modelNameDisplay, statusTooltip, statusHTML, portText, contextTooltip, contextText, memoryTooltip, vramText, scoreColor, scoreText, actionButton, benchmarkButton, testButton, deleteButton)
+	`, modelNameTooltip, modelNameDisplay, statusTooltip, statusHTML, portText, contextTooltip, contextText, memoryTooltip, vramText, scoreColor, scoreText, actionButton, benchmarkButton, testButton, logsToggleButton, deleteButton)
+
+		// Add collapsible log viewer row with SSE updates
+		if model.Status == "running" || model.Status == "loading" || model.Status == "starting" {
+			html += fmt.Sprintf(`
+		<tr id="logs-%s" class="hidden" style="border-bottom: 1px solid #1e293b;">
+			<td colspan="7" style="padding: 0;">
+				<div style="background: #0f172a; padding: 12px; margin: 8px; border-radius: 4px; border: 1px solid #334155;">
+					<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+						<span style="color: #94a3b8; font-size: 12px; font-weight: 500;">Server Logs (Last 50 lines - Live)</span>
+						<a href="/api/servers/logs?port=%d" target="_blank" 
+						   style="color: #60a5fa; font-size: 12px; text-decoration: none;">
+							View Full Logs ↗
+						</a>
+					</div>
+					<div hx-ext="sse" sse-connect="/api/servers/logs/stream?port=%d" sse-swap="log_update">
+						<pre id="log-content-%s" style="background: #020617; color: #e2e8f0; padding: 12px; border-radius: 4px; font-size: 11px; font-family: monospace; overflow-x: auto; max-height: 400px; overflow-y: auto; margin: 0;">Connecting to log stream...</pre>
+					</div>
+				</div>
+			</td>
+		</tr>
+	`, modelID, model.Port, model.Port, modelID)
+		}
 	}
 
 	html += `
@@ -1301,7 +1529,37 @@ func (s *Server) HandleStartServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.modelManager.StartServer(modelPath); err != nil {
+	// Check for custom context size parameter
+	contextSize := 131072 // default
+	ctxStr := r.FormValue("context_size")
+	log.Printf("DEBUG: Received context_size parameter: '%s'", ctxStr)
+	if ctxStr != "" {
+		if ctx, err := strconv.Atoi(ctxStr); err == nil && ctx > 0 {
+			contextSize = ctx
+			log.Printf("Using custom context size: %d for %s", contextSize, modelPath)
+		} else {
+			log.Printf("DEBUG: Failed to parse context_size: err=%v", err)
+		}
+	} else {
+		log.Printf("DEBUG: No context_size parameter provided, using default")
+	}
+
+	// Check for custom ngl (GPU layers) parameter
+	ngl := 999 // default = all layers
+	nglStr := r.FormValue("ngl")
+	log.Printf("DEBUG: Received ngl parameter: '%s'", nglStr)
+	if nglStr != "" {
+		if n, err := strconv.Atoi(nglStr); err == nil && n >= 0 {
+			ngl = n
+			log.Printf("Using custom ngl: %d for %s", ngl, modelPath)
+		} else {
+			log.Printf("DEBUG: Failed to parse ngl: err=%v", err)
+		}
+	} else {
+		log.Printf("DEBUG: No ngl parameter provided, using default (all layers)")
+	}
+
+	if err := s.modelManager.StartServerWithContext(modelPath, contextSize, ngl); err != nil {
 		log.Printf("Error starting server for %s: %v", modelPath, err)
 		http.Error(w, fmt.Sprintf("Failed to start server: %v", err), http.StatusInternalServerError)
 		return
@@ -1414,4 +1672,79 @@ func (s *Server) HandleServerLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Write(content)
+}
+
+// HandleServerLogsStream streams log updates via SSE for real-time viewing
+func (s *Server) HandleServerLogsStream(w http.ResponseWriter, r *http.Request) {
+	portStr := r.URL.Query().Get("port")
+	if portStr == "" {
+		http.Error(w, "Missing port parameter", http.StatusBadRequest)
+		return
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port == 0 {
+		http.Error(w, "Invalid port parameter", http.StatusBadRequest)
+		return
+	}
+
+	logFile := filepath.Join("/tmp", fmt.Sprintf("llama-server-%d.log", port))
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Send initial log content
+	sendLogUpdate := func() error {
+		data, err := os.ReadFile(logFile)
+		if err != nil {
+			// File might not exist yet if server is just starting
+			data = []byte("Waiting for server to start...")
+		}
+
+		// Get last 50 lines
+		lines := strings.Split(string(data), "\n")
+		startIdx := 0
+		if len(lines) > 50 {
+			startIdx = len(lines) - 50
+		}
+		logContent := strings.Join(lines[startIdx:], "\n")
+
+		// Escape HTML
+		logContent = htmlEscape(logContent)
+
+		// Send SSE event
+		fmt.Fprintf(w, "event: log_update\n")
+		fmt.Fprintf(w, "data: %s\n\n", logContent)
+		flusher.Flush()
+		return nil
+	}
+
+	// Send initial update
+	if err := sendLogUpdate(); err != nil {
+		return
+	}
+
+	// Stream updates every 2 seconds
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := sendLogUpdate(); err != nil {
+				return
+			}
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
