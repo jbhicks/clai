@@ -31,6 +31,7 @@ type ModelServer struct {
 	ErrorMessage    string  `json:"error_message"` // Error details when status is "error"
 	URL             string  `json:"url"`
 	APIType         string  `json:"api_type"`
+	Backend         string  `json:"backend"` // "rocm" or "vulkan"
 	LastChecked     int64   `json:"last_checked"`
 	VRAMUsageBytes  int64   `json:"vram_usage_bytes"` // VRAM used by this server in bytes
 	CPUPercent      float64 `json:"cpu_percent"`      // CPU usage percentage
@@ -51,25 +52,90 @@ type ModelServer struct {
 	SplitIsComplete bool     `json:"split_is_complete"` // True if all parts are present
 }
 
+// BackendInfo holds information about a llama-server backend
+type BackendInfo struct {
+	Path    string `json:"path"`
+	Version string `json:"version"`
+	Type    string `json:"type"` // "rocm" or "vulkan"
+}
+
 // ModelManager handles starting/stopping model servers
 type ModelManager struct {
 	mu              sync.RWMutex
 	servers         map[string]*ModelServer // key: model_path
 	modelsDir       string
-	llamaServerBin  string
+	backends        map[string]*BackendInfo // key: backend type ("rocm", "vulkan")
 	downloadManager *DownloadManager
 	stopRefresh     chan struct{} // Signal to stop background refresh
 	lastStateHash   string        // Hash of server states for change detection
 	onStateChange   func()        // Callback when state changes
 }
 
+// detectLlamaServerVersion runs llama-server --version and extracts the version number
+func detectLlamaServerVersion(binaryPath string) string {
+	// Check if file exists
+	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+		return ""
+	}
+
+	cmd := exec.Command(binaryPath, "--version")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+
+	// Parse output like "version: 6867 (a45e1cd6)"
+	// Extract the build number and commit hash
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "version:") {
+			// Extract version info
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				return strings.Join(parts[1:], " ") // "6867 (a45e1cd6)"
+			}
+		}
+	}
+
+	return ""
+}
+
 // NewModelManager creates a new model manager
 func NewModelManager(dbStore *db.Store) *ModelManager {
-	modelsDir := "/home/josh/models"
+	modelsDir := os.Getenv("MODELS_PATH")
+	if modelsDir == "" {
+		// Default to user's home models directory
+		homeDir, _ := os.UserHomeDir()
+		modelsDir = filepath.Join(homeDir, "models")
+	}
+
+	// Initialize backends map
+	backends := make(map[string]*BackendInfo)
+
+	// Check for ROCm backend
+	rocmPath := "/home/josh/llama.cpp-rocm-wmma/build/bin/llama-server"
+	if version := detectLlamaServerVersion(rocmPath); version != "" {
+		backends["rocm"] = &BackendInfo{
+			Path:    rocmPath,
+			Version: version,
+			Type:    "rocm",
+		}
+	}
+
+	// Check for Vulkan backend
+	vulkanPath := "/home/josh/llama.cpp-vulkan/build/bin/llama-server"
+	if version := detectLlamaServerVersion(vulkanPath); version != "" {
+		backends["vulkan"] = &BackendInfo{
+			Path:    vulkanPath,
+			Version: version,
+			Type:    "vulkan",
+		}
+	}
+
 	mm := &ModelManager{
 		servers:         make(map[string]*ModelServer),
 		modelsDir:       modelsDir,
-		llamaServerBin:  "/home/josh/llama.cpp-rocm-wmma/build/bin/llama-server",
+		backends:        backends,
 		downloadManager: NewDownloadManager(modelsDir, dbStore),
 		stopRefresh:     make(chan struct{}),
 	}
@@ -112,6 +178,19 @@ func (mm *ModelManager) backgroundRefresh() {
 // Stop gracefully stops the background refresh goroutine
 func (mm *ModelManager) Stop() {
 	close(mm.stopRefresh)
+}
+
+// GetBackends returns available llama-server backends with version info
+func (mm *ModelManager) GetBackends() map[string]*BackendInfo {
+	mm.mu.RLock()
+	defer mm.mu.RUnlock()
+
+	// Return a copy to avoid race conditions
+	backends := make(map[string]*BackendInfo)
+	for k, v := range mm.backends {
+		backends[k] = v
+	}
+	return backends
 }
 
 // SetStateChangeCallback sets a callback to be called when server state changes
@@ -362,6 +441,7 @@ func (mm *ModelManager) RefreshServerStatus() error {
 	// Update servers based on gathered port info
 	for _, info := range activePortsInfo {
 		// Find the server with this model
+		matched := false
 		for _, server := range mm.servers {
 			if strings.Contains(info.modelName, filepath.Base(server.ModelName)) ||
 				strings.Contains(filepath.Base(server.ModelName), filepath.Base(info.modelName)) {
@@ -380,18 +460,87 @@ func (mm *ModelManager) RefreshServerStatus() error {
 				server.LastChecked = time.Now().Unix()
 				server.PID = info.pid
 				server.ContextSize = info.contextSize
+				matched = true
 				break
 			}
+		}
+
+		// If no existing server matched, create a new entry for this discovered server
+		if !matched && info.modelName != "" {
+			// Try to find the full model path
+			modelPath := info.modelName
+			if !filepath.IsAbs(modelPath) {
+				// If it's just a filename, try to find it in models directory
+				potentialPath := filepath.Join(mm.modelsDir, info.modelName)
+				if _, err := os.Stat(potentialPath); err == nil {
+					modelPath = potentialPath
+				}
+			}
+
+			// Check if server is loading or ready
+			isLoading := mm.checkIfServerLoading(info.port)
+			status := "running"
+			if isLoading {
+				status = "loading"
+			}
+
+			// Create new server entry
+			newServer := &ModelServer{
+				ModelName:   filepath.Base(modelPath),
+				ModelPath:   modelPath,
+				Status:      status,
+				Port:        info.port,
+				URL:         fmt.Sprintf("http://localhost:%d", info.port),
+				APIType:     "llamacpp",
+				LastChecked: time.Now().Unix(),
+				PID:         info.pid,
+				ContextSize: info.contextSize,
+				Backend:     "", // Unknown backend for discovered servers
+			}
+
+			// Add to servers map
+			mm.servers[modelPath] = newServer
+			log.Printf("Discovered running server for %s on port %d (PID %d)", info.modelName, info.port, info.pid)
 		}
 	}
 
 	// Mark any server that's not on an active port as stopped
+	// BUT don't interfere with servers in "starting" or "error" state - let waitForServerReady handle them
+	// EXCEPTION: If the process is truly dead (PID doesn't exist), mark as stopped even if "starting"
 	for _, server := range mm.servers {
 		if server.Port > 0 && !activePorts[server.Port] {
-			server.Status = "stopped"
-			server.Port = 0
-			server.PID = 0
-			server.URL = ""
+			shouldMarkStopped := false
+
+			// Always mark stopped if not in starting/error state
+			if server.Status != "starting" && server.Status != "error" {
+				shouldMarkStopped = true
+			} else if server.PID > 0 {
+				// For starting/error state, check if process is truly dead
+				statPath := fmt.Sprintf("/proc/%d/stat", server.PID)
+				if _, err := os.Stat(statPath); os.IsNotExist(err) {
+					// Process doesn't exist - it died
+					log.Printf("Detected dead process PID %d for %s, marking as stopped", server.PID, server.ModelName)
+					shouldMarkStopped = true
+				} else if statData, err := os.ReadFile(statPath); err == nil {
+					// Check if it's a zombie
+					statStr := string(statData)
+					if closeParenIdx := strings.LastIndex(statStr, ")"); closeParenIdx > 0 {
+						fields := strings.Fields(statStr[closeParenIdx+1:])
+						if len(fields) > 0 && fields[0] == "Z" {
+							log.Printf("Detected zombie process PID %d for %s, marking as stopped", server.PID, server.ModelName)
+							shouldMarkStopped = true
+						}
+					}
+				}
+			}
+
+			if shouldMarkStopped {
+				server.Status = "stopped"
+				server.Port = 0
+				server.PID = 0
+				server.URL = ""
+				server.Backend = "" // Clear backend when stopped
+			}
 		}
 	}
 
@@ -411,13 +560,28 @@ func (mm *ModelManager) getModelNameFromPort(port int) string {
 	body, _ := ioutil.ReadAll(resp.Body)
 	bodyStr := string(body)
 
-	// Extract model path from response
-	if strings.Contains(bodyStr, "/home/josh/models/") {
-		start := strings.Index(bodyStr, "/home/josh/models/")
+	// Extract model path from response - try full path first
+	modelsPath := mm.modelsDir + "/"
+	if strings.Contains(bodyStr, modelsPath) {
+		start := strings.Index(bodyStr, modelsPath)
 		if start >= 0 {
 			end := strings.Index(bodyStr[start:], "\"")
 			if end >= 0 {
-				return bodyStr[start : start+end]
+				modelPath := bodyStr[start : start+end]
+				return modelPath
+			}
+		}
+	}
+
+	// Fallback: Extract model filename from "id" field
+	// Example: {"id":"Devstral-Small-2-24B-Instruct-2512-UD-Q8_K_XL.gguf",...}
+	if idStart := strings.Index(bodyStr, `"id":"`); idStart >= 0 {
+		idStart += len(`"id":"`)
+		if idEnd := strings.Index(bodyStr[idStart:], `"`); idEnd >= 0 {
+			modelName := bodyStr[idStart : idStart+idEnd]
+			// If it ends with .gguf, it's likely a valid model filename
+			if strings.HasSuffix(modelName, ".gguf") {
+				return modelName
 			}
 		}
 	}
@@ -518,11 +682,12 @@ func (mm *ModelManager) checkIfServerLoading(port int) bool {
 	return false
 }
 
-// findAvailablePortForModel finds an available port starting from 8081
-// Instead of limiting to 8081-8090, it scans until it finds an available port
+// findAvailablePortForModel finds an available port starting from 8082
+// (8081 is reserved for the benchmark server itself)
+// Scans up to 100 ports until it finds an available one
 func (mm *ModelManager) findAvailablePortForModel() (int, error) {
-	// Start from 8081 and scan up to 100 ports
-	const startPort = 8081
+	// Start from 8082 (8081 is used by benchmark server) and scan up to 100 ports
+	const startPort = 8082
 	const maxAttempts = 100
 
 	for i := 0; i < maxAttempts; i++ {
@@ -705,11 +870,16 @@ func (mm *ModelManager) getSystemdServiceName(pid int) string {
 
 // StartServer starts a model server on an available port with default context size
 func (mm *ModelManager) StartServer(modelPath string) error {
-	return mm.StartServerWithContext(modelPath, 131072, 999) // 999 = all GPU layers
+	return mm.StartServerWithBackend(modelPath, 131072, 999, "rocm") // Default to ROCm, 999 = all GPU layers
 }
 
-// StartServerWithContext starts a model server with a custom context size and GPU layer count
+// StartServerWithContext starts a model server with a custom context size and GPU layer count (backward compatibility)
 func (mm *ModelManager) StartServerWithContext(modelPath string, contextSize int, ngl int) error {
+	return mm.StartServerWithBackend(modelPath, contextSize, ngl, "rocm") // Default to ROCm for backward compatibility
+}
+
+// StartServerWithBackend starts a model server with a custom context size, GPU layer count, and backend choice
+func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int, ngl int, backend string) error {
 	// Step 1: Get server info and port with brief lock
 	mm.mu.Lock()
 	server, exists := mm.servers[modelPath]
@@ -748,6 +918,17 @@ func (mm *ModelManager) StartServerWithContext(modelPath string, contextSize int
 	}
 
 	// Step 2: Do ALL I/O operations WITHOUT holding lock
+
+	// Get the backend binary path
+	mm.mu.RLock()
+	backendInfo, exists := mm.backends[backend]
+	mm.mu.RUnlock()
+
+	if !exists || backendInfo == nil {
+		return fmt.Errorf("backend '%s' not available - binary not found", backend)
+	}
+
+	binaryPath := backendInfo.Path
 	logFile := filepath.Join("/tmp", fmt.Sprintf("llama-server-%d.log", port))
 
 	args := []string{
@@ -769,7 +950,7 @@ func (mm *ModelManager) StartServerWithContext(modelPath string, contextSize int
 		args = append(args, "--jinja")
 	}
 
-	cmd := exec.Command(mm.llamaServerBin, args...)
+	cmd := exec.Command(binaryPath, args...)
 
 	// Redirect output to log file
 	logF, err := os.Create(logFile)
@@ -804,9 +985,13 @@ func (mm *ModelManager) StartServerWithContext(modelPath string, contextSize int
 	server.Port = port
 	server.PID = pid
 	server.Status = "starting"
+	server.Backend = backend // Store which backend was used
 	server.ErrorMessage = "" // Clear any previous errors when starting
 	server.URL = fmt.Sprintf("http://localhost:%d", port)
 	mm.mu.Unlock()
+
+	// Notify state change so UI updates immediately
+	mm.notifyStateChange()
 
 	// Wait for server to be ready (in background)
 	// Use 2-hour timeout for large models (78B+ can take 30-60+ minutes to load)
@@ -821,6 +1006,14 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 	url := fmt.Sprintf("http://localhost:%d/health", port)
 	deadline := time.Now().Add(timeout)
 	var lastError error
+
+	// Get the PID we just started
+	mm.mu.RLock()
+	var serverPID int
+	if server, exists := mm.servers[modelPath]; exists {
+		serverPID = server.PID
+	}
+	mm.mu.RUnlock()
 
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(url)
@@ -842,6 +1035,31 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 		if resp != nil {
 			resp.Body.Close()
 		}
+
+		// Check if the process is still alive and not a zombie (detect immediate crashes)
+		if serverPID > 0 {
+			// Check /proc/PID/stat to detect zombie processes
+			statPath := fmt.Sprintf("/proc/%d/stat", serverPID)
+			if statData, err := os.ReadFile(statPath); err == nil {
+				// Parse the state (third field after PID and name)
+				// State 'Z' means zombie (dead but not reaped)
+				statStr := string(statData)
+				// Find the closing ) of the process name, state is the next field
+				if closeParenIdx := strings.LastIndex(statStr, ")"); closeParenIdx > 0 {
+					fields := strings.Fields(statStr[closeParenIdx+1:])
+					if len(fields) > 0 && fields[0] == "Z" {
+						// Process is a zombie - it crashed
+						log.Printf("Detected zombie process PID %d for %s", serverPID, modelPath)
+						break
+					}
+				}
+			} else {
+				// /proc/PID/stat doesn't exist - process is truly dead
+				log.Printf("Detected dead process PID %d for %s", serverPID, modelPath)
+				break
+			}
+		}
+
 		time.Sleep(2 * time.Second)
 	}
 
@@ -882,6 +1100,9 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 		log.Printf("Model server failed to start: %s on port %d - %s", server.ModelName, port, server.ErrorMessage)
 	}
 	mm.mu.Unlock()
+
+	// Notify state change so UI updates with error
+	mm.notifyStateChange()
 }
 
 // StopServer stops a running model server
@@ -1150,6 +1371,9 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 	models = s.modelManager.GetServerStatus()
 	log.Println("HandleListModels: Done with setup")
 
+	// Get available backends for the UI
+	backends := s.modelManager.GetBackends()
+
 	w.Header().Set("Content-Type", "text/html")
 
 	// Generate HTML with out-of-band swap to replace entire servers_list div
@@ -1159,6 +1383,7 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 			<tr style="border-bottom: 1px solid #334155;">
 				<th style="text-align: left; padding: 12px; color: #94a3b8;">Model</th>
 				<th style="text-align: left; padding: 12px; color: #94a3b8;">Status</th>
+				<th style="text-align: left; padding: 12px; color: #94a3b8;">Backend</th>
 				<th style="text-align: left; padding: 12px; color: #94a3b8;">Port</th>
 				<th style="text-align: left; padding: 12px; color: #94a3b8;" title="Context window size (tokens)">Context</th>
 				<th style="text-align: left; padding: 12px; color: #94a3b8;" title="GPU-accessible memory (VRAM + System RAM)">Memory</th>
@@ -1229,6 +1454,20 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		portText := "-"
 		if model.Port > 0 {
 			portText = fmt.Sprintf("%d", model.Port)
+		}
+
+		// Backend display - only show for running/loading/starting/error states
+		backendText := "-"
+		backendColor := "#64748b"
+		if (model.Status == "running" || model.Status == "loading" || model.Status == "starting" || model.Status == "error") && model.Backend != "" {
+			backendText = model.Backend
+			if model.Backend == "rocm" {
+				backendText = "ROCm"
+				backendColor = "#ef4444" // Red for ROCm
+			} else if model.Backend == "vulkan" {
+				backendText = "Vulkan"
+				backendColor = "#a855f7" // Purple for Vulkan
+			}
 		}
 
 		contextText := "-"
@@ -1341,13 +1580,29 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 	<div id="benchmark_status_%s"></div>
 `, modelID)
 			}
-			// Add Logs button for running servers
+			// Add additional buttons for running servers
 			testButton = fmt.Sprintf(`
+	<a href="/api/servers/chat-ui?port=%d" target="_blank" 
+	   style="display: inline-block; padding: 6px 12px; background: #10b981; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;"
+	   title="Open llama.cpp chat interface">
+		Chat UI
+	</a>
+	<form style="display: inline;" hx-post="/api/servers/set-default">
+		<input type="hidden" name="model_path" value="%s" />
+		<input type="hidden" name="port" value="%d" />
+		<button 
+			type="submit" 
+			style="padding: 6px 12px; background: #f59e0b; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
+			title="Set this model as default for clai CLI"
+		>
+			Set as Default
+		</button>
+	</form>
 	<a href="/api/servers/logs?port=%d" target="_blank" 
 	   style="display: inline-block; padding: 6px 12px; background: #64748b; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;">
 		Logs
 	</a>
-`, model.Port)
+`, model.Port, model.ModelPath, model.Port, model.Port)
 			// Can't delete while running
 			deleteButton = `<span style="color: #64748b; font-size: 12px;">Stop first to delete</span>`
 		} else if model.Status == "stopped" || model.Status == "error" {
@@ -1356,7 +1611,31 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 			if model.Status == "error" {
 				buttonText = "Retry"
 			}
-			actionButton = fmt.Sprintf(`
+
+			// Build backend selector options
+			var backendOptionsBuilder strings.Builder
+			defaultBackend := "rocm" // Default selection
+			for backendType := range backends {
+				selected := ""
+				if backendType == defaultBackend {
+					selected = "selected"
+				}
+				displayName := backendType
+				if backendType == "rocm" {
+					displayName = "ROCm"
+				} else if backendType == "vulkan" {
+					displayName = "Vulkan"
+				}
+				backendOptionsBuilder.WriteString(fmt.Sprintf(`<option value="%s" %s>%s</option>`,
+					backendType, selected, displayName))
+			}
+			backendOptions := backendOptionsBuilder.String()
+
+			// If no backends available, show error
+			if backendOptions == "" {
+				actionButton = `<span style="color: #ef4444; font-size: 12px;">No backends available - check llama-server installation</span>`
+			} else {
+				actionButton = fmt.Sprintf(`
 		<form 
 			style="display: flex; flex-direction: column; gap: 8px;" 
 			hx-post="/api/servers/start"
@@ -1365,6 +1644,13 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		>
 			<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
 				<input type="hidden" name="model_path" value="%s" />
+				<select 
+					name="backend" 
+					style="padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;"
+					title="Backend to use for inference"
+				>
+					%s
+				</select>
 				<select 
 					name="context_size" 
 					style="padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;"
@@ -1408,7 +1694,8 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 				<!-- Memory estimate will be dynamically populated by JavaScript -->
 			</div>
 		</form>
-	`, model.ModelSizeBytes, model.ParametersCount, model.ModelPath, modelID, modelID, buttonText)
+	`, model.ModelSizeBytes, model.ParametersCount, model.ModelPath, backendOptions, modelID, modelID, buttonText)
+			}
 			// Allow delete when stopped or error
 			deleteConfirmMsg := fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove the file from disk.", model.ModelName)
 			if model.IsSplitModel && model.SplitTotalParts > 1 {
@@ -1476,19 +1763,27 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		<tr style="border-bottom: 1px solid #1e293b;">
 			<td style="padding: 14px 12px; color: #e2e8f0; font-size: 13px; font-family: monospace;" title="%s">%s</td>
 			<td style="padding: 14px 12px;" title="%s">%s</td>
+			<td style="padding: 14px 12px; color: %s; font-size: 13px; font-weight: 500;">%s</td>
 			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;">%s</td>
 			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;" title="%s">%s</td>
 			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;" title="%s">%s</td>
 			<td style="padding: 14px 12px; color: %s; font-size: 13px; font-weight: 500;">%s</td>
 			<td style="padding: 14px 12px;">%s%s%s%s%s</td>
 		</tr>
-	`, modelNameTooltip, modelNameDisplay, statusTooltip, statusHTML, portText, contextTooltip, contextText, memoryTooltip, vramText, scoreColor, scoreText, actionButton, benchmarkButton, testButton, logsToggleButton, deleteButton)
+	`, modelNameTooltip, modelNameDisplay, statusTooltip, statusHTML, backendColor, backendText, portText, contextTooltip, contextText, memoryTooltip, vramText, scoreColor, scoreText, actionButton, benchmarkButton, testButton, logsToggleButton, deleteButton)
 
 		// Add collapsible log viewer row with SSE updates
-		if model.Status == "running" || model.Status == "loading" || model.Status == "starting" {
+		// Show logs automatically for starting/loading/error states, hidden for running
+		if model.Status == "running" || model.Status == "loading" || model.Status == "starting" || model.Status == "error" {
+			// Auto-show logs for starting, loading, and error states
+			hiddenClass := ""
+			if model.Status == "running" {
+				hiddenClass = "hidden"
+			}
+
 			html += fmt.Sprintf(`
-		<tr id="logs-%s" class="hidden" style="border-bottom: 1px solid #1e293b;">
-			<td colspan="7" style="padding: 0;">
+		<tr id="logs-%s" class="%s" style="border-bottom: 1px solid #1e293b;">
+			<td colspan="8" style="padding: 0;">
 				<div style="background: #0f172a; padding: 12px; margin: 8px; border-radius: 4px; border: 1px solid #334155;">
 					<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
 						<span style="color: #94a3b8; font-size: 12px; font-weight: 500;">Server Logs (Last 50 lines - Live)</span>
@@ -1498,12 +1793,12 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 						</a>
 					</div>
 					<div hx-ext="sse" sse-connect="/api/servers/logs/stream?port=%d" sse-swap="log_update">
-						<pre id="log-content-%s" style="background: #020617; color: #e2e8f0; padding: 12px; border-radius: 4px; font-size: 11px; font-family: monospace; overflow-x: auto; max-height: 400px; overflow-y: auto; margin: 0;">Connecting to log stream...</pre>
+						<pre id="log-content-%d" style="background: #020617; color: #e2e8f0; padding: 12px; border-radius: 4px; font-size: 11px; font-family: monospace; overflow-x: auto; max-height: 400px; overflow-y: auto; margin: 0;">Connecting to log stream...</pre>
 					</div>
 				</div>
 			</td>
 		</tr>
-	`, modelID, model.Port, model.Port, modelID)
+	`, modelID, hiddenClass, model.Port, model.Port, model.Port)
 		}
 	}
 
@@ -1559,7 +1854,14 @@ func (s *Server) HandleStartServer(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DEBUG: No ngl parameter provided, using default (all layers)")
 	}
 
-	if err := s.modelManager.StartServerWithContext(modelPath, contextSize, ngl); err != nil {
+	// Check for backend parameter (rocm or vulkan)
+	backend := r.FormValue("backend")
+	if backend == "" {
+		backend = "rocm" // default to ROCm
+	}
+	log.Printf("Using backend: %s for %s", backend, modelPath)
+
+	if err := s.modelManager.StartServerWithBackend(modelPath, contextSize, ngl, backend); err != nil {
 		log.Printf("Error starting server for %s: %v", modelPath, err)
 		http.Error(w, fmt.Sprintf("Failed to start server: %v", err), http.StatusInternalServerError)
 		return
@@ -1606,6 +1908,107 @@ func (s *Server) HandleStopServer(w http.ResponseWriter, r *http.Request) {
 
 	// Return updated server list with current GPU status
 	s.HandleListModels(w, r)
+}
+
+// HandleSetDefaultModel handles HTTP requests to set a model as default in clai CLI config
+func (s *Server) HandleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	modelPath := r.FormValue("model_path")
+	port := r.FormValue("port")
+
+	if modelPath == "" || port == "" {
+		http.Error(w, "model_path and port required", http.StatusBadRequest)
+		return
+	}
+
+	// Path to .env file in clai directory
+	envPath := filepath.Join(filepath.Dir(os.Args[0]), ".env")
+	// If running from source (go run), try parent directory
+	if _, err := os.Stat(envPath); os.IsNotExist(err) {
+		envPath = ".env"
+	}
+
+	// Read current .env content
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		log.Printf("Error reading .env: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to read config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Parse and update environment variables
+	lines := strings.Split(string(content), "\n")
+	modelName := filepath.Base(modelPath)
+	// Remove .gguf extension for cleaner model name
+	if strings.HasSuffix(modelName, ".gguf") {
+		modelName = strings.TrimSuffix(modelName, ".gguf")
+	}
+
+	hostURL := fmt.Sprintf("http://localhost:%s", port)
+
+	var newLines []string
+	foundModel := false
+	foundHost := false
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "OLLAMA_MODEL=") {
+			newLines = append(newLines, fmt.Sprintf("OLLAMA_MODEL=%s", modelName))
+			foundModel = true
+		} else if strings.HasPrefix(line, "OLLAMA_HOST=") {
+			newLines = append(newLines, fmt.Sprintf("OLLAMA_HOST=%s", hostURL))
+			foundHost = true
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+
+	// Add missing entries if they weren't found
+	if !foundModel {
+		newLines = append(newLines, fmt.Sprintf("OLLAMA_MODEL=%s", modelName))
+	}
+	if !foundHost {
+		newLines = append(newLines, fmt.Sprintf("OLLAMA_HOST=%s", hostURL))
+	}
+
+	// Write back to .env
+	newContent := strings.Join(newLines, "\n")
+	if err := os.WriteFile(envPath, []byte(newContent), 0644); err != nil {
+		log.Printf("Error writing .env: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to update config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Set default model to %s (%s)", modelName, hostURL)
+
+	// Return success message
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprintf(w, `<div style="padding: 8px; background: #10b981; color: white; border-radius: 4px; margin-bottom: 8px;">
+		✓ Set as default! Model: %s, Port: %s
+	</div>`, modelName, port)
+}
+
+// HandleChatUI redirects to the llama.cpp chat UI using the correct hostname
+func (s *Server) HandleChatUI(w http.ResponseWriter, r *http.Request) {
+	port := r.URL.Query().Get("port")
+	if port == "" {
+		http.Error(w, "port required", http.StatusBadRequest)
+		return
+	}
+
+	// Get the host from the incoming request
+	host := r.Host
+	// Strip the port from the host if present (e.g., "192.168.1.100:8081" -> "192.168.1.100")
+	if colonIdx := strings.LastIndex(host, ":"); colonIdx != -1 {
+		host = host[:colonIdx]
+	}
+
+	// Redirect to the model server's chat UI
+	targetURL := fmt.Sprintf("http://%s:%s/", host, port)
+	http.Redirect(w, r, targetURL, http.StatusTemporaryRedirect)
 }
 
 // HandleDeleteModel handles HTTP requests to delete a model file
