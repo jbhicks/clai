@@ -248,12 +248,14 @@ func (s *Server) handleNewEndpoint(w http.ResponseWriter, r *http.Request) {
 - Use Go's `testing` package for unit/integration tests.
 - Mock external dependencies (e.g., Ollama, HuggingFace API) in tests.
 - For Bubble Tea projects, follow the [Bubble Tea Agent Testing Strategy](BUBBLETEA_TESTING_STRATEGY.md) for all test creation. This document provides detailed guidelines and examples for unit, integration, and UI testing specific to Bubble Tea applications.
+- For UI/feature testing of the running application, use tmux as documented in "Automated Testing with tmux" below.
 
 No Cursor or Copilot rules detected.
 
 ## Development Workflow
 - **ASSUME** the user is running `make dev` in another terminal/thread with automatic file watching and reload enabled.
 - **NEVER** run the application yourself (e.g., `./clai` or `make run`).
+- **NEVER** run `make dev` yourself - it blocks execution indefinitely while watching for file changes.
 - **NEVER** start, stop, or restart servers (main app or benchmark server) - the user will handle this.
 - After making code changes, **ASSUME** the automatic reload has already occurred.
 - To verify your changes:
@@ -262,6 +264,40 @@ No Cursor or Copilot rules detected.
   3. If needed, ask the user to test specific functionality in the running app
 - The dev watcher uses `air` to automatically rebuild and restart on `.go` file changes.
 - **Exception:** You may check if processes are running (`ps aux | grep`), check listening ports (`ss -tlnp`), or read log files to diagnose issues, but do not start/stop/kill processes.
+
+## Automated Testing with tmux
+
+Agents can spawn tmux windows for quick automated testing of the running application:
+
+```bash
+# Spawn a detached tmux session running clai
+tmux new-session -d -s clai-test 'go run ./cmd/clai'
+
+# Wait for app to start
+sleep 3
+
+# Capture the current pane content to verify UI
+tmux capture-pane -t clai-test -p
+
+# Clean up when done
+tmux kill-session -t clai-test
+```
+
+**Workflow for automated testing:**
+1. Spawn tmux session with `new-session -d` (detached)
+2. Wait for app to start: `sleep 3`
+3. Capture pane output to verify rendering
+4. Kill session when done
+
+**Example - Testing UI rendering:**
+```bash
+tmux new-session -d -s clai-test 'go run ./cmd/clai'
+sleep 3
+tmux capture-pane -t clai-test -p
+tmux kill-session -t clai-test
+```
+
+**Note:** Sending keystrokes to tmux sessions works best interactively (via `attach-session`). Detached sessions may not receive input reliably.
 
 ## Debugging UI Issues
 - **ALWAYS** use the debug server to inspect UI rendering when working on layout or display issues
@@ -494,6 +530,61 @@ func (s *Server) HandleStopServer(w http.ResponseWriter, r *http.Request) {
 - Action handlers (Start, Stop, Delete, etc.) should delegate to the GET handler that returns the full element
 - This ensures consistency: the same rendering logic is used for initial load and updates
 - Errors should still return HTTP errors, not partial HTML
+
+#### HTMX Dynamic Content Processing
+
+**CRITICAL**: HTMX does not automatically process content added via morphing/swapping.
+
+**Problem**: When using `morph:innerHTML` or similar swaps, buttons and forms in the swapped content won't have HTMX attributes active until explicitly processed.
+
+**Solution**: Add global event listener to process swapped content:
+
+```javascript
+document.body.addEventListener('htmx:afterSwap', function(evt) {
+    htmx.process(evt.detail.target);
+});
+```
+
+**When Needed**:
+- Any time you use `hx-swap="morph:innerHTML"` or `hx-swap="innerHTML"`
+- Content that contains HTMX-enabled buttons/forms dynamically loaded
+- SSE-triggered content updates with HTMX elements
+
+**Alternative Patterns**:
+- Use `morph:outerHTML` with complete elements (includes HTMX processing)
+- Trigger HTMX requests from parent elements (they're already processed)
+
+#### CSS Selectors in HTMX Targets
+
+**Issue**: Complex CSS selectors (like `closest div[hx-get]`) are unreliable in HTMX 2.x.
+
+**Best Practice**: Always use direct ID selectors:
+```html
+<!-- ✅ GOOD -->
+<div id="content"></div>
+<button hx-target="#content">Click</button>
+
+<!-- ❌ AVOID -->
+<button hx-target="closest div[hx-get]">Click</button>
+```
+
+#### Go Format String Gotcha
+
+**Issue**: Backticks and commas on the same line can cause format string errors.
+
+**Symptom**: `%!(EXTRA type=value)` appears in output
+
+**Fix**: Always put closing backtick on separate line from arguments:
+```go
+// ❌ BAD
+html := fmt.Sprintf(`<div>%s</div>`,
+    value, extraValue) // ERROR: extra argument
+
+// ✅ GOOD
+html := fmt.Sprintf(`<div>%s</div>
+`,
+    value, extraValue) // Clear separation
+```
 
 ### HTMX-First Development
 
@@ -901,3 +992,11 @@ func (mm *ModelManager) RefreshServerStatus() error {
 5. Release lock
 
 This pattern prevents deadlocks and keeps your application responsive.
+
+## API Usage Patterns
+
+### Use bufio.Scanner for efficient line-by-line file reading
+
+Use bufio.Scanner for efficient line-by-line file reading
+
+*Source: cli-command | Confidence: 0.8 | Importance: 3* *Tags: api_usage*
