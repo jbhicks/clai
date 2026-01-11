@@ -1,11 +1,4 @@
-.PHONY: dev
-# Live reload development with tmux + air for proper TUI support
 dev:
-	@if ! command -v air >/dev/null 2>&1; then \
-		echo "Error: air is not installed."; \
-		echo "Install with: go install github.com/cosmtrek/air@latest"; \
-		exit 1; \
-	fi
 	@if ! command -v tmux >/dev/null 2>&1; then \
 		echo "Error: tmux is not installed."; \
 		exit 1; \
@@ -14,16 +7,16 @@ dev:
 		echo "Existing clai_dev session found. Killing it..."; \
 		tmux kill-session -t clai_dev 2>/dev/null; \
 	fi
-	@echo "Starting CLAI with live reload in tmux..."
-	@echo "Air will auto-rebuild when you edit .go files."
+	@echo "Starting CLAI in tmux..."
+	@echo "Note: After making code changes, press Ctrl+C then Up+Enter to rebuild"
 	@echo ""
 	@truncate -s 0 debug.log
-	@tmux new-session -d -s clai_dev -x $$(tput cols) -y $$(tput lines) 'clear && TERM=xterm-256color air'
+	@tmux new-session -d -s clai_dev -x $$(tput cols) -y $$(tput lines) 'clear && TERM=xterm-256color go run ./cmd/clai'
 	@echo "✓ tmux session 'clai_dev' started"
 	@echo ""
 	@echo "Controls:"
-	@echo "  Ctrl+b then d - Detach (app keeps running)"
-	@echo "  Ctrl+T - Toggle between chat and log views in-app"
+	@echo "  Ctrl+b then d - Detach"
+	@echo "  Ctrl+C then up-arrow + enter - Rebuild and restart"
 	@echo ""
 	@if [ -z "$$TMUX" ]; then \
 		echo "Attaching to tmux session..."; \

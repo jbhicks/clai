@@ -4,12 +4,11 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-cmd = "go build -o ./tmp/clai ./cmd/clai 2>&1 | tee -a air.log"
+cmd = "go build -o ./tmp/clai ./cmd/clai"
 bin = "tmp/clai"
 log = "air.log"
 include_ext = ["go"]
-redirect_stdout = "air.log"
-redirect_stderr = "air.log"
+exclude_dir = ["assets", "tmp", "vendor", "_build", "model_test_results", "archive", ".git", ".clai", ".opencode", "node_modules", "scripts/ralph-opencode/node_modules"]
 stop_on_error = true
 delay = 1000
 send_interrupt = true
