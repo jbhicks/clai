@@ -293,11 +293,829 @@
       "title": "Create login/register UI components",
       "updated": "2026-01-10T18:14:50-07:00"
     },
+    {
+      "acceptanceCriteria": [
+        "Create ThemeStyles extensions for InputField and Tooltip",
+        "InputField style uses theme's Bright.Yellow for focused border",
+        "InputField style uses theme's Primary.Background for background",
+        "Tooltip style uses theme's Bright.Blue background and Bright.White foreground",
+        "Update chat.go to use new ThemeStyles instead of inline styles",
+        "chat.go line 234-236 replaced with ThemeStyles.InputField",
+        "chat.go line 279 replaced with ThemeStyles.Tooltip",
+        "chat.go lines 252-255, 263-265, 271-274, 289-291 refactored to use ThemeStyles",
+        "All styles properly inherit theme colors",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:36:00Z",
+      "description": "Add InputField and Tooltip styles to ThemeStyles and refactor chat.go to use centralized styles instead of inline definitions",
+      "id": "UI-001",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P0",
+      "title": "Add InputField and Tooltip styles to ThemeStyles",
+      "updated": "2026-01-11T10:36:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Create new PrettyHandler constructor that accepts theme parameter",
+        "Logger colors map to theme colors (DEBUG→Normal.Cyan, INFO→Normal.Green, WARN→Normal.Yellow, ERROR→Normal.Red)",
+        "Timestamp color uses theme's DimForeground",
+        "Attribute colors use theme's DimForeground",
+        "Remove hard-coded ANSI color strings (\"8\", \"6\", \"3\", \"1\", \"240\", \"246\")",
+        "Update internal/logger/logger.go to use theme colors",
+        "Logger properly falls back when no theme provided",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:36:00Z",
+      "description": "Refactor logger.go to use theme colors instead of hard-coded ANSI color codes, ensuring log colors match the selected theme",
+      "id": "UI-002",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P0",
+      "title": "Fix logger hard-coded ANSI colors to use theme colors",
+      "updated": "2026-01-11T10:36:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add Label, Value, DimText styles to ThemeStyles",
+        "Add ActionCompleted, ActionFailed, ActionInProgress styles to ThemeStyles",
+        "Add CodeBlockHeader and CodeBlockContent styles to ThemeStyles",
+        "Refactor agent_status.go lines 157-167 to use ThemeStyles",
+        "Refactor agent_status.go lines 219-236 action status styles to use ThemeStyles",
+        "Refactor agent_status.go lines 339-362 code block styles to use ThemeStyles",
+        "All labels use theme's Bright.Yellow foreground",
+        "All values use theme's Primary.Foreground",
+        "All dim text uses theme's Primary.DimForeground",
+        "Action status colors match theme's Bright.Green, Bright.Red, Bright.Yellow",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:36:00Z",
+      "description": "Add all AgentStatus inline styles to ThemeStyles and refactor agent_status.go to use centralized theme-consistent styling",
+      "id": "UI-003",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P1",
+      "title": "Add AgentStatus styles to ThemeStyles",
+      "updated": "2026-01-11T10:36:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add HelpBoxStyle to ThemeStyles with RoundedBorder",
+        "HelpBoxStyle uses theme's Primary.Background and Bright.White foreground",
+        "HelpBoxStyle has Padding(1, 2) and centered content",
+        "Refactor model.go lines 1049-1056 to use ThemeStyles.HelpBox",
+        "Help overlay maintains current width and placement behavior",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:36:00Z",
+      "description": "Extract help box overlay style from model.go into ThemeStyles for consistency",
+      "id": "UI-004",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P1",
+      "title": "Add HelpBoxStyle to ThemeStyles",
+      "updated": "2026-01-11T10:36:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError styles to ThemeStyles",
+        "Add LogTimestamp and LogAttributes styles to ThemeStyles",
+        "Refactor formatLogLine() in model.go to use ThemeStyles",
+        "Update logger.go PrettyHandler to accept and use theme styles",
+        "Ensure formatLogLine function has access to theme colors",
+        "Log lines maintain current visual appearance with theme colors",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:36:00Z",
+      "description": "Add log level and log component styles to ThemeStyles and integrate with formatLogLine in model.go",
+      "id": "UI-005",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P1",
+      "title": "Add Log styles to ThemeStyles",
+      "updated": "2026-01-11T10:36:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add SpinnerStyle to ThemeStyles using theme's Bright.Magenta",
+        "Refactor status_dashboard.go line 42 to use ThemeStyles.Spinner",
+        "Spinner color matches CodeBlockBadge and other theme accents",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:36:00Z",
+      "description": "Add SpinnerStyle to ThemeStyles and fix status_dashboard.go hard-coded color",
+      "id": "UI-006",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Fix status_dashboard spinner hard-coded color",
+      "updated": "2026-01-11T10:36:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add AgentStatusBorder style to ThemeStyles using theme's Primary.Foreground",
+        "Update agent_status.go View() to wrap content with bordered style",
+        "AgentStatus pane now has visible border matching MainPane",
+        "Border uses RoundedBorder() for consistency",
+        "Agent status content padding adjusted to account for new border",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:36:00Z",
+      "description": "Add border styling to AgentStatus pane to match the visual consistency of MainPane and other components",
+      "id": "UI-007",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Add border to AgentStatus pane",
+      "updated": "2026-01-11T10:36:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Refactor agent_status.go View() to use strings.Builder instead of string concatenation",
+        "Pre-allocate builder capacity based on content estimation",
+        "All string appends (lines 169-312) use builder.WriteString()",
+        "Performance improvement verified for large agent histories",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:36:00Z",
+      "description": "Optimize agent_status.go View() method to use strings.Builder for better performance",
+      "id": "UI-008",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Optimize agent_status View with strings.Builder",
+      "updated": "2026-01-11T10:36:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Create comprehensive style documentation in docs/ui/STYLES.md",
+        "Document all ThemeStyles fields with examples",
+        "Document when to use inline styles vs ThemeStyles",
+        "Provide guidelines for adding new styles",
+        "Document theme color hierarchy and fallback behavior",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:36:00Z",
+      "description": "Create comprehensive documentation for ThemeStyles system to guide future development",
+      "id": "UI-009",
+      "passes": false,
+      "phase": "docs",
+      "priority": "P2",
+      "title": "Create ThemeStyles documentation",
+      "updated": "2026-01-11T10:36:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add ViewportWrapper style to ThemeStyles",
+        "Add ScrollWrapper style to ThemeStyles",
+        "Add SpinnerView style to ThemeStyles",
+        "Add InputWrapper style to ThemeStyles",
+        "Refactor chat.go lines 289-291 to use ThemeStyles.ViewportWrapper",
+        "Refactor chat.go lines 252-255 to use ThemeStyles.ScrollWrapper",
+        "Refactor chat.go lines 263-265 to use ThemeStyles.SpinnerView",
+        "Refactor chat.go lines 271-274 to use ThemeStyles.InputWrapper",
+        "All wrapper styles use theme's Primary.Background",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add viewport, scroll, spinner, and input wrapper styles to ThemeStyles and refactor chat.go",
+      "id": "UI-010",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P1",
+      "title": "Add wrapper styles to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add ToolWrapper style to ThemeStyles for tool content background",
+        "Refactor chat.go lines 140-142 wrapperStyle to use ThemeStyles.ToolWrapper",
+        "Tool content uses theme's Dim.Black background",
+        "All tool messages use consistent background color",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add ToolWrapper style to ThemeStyles for consistent tool message styling",
+      "id": "UI-011",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P1",
+      "title": "Add ToolWrapper style to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Refactor chat.go View() method to use strings.Builder",
+        "Replace string concatenation with builder.WriteString()",
+        "Pre-allocate builder capacity (estimate ~2000 chars)",
+        "Maintain current rendering behavior and output",
+        "Performance improvement verified with many messages",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Optimize chat.go View() method to use strings.Builder for better performance",
+      "id": "UI-012",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Optimize chat.go View with strings.Builder",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add CodeStatusRunning, CodeStatusCompleted, CodeStatusFailed styles to ThemeStyles",
+        "Code execution border colors use theme's Bright.Green, Bright.Red, Bright.Yellow",
+        "Refactor agent_status.go lines 322-336 to use ThemeStyles",
+        "Code block status icons maintain current behavior",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add code execution status styles to ThemeStyles for consistent status indicators",
+      "id": "UI-013",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Add code execution status styles to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add StatusDivider style to ThemeStyles",
+        "Divider uses theme's Primary.DimForeground",
+        "Refactor agent_status.go lines 264-268 to use ThemeStyles.StatusDivider",
+        "Consistent visual separator for history section",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add StatusDivider style to ThemeStyles for consistent history section separator",
+      "id": "UI-014",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add StatusDivider style to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add AgentStatusWrapper style to ThemeStyles",
+        "Wrapper includes padding (0, 1) and background",
+        "Refactor agent_status.go lines 307-310 to use ThemeStyles.AgentStatusWrapper",
+        "Consistent padding across all status views",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add AgentStatusWrapper style to ThemeStyles for consistent content padding",
+      "id": "UI-015",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add AgentStatusWrapper style to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add HeaderWrapper style to ThemeStyles for code block headers",
+        "Refactor agent_status.go lines 346-348 to use ThemeStyles.HeaderWrapper",
+        "Header wrapper uses theme's Primary.Background",
+        "Consistent header styling across code blocks",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add HeaderWrapper style to ThemeStyles for consistent code block header styling",
+      "id": "UI-016",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add HeaderWrapper style to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add TruncatedIndicator style to ThemeStyles",
+        "Refactor agent_status.go lines 375-378 to use ThemeStyles.TruncatedIndicator",
+        "Uses theme's Primary.DimForeground",
+        "Consistent truncation indicator styling",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add TruncatedIndicator style to ThemeStyles for consistent truncation messaging",
+      "id": "UI-017",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add TruncatedIndicator style to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add CodeBlockBox style to ThemeStyles",
+        "Refactor agent_status.go lines 382-387 to use ThemeStyles.CodeBlockBox",
+        "Code block box uses RoundedBorder and theme colors",
+        "Consistent code block container styling",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add CodeBlockBox style to ThemeStyles for consistent code block container",
+      "id": "UI-018",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Add CodeBlockBox style to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add ContentWidthWrapper style to ThemeStyles",
+        "Refactor agent_status.go lines 346-348 and 360-362 to use consistent width styling",
+        "Width calculations use consistent frame size handling",
+        "All code and header content use same width strategy",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add ContentWidthWrapper style for consistent width handling in agent_status",
+      "id": "UI-019",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add ContentWidthWrapper style to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add ActivePaneHighlight style to ThemeStyles",
+        "Active pane uses theme's Bright.Yellow for border highlight",
+        "Refactor model.go line 1018 to use ThemeStyles.ActivePaneHighlight",
+        "Consistent active pane indicator across the app",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add ActivePaneHighlight style to ThemeStyles for consistent pane selection indicator",
+      "id": "UI-020",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add ActivePaneHighlight style to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add LogWrapper style to ThemeStyles",
+        "Refactor model.go lines 95-97 to use ThemeStyles.LogWrapper",
+        "Log wrapper uses theme's Primary.Background",
+        "Consistent log line background styling",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add LogWrapper style to ThemeStyles for consistent log line backgrounds",
+      "id": "UI-021",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Add LogWrapper style to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add ScrollIndicator style to ThemeStyles (already exists but verify usage)",
+        "Verify scroll indicator style is properly used in chat.go",
+        "Scroll indicator uses theme's Bright.Cyan background",
+        "Scroll indicator uses theme's Primary.Background for foreground",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Verify and document ScrollIndicator style usage in ThemeStyles",
+      "id": "UI-022",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Verify ScrollIndicator style is properly integrated",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add ContentPadding style to ThemeStyles for consistent inner padding",
+        "Update all components to use consistent padding strategy",
+        "Reduce inline padding definitions across UI files",
+        "Unified padding approach: Padding(0, 1) for bubbles, Padding(1, 2) for panes",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add ContentPadding style to ThemeStyles and standardize padding across all components",
+      "id": "UI-023",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Standardize padding with ContentPadding style",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add ErrorBanner style to ThemeStyles",
+        "Error banner uses theme's Normal.Red for foreground",
+        "Error banner uses theme's Primary.Background for background",
+        "Refactor model.go to use ThemeStyles.ErrorBanner",
+        "Error messages maintain current visibility",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Add ErrorBanner style to ThemeStyles for consistent error message display",
+      "id": "UI-024",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Add ErrorBanner style to ThemeStyles",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Run comprehensive visual test across all themes (Dracula, Tokyo Night, Catppuccin, Solarized)",
+        "Verify all colors properly map to theme colors",
+        "No hard-coded hex or ANSI colors in final codebase",
+        "All inline styles replaced with ThemeStyles",
+        "Typecheck passes",
+        "Visual regression tests pass"
+      ],
+      "created": "2026-01-11T10:45:00Z",
+      "description": "Final integration test to verify all ThemeStyles are properly used across all themes",
+      "id": "UI-025",
+      "passes": false,
+      "phase": "qa",
+      "priority": "P1",
+      "title": "Final ThemeStyles integration test",
+      "updated": "2026-01-11T10:45:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Convert all Primary.Foreground usages to lipgloss.AdaptiveColor",
+        "Convert all Primary.DimForeground usages to lipgloss.AdaptiveColor",
+        "Tooltip uses AdaptiveColor for light/dark mode visibility",
+        "All theme definitions include light and dark variants",
+        "Test on light terminal backgrounds - text remains readable",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add lipgloss.AdaptiveColor support to all foreground colors so text remains readable on both light and dark terminal backgrounds",
+      "id": "UI-026",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P0",
+      "title": "Add AdaptiveColor support for light/dark terminal compatibility",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Cache ThemeStyles in ChatModel to avoid repeated GetThemeStyles() calls",
+        "Add cachedStyles field to ChatModel",
+        "Add ensureStyles() method that populates cache on first access",
+        "Use cached styles in rebuildContentIfDirty() and View()",
+        "Profile rendering performance - should show improvement",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add style caching to ChatModel to avoid repeated GetThemeStyles() calls per render cycle",
+      "id": "UI-027",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P1",
+      "title": "Add ThemeStyles caching to ChatModel",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add MaxWidth() constraint to CodeBlockContainer style",
+        "Add MaxWidth() constraint to UserMessage and AssistantMessage styles",
+        "Content longer than max width wraps correctly",
+        "No horizontal overflow in chat bubbles",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add MaxWidth/MaxHeight constraints to styles to prevent content overflow issues",
+      "id": "UI-028",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P1",
+      "title": "Add MaxWidth/MaxHeight constraints to styles",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add TabWidth(4) to CodeBlockContainer style",
+        "Code blocks with tabs render correctly",
+        "Tabs convert to spaces as specified",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add TabWidth configuration to CodeBlockContainer for proper code block tab handling",
+      "id": "UI-029",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Add TabWidth configuration for code blocks",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Refactor agent_status.go to use .Inherit() for shared base styles",
+        "Create baseStyle and inherit for label, value, dim styles",
+        "Code is more DRY - no repeated background declarations",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Refactor styles to use lipgloss.Inherit() pattern for better code organization and DRY principle",
+      "id": "UI-030",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Refactor styles to use .Inherit() pattern",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Refactor model.go active pane styling to use .Copy() instead of mutation",
+        "chatPaneStyle.Copy().BorderForeground(...) pattern used",
+        "No style mutation side effects between renders",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Replace style mutation with .Copy() pattern to avoid side effects in model.go",
+      "id": "UI-031",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Replace style mutation with .Copy() pattern",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Style textinput with FocusedStyle matching theme colors",
+        "Style viewport with background matching theme",
+        "Bubble Tea components integrate with ThemeStyles",
+        "Input field shows consistent theming when focused/unfocused",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add component style propagation to style Bubble Tea components (textinput, viewport) with theme colors",
+      "id": "UI-032",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Add component style propagation for Bubble Tea",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add Gap style to ThemeStyles for visual spacing",
+        "Join components with gap style in model.go View()",
+        "Visual separation between chat and log panes",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add Gap style and visual spacing between joined layout components for better visual hierarchy",
+      "id": "UI-033",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add Gap style and visual spacing between components",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add calculatePaneWidths() method for responsive sizing",
+        "Terminals under 80 columns use full-width chat pane",
+        "Log pane hidden or minimized on small terminals",
+        "Responsive behavior tested on various terminal sizes",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add responsive layout for small terminals that adapts pane sizing based on terminal width",
+      "id": "UI-034",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Add responsive layout for small terminals",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add DebugStyle() utility for visualizing style boundaries",
+        "Add LogStyleMetrics() for performance debugging",
+        "Add ValidateStyle() function for style validation",
+        "Debug utilities log to debug.log when enabled",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add style debug utilities (DebugStyle, LogStyleMetrics, ValidateStyle) for troubleshooting styling issues",
+      "id": "UI-035",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add style debug utilities",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add NewBubbleStyle() factory function in styles.go",
+        "Add NewActionStyle() factory function",
+        "Add StyleHooks map for customizable component styles",
+        "Factory functions reduce inline style creation",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add style factory functions (NewBubbleStyle, NewActionStyle, StyleHooks) for centralized style creation",
+      "id": "UI-036",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add style factory functions",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Fix logger DEBUG level contrast (ANSI \"8\" too dim)",
+        "Fix tooltip contrast (Bright.White on Bright.Blue)",
+        "Add Bold() to tooltip for accessibility",
+        "Add Faint() to dim text styles explicitly",
+        "All text meets WCAG 2.1 AA contrast requirements",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Fix accessibility issues - improve contrast ratios and add visual emphasis for readability",
+      "id": "UI-037",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P1",
+      "title": "Fix accessibility issues - contrast and visual emphasis",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Add BorderBackground to MainPane style",
+        "Add BorderBackground to message bubble styles",
+        "Visual hierarchy improved with colored borders",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add BorderBackground() to styles for enhanced visual hierarchy and depth",
+      "id": "UI-038",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add BorderBackground for enhanced visual hierarchy",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "ThemeStyles includes Inline(true) option for code",
+        "Code blocks render properly with Inline style",
+        "TabWidth and MaxWidth work correctly together",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Add Inline() style option for code blocks and compact content rendering",
+      "id": "UI-039",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add Inline() style option for compact content",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Consistent alignment direction in JoinVertical/JoinHorizontal",
+        "JoinVertical uses Center alignment",
+        "JoinHorizontal uses Center alignment",
+        "No mixed alignment patterns",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:00:00Z",
+      "description": "Standardize alignment direction in layout joins for consistent visual presentation",
+      "id": "UI-040",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Standardize alignment in layout joins",
+      "updated": "2026-01-11T11:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Viewport auto-scrolls to bottom during streaming",
+        "GotoBottom() called immediately after content update during streaming",
+        "Auto-scroll respects user manual scroll (UserScrolled flag)",
+        "Smooth scrolling animation during streaming if possible",
+        "Viewport scrolls to show new content as it arrives",
+        "Test: Verify viewport follows streaming content in real-time",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:15:00Z",
+      "description": "Fix auto-scroll behavior so viewport follows new messages during streaming - ensure GotoBottom() is called at the right time in the render cycle",
+      "id": "UI-041",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P1",
+      "title": "Fix auto-scroll during message streaming",
+       "updated": "2026-01-11T11:15:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Chat viewport does not scroll when typing in input box",
+        "Viewport position remains stable during textinput updates",
+        "Auto-scroll only triggers on message content changes, not key events",
+        "User can scroll chat independently without input affecting position",
+        "Type textinput without viewport jumping around",
+        "Test: Type while at different scroll positions - viewport stays put",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:20:00Z",
+      "description": "Fix chat viewport jumping/movement during text input - ensure typing in input box doesn't trigger viewport scrolling or repositioning",
+      "id": "UI-042",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P1",
+      "title": "Fix chat viewport jumping during text input",
+      "updated": "2026-01-11T11:20:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Type / in input box to see autocomplete menu",
+        "Autocomplete menu shows available slash commands (benchmark, clear, etc.)",
+        "Menu appears immediately when / is typed",
+        "Arrow keys navigate through command suggestions",
+        "Enter selects the highlighted command",
+        "Tab also selects the highlighted command",
+        "Menu closes when command is selected or / is deleted",
+        "Benchmark command appears in autocomplete list",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T11:20:00Z",
+      "description": "Implement slash command autocomplete menu that appears when user types / in the input box",
+      "id": "UI-043",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Add slash command autocomplete menu",
+      "updated": "2026-01-11T11:20:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Use progress.Model from bubbles for benchmark progress display",
+        "Progress bar animates during test execution",
+        "Progress shows percentage and visual indicator",
+        "Progress bar colors match current theme",
+        "Refactor slash_commands.go to use bubbles progress instead of text-based progress",
+        "Benchmark results show animated progress during execution",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T12:00:00Z",
+      "description": "Replace text-based progress display in benchmark command with bubbles progress.Model for visual progress bars",
+      "id": "UI-044",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Add bubbles progress.Model for benchmark progress display",
+      "updated": "2026-01-11T12:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Use help.Model from bubbles for help display (Ctrl+H)",
+        "Help shows all available keybindings grouped logically",
+        "Help view integrates with ThemeStyles for colors",
+        "Refactor model.go to use bubbles help instead of custom help overlay",
+        "Help displays commands: /benchmark, /help, /clear, /theme",
+        "Help shows keyboard shortcuts in consistent format",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T12:00:00Z",
+      "description": "Replace custom help overlay with bubbles help.Model for consistent keybinding documentation",
+      "id": "UI-045",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P2",
+      "title": "Replace custom help with bubbles help.Model",
+      "updated": "2026-01-11T12:00:00Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Use table.Model from bubbles for benchmark results display",
+        "Table shows test results with columns: Test Name, Status, Duration",
+        "Table uses theme colors for borders and text",
+        "Alternating row colors for readability",
+        "Results are properly aligned and formatted",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-11T12:00:00Z",
+      "description": "Replace text-based table in benchmark results with bubbles table.Model for structured results display",
+      "id": "UI-046",
+      "passes": false,
+      "phase": "ui",
+      "priority": "P3",
+      "title": "Add bubbles table.Model for benchmark results",
+      "updated": "2026-01-11T12:00:00Z"
+    }
 
   ],
   "completed": 10,
-  "total": 34,
+  "total": 79,
   "currentIteration": 2,
   "startTime": "2026-01-11T00:36:58.907Z",
-  "lastUpdate": "2026-01-11T02:00:00Z"
+  "lastUpdate": "2026-01-11T12:00:00Z"
 }

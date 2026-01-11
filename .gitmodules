@@ -10,3 +10,12 @@
 [submodule "reference/ralph"]
 	path = reference/ralph
 	url = https://github.com/snarktank/ralph.git
+[submodule "reference/lipgloss"]
+	path = reference/lipgloss
+	url = https://github.com/charmbracelet/lipgloss
+[submodule "reference/bubbletea"]
+	path = reference/bubbletea
+	url = https://github.com/charmbracelet/bubbletea
+[submodule "reference/bubbles"]
+	path = reference/bubbles
+	url = https://github.com/charmbracelet/bubbles
