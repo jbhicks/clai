@@ -1,64 +1,51 @@
 .PHONY: dev
-# Live reload development with inotifywait (handles TTY properly for TUI)
+# Live reload development with tmux + air for proper TUI support
 dev:
-	@./dev.sh
-
-.PHONY: dev-benchmark
-# Live reload for benchmark server development with Templ templates
-# Air automatically runs 'templ generate' before each build (see .air.toml pre_cmd)
-dev-benchmark:
 	@if ! command -v air >/dev/null 2>&1; then \
 		echo "Error: air is not installed."; \
 		echo "Install with: go install github.com/cosmtrek/air@latest"; \
 		exit 1; \
 	fi
-	@if ! command -v templ >/dev/null 2>&1; then \
-		echo "Error: templ is not installed."; \
-		echo "Install with: go install github.com/a-h/templ/cmd/templ@latest"; \
-		exit 1; \
-	fi
-	@echo "Starting benchmark server with live reload..."
-	@echo "Air will auto-restart when you edit .go or .templ files."
-	@echo "Templates are auto-compiled via 'templ generate' before each build."
-	@echo "Press Ctrl+C to stop."
-	@air
-
-.PHONY: dev-air
-# Live reload development with air (for non-TUI commands like benchmark server)
-# Alias for dev-benchmark
-dev-air: dev-benchmark
-
-.PHONY: dev-tmux
-# Alternative: tmux-based development (old method)
-dev-tmux:
 	@if ! command -v tmux >/dev/null 2>&1; then \
 		echo "Error: tmux is not installed."; \
 		exit 1; \
 	fi
 	@if tmux has-session -t clai_dev 2>/dev/null; then \
-		tmux kill-session -t clai_dev; \
+		echo "Existing clai_dev session found. Killing it..."; \
+		tmux kill-session -t clai_dev 2>/dev/null; \
 	fi
-	@echo "Starting tmux session with air..."
-	@tmux new-session -d -s clai_dev -x $$(tput cols) -y $$(tput lines) 'air' \
-		\; split-window -h -p 40 'tail -f debug.log' \
-		\; select-pane -t 0
-	@echo "✓ 2-pane tmux session started"
-	@echo "  Left: App running under air (auto-reload)"
-	@echo "  Right: Live logs"
+	@echo "Starting CLAI with live reload in tmux..."
+	@echo "Air will auto-rebuild when you edit .go files."
 	@echo ""
-	@echo "Tmux commands:"
-	@echo "  Ctrl+b then arrow keys - Switch panes"
-	@echo "  Ctrl+b then z - Toggle zoom"
-	@echo "  Ctrl+b then d - Detach"
+	@truncate -s 0 debug.log
+	@tmux new-session -d -s clai_dev -x $$(tput cols) -y $$(tput lines) 'clear && TERM=xterm-256color air'
+	@echo "✓ tmux session 'clai_dev' started"
+	@echo ""
+	@echo "Controls:"
+	@echo "  Ctrl+b then d - Detach (app keeps running)"
+	@echo "  Ctrl+T - Toggle between chat and log views in-app"
+	@echo ""
 	@if [ -z "$$TMUX" ]; then \
+		echo "Attaching to tmux session..."; \
 		tmux attach -t clai_dev; \
 	else \
-		echo "Attach with: tmux attach -t clai_dev"; \
+		echo "Already in tmux. Attach with: tmux attach -t clai_dev"; \
 	fi
-# Makefile for the clai project
+
+dev-clean:
+	@echo "Cleaning up old development processes..."
+	@pkill -f "inotifywait.*clai" 2>/dev/null || echo "No inotifywait processes found"
+	@pkill -f "dev\.sh" 2>/dev/null || echo "No dev.sh processes found"
+	@for session in $$(tmux ls -F "#{session_name}" 2>/dev/null | grep "^clai_dev" | head -10 || true); do \
+		echo "Killing tmux session: $$session"; \
+		tmux kill-session -t "$$session" 2>/dev/null || true; \
+	done
+	@rm -f /tmp/clai.sock 2>/dev/null || echo "No socket file found"
+	@echo "Cleanup complete"
+
 #
-# Additional targets:
-# minimal_testing_air: Runs minimal_testing.go with air for live prototyping
+# The benchmark server runs automatically whenever CLAI starts.
+# Use 'make dev' for development with live reload.
 
 # Go parameters
 GOCMD=go
@@ -70,7 +57,7 @@ GOINSTALL=$(GOCMD) install
 BINARY_NAME=clai
 BINARY_UNIX=$(BINARY_NAME)
 
-all: test build
+all: test lint build
 
 build:
 	$(GOBUILD) -o $(BINARY_NAME) ./cmd/clai
@@ -80,6 +67,14 @@ run:
 
 test:
 	$(GOTEST) ./cmd/... ./internal/...
+
+lint:
+	$(GOCMD) vet ./cmd/... ./internal/...
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run ./cmd/... ./internal/...; \
+	else \
+		echo "golangci-lint not found, using go vet only"; \
+	fi
 
 clean:
 	$(GOCLEAN)

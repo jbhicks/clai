@@ -1,5 +1,28 @@
 # AGENTS.md
 
+---
+
+# NOTE FOR AGENTS RUNNING IN PARALLEL THREADS
+
+If you are a buddy agent (running in a parallel thread as a companion/monitor), you have a responsibility to:
+
+- Dynamically update your context and react to other agents' actions and the current repo state, using:
+    - LSP diagnostics, build/test status, formatting and lint analysis
+    - Results from background explore/librarian agents
+    - Best practices for Go project health and cleanup
+- Provide real-time assistance during file changes or codebase reorganization
+    - Monitor for: errors, warnings, deprecated patterns, formatting issues
+    - Suggest/perform modernizations (interface{} → any, deprecated functions, string optimizations, etc)
+- Whenever you detect an event or message relevant to the other agent's context, you should log that explicitly:
+    - Use: `bash -c 'echo "[AGENT BUDDY MESSAGE] Context updated: ..."'`
+    - Pipe relevant monitoring/data to these echo logs when significant state/context events occur
+    - This is for human/agent transparency and debugging
+
+(See Ralph/MCP: ALL CONTEXT MODIFICATIONS AND NOTIFICATIONS MUST BE LOGGED THIS WAY)
+
+---
+
+
 This repository is a Go CLI project for local AI agent interaction. Follow these guidelines for agentic coding:
 
 ## Build, Lint, and Test Commands
@@ -10,6 +33,110 @@ This repository is a Go CLI project for local AI agent interaction. Follow these
 - Clean: `make clean`
 - Install: `make install`
 - Dev/debug: `make dev` (runs with DEBUG=true)
+
+## Server Management
+**🚨 ABSOLUTELY FORBIDDEN: Agents MUST NEVER start, stop, or restart dev/benchmark servers**
+- **VIOLATION**: Agents are PROHIBITED from running `make dev`, `make dev-benchmark`, `./clai benchmark`, or ANY server-starting commands
+- **REASON**: These commands block execution indefinitely and completely break the development workflow
+- **CONSEQUENCE**: Running these commands will freeze the entire agent session and require manual termination
+- The user manages ALL server processes (dev server, benchmark server, etc.) - this is their responsibility only
+- Only build code changes and let the user handle server management
+- If you need to test functionality, use API calls to running servers, not starting new ones
+
+**CRITICAL SAFEGUARD: Before any server-related operations**
+- ALWAYS check if dev/benchmark servers are already running: `ps aux | grep -E "(make dev|clai.*benchmark)" | grep -v grep`
+- If any servers are found running, IMMEDIATELY return an error: "ERROR: Dev/benchmark servers are already running. Please let the user manage server processes - do not run 'make dev' yourself."
+- Do NOT proceed with any server operations if instances are detected
+- **NEVER** bypass this check or attempt to "help" by starting servers
+
+### Development Environment Cleanup
+To prevent zombie processes from old development sessions:
+- Run `make dev-clean` to clean up orphaned processes before starting new sessions
+- The `dev.sh` script automatically cleans up old sessions on startup
+- Check for leftover processes: `ps aux | grep -E "(inotifywait.*clai|dev\.sh)"`
+
+## HTTP API Interactions
+**CRITICAL: NEVER attempt to curl/fetch Server-Sent Events (SSE) endpoints in the foreground**
+- SSE endpoints (like `/api/servers/events`, `/api/model-benchmark/live`) are designed for real-time streaming
+- Attempting to curl SSE endpoints in the foreground will BLOCK THE ENTIRE THREAD INDEFINITELY
+- This completely breaks the development workflow and requires manual termination
+- For SSE endpoints, use browser inspection, WebSocket clients, or server-side testing only
+- Regular HTTP endpoints are fine to test with curl
+- If you must test SSE endpoints programmatically, run curl in the background with output redirection: `curl -s <sse_url> > /tmp/output.txt &`
+
+## OpenCode/MCP Socket Connections
+
+**CRITICAL: Handle socket disconnections gracefully with large models**
+- Large models (especially pickle/serialized models) can cause socket timeouts during processing
+- Error: "The socket connection was closed unexpectedly" indicates MCP connection dropped
+- **ALWAYS** handle potential socket errors in fetch operations:
+
+```go
+// Use retry logic for socket operations
+func fetchWithRetry(url string, maxRetries int) error {
+    for i := 0; i < maxRetries; i++ {
+        resp, err := http.Get(url)
+        if err != nil {
+            if i < maxRetries-1 {
+                time.Sleep(time.Duration(i+1) * time.Second)
+                continue
+            }
+            return fmt.Errorf("failed after %d retries: %w", maxRetries, err)
+        }
+        resp.Body.Close()
+        return nil
+    }
+}
+```
+
+**Prevention Strategies:**
+- Add timeout handling: `http.Client{Timeout: 30 * time.Second}`
+- Use `verbose: true` for debugging socket issues: `fetch(url, {verbose: true})`
+  - When MCP/OpenCode tools fail with socket errors, retry with `verbose: true` to get detailed connection information
+  - This helps diagnose whether it's a timeout, network issue, or model processing delay
+- Monitor model loading progress with heartbeats
+- For very large models, consider streaming responses or chunked transfers
+- Set appropriate context timeouts: `ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)`
+
+**Debug Socket Issues:**
+- Monitor `/tmp/clai.sock` for connection issues
+- Check system limits: `ulimit -n` for file descriptors
+- Look for memory pressure causing connection drops
+
+## Debugging TUI Issues
+
+**MANDATORY: Always use clai-debug tools when working on TUI/rendering issues**
+
+When debugging Bubble Tea TUI rendering problems, layout issues, or terminal dimension problems:
+
+1. **USE THE TOOLS, NOT THE USER** - Never ask the user to run `clai-debug` commands for you
+   - Run `clai-debug_inspect` yourself to see current UI state
+   - Run `clai-debug_inspect_styles` yourself to see structured viewport data
+   - Run `clai-debug_get_history` yourself to examine conversation state
+
+2. **INSPECT BEFORE REPLYING** - When the user reports TUI issues:
+   - Check the current state with debug tools FIRST
+   - Analyze the actual dimensions and rendering state
+   - Report findings with actual numbers, not guesses
+
+3. **COMMON DEBUG COMMANDS** (use these tools directly):
+   - `clai-debug_inspect` - Get full UI inspection including viewport content, dimensions, and state
+   - `clai-debug_inspect_styles` - Get structured viewport dimensions and state info (JSON format)
+   - `clai-debug_get_history` - Get the conversation history/messages
+   - `clai-debug_ping` - Test connectivity to the CLAI debug server
+
+4. **WHAT TO LOOK FOR**:
+   - Terminal dimensions (should NOT be 0x0)
+   - Chat pane width/height
+   - Viewport content length vs rendered height
+   - Active pane state
+   - Scroll position (y_offset)
+
+**Example workflow:**
+```
+❌ WRONG: "Can you run clai-debug_inspect and tell me what it says?"
+✅ RIGHT: *runs clai-debug_inspect* "I see the terminal is reporting 0x0 dimensions..."
+```
 
 ## Code Style Guidelines
 - Use standard Go libraries; minimize dependencies.
@@ -30,154 +157,98 @@ This repository is a Go CLI project for local AI agent interaction. Follow these
 
 **Critical Rules for Proper Layout:**
 
-1. **Height Calculation - Account for Actual Rendered Heights**
-   - **DON'T** use `style.GetHeight()` for styles that rely on padding/content - it returns 0
-   - **DO** use actual rendered heights: e.g., status bar with padding is always 1 row
-   - Formula: `contentHeight = terminalHeight - statusBarRows - errorBannerRows`
-   - Example: For 84-row terminal with 1-row status bar: `contentHeight = 84 - 1 = 83`
+1. **Height Calculation**: Use `lipgloss.Height()` for actual rendered heights, not `style.GetHeight()` (returns 0 for padded styles). Formula: `contentHeight = terminalHeight - statusBarRows - errorBannerRows`.
 
-2. **Width Calculation - Respect Frame Sizes**
-   - Calculate inner content widths: `innerWidth = outerWidth - style.GetHorizontalFrameSize()`
-   - `GetHorizontalFrameSize()` returns: left border (1) + left padding + right padding + right border (1)
-   - Example: For 70% of 139 cols = 97 cols, with padding(0,2) + rounded border:
-     - `GetHorizontalFrameSize()` = 6 (1 + 2 + 2 + 1)
-     - `innerWidth` = 97 - 6 = 91
+2. **Width Calculation**: `innerWidth = outerWidth - style.GetHorizontalFrameSize()`. Frame includes borders + padding (e.g., 6 for padding(0,2) + rounded border).
 
-3. **Applying Styles Without Breaking Dimensions**
-   - **DON'T** use `style.Width(outerWidth).Render(content)` - this adds frame size on top
-   - **DO** calculate inner dimensions, set those on components, then render with unsized style
-   - **DO** pad the result if needed to reach exact outer width
+3. **Style Application**: Calculate inner dimensions first, set on components, render with unsized style. Pad to exact outer width if needed:
    ```go
-   // Calculate inner dimensions
    innerWidth := outerWidth - style.GetHorizontalFrameSize()
    innerHeight := outerHeight - style.GetVerticalFrameSize()
-   
-   // Set dimensions on inner content/components
-   component.Width = innerWidth
-   component.Height = innerHeight
-   
-   // Render with style (no width set on style)
+   component.Width, component.Height = innerWidth, innerHeight
    view := style.Render(component.View())
-   
-   // Pad to exact width if needed
    if lipgloss.Width(view) < outerWidth {
        view = lipgloss.NewStyle().Width(outerWidth).Render(view)
    }
    ```
 
-4. **Vertical Layout - Join Carefully**
-   - When using `lipgloss.JoinVertical()`, ensure sum of heights equals terminal height
-   - Each component's rendered height (via `lipgloss.Height()`) must be accounted for
-   - Example: `mainView (83) + statusBar (1) = 84 (terminal height)`
+4. **Layout Joining**: Sum heights/widths must equal terminal dimensions. Split proportionally: `chatWidth = int(float64(terminalWidth) * 0.8)`.
 
-5. **Horizontal Layout - Join Carefully**
-   - When using `lipgloss.JoinHorizontal()`, ensure sum of widths equals terminal width
-   - Each pane's rendered width (via `lipgloss.Width()`) must be accounted for
-   - Example: `chatPane (97) + logPane (42) = 139 (terminal width)`
-   - **CRITICAL**: When splitting terminal width between panes, calculate each pane's width FIRST, then set component dimensions based on those pane widths
-   - Example:
-     ```go
-     // Calculate pane widths first
-     chatPaneWidth := int(float64(terminalWidth) * 0.8)
-     logPaneWidth := terminalWidth - chatPaneWidth
-     
-     // Then set component inner widths by subtracting frame sizes
-     chatComponent.Width = chatPaneWidth - style.GetHorizontalFrameSize()
-     logComponent.Width = logPaneWidth - style.GetHorizontalFrameSize()
-     ```
-   - **DON'T** set all component widths to full terminal width minus frame - this makes all panes the same size
+5. **Debugging**: Use `clai-debug_inspect` tool. Log: `lipgloss.Width/Height(view)`. Off-by-one errors indicate frame miscalculation. **NEVER** debug in `View()` methods.
 
-6. **Debugging Layout Issues**
-   - **CRITICAL**: NEVER add `logger.Debug()` calls inside `View()` methods - they're called in tight render loops
-   - Use the debug server (`clai debug inspect`) instead for inspecting rendered output
-   - If you must add temporary debug logging, only add it in `Update()` methods or initialization functions
-   - Log actual rendered dimensions: `lipgloss.Height(view)`, `lipgloss.Width(view)`
-   - Log component dimensions before rendering: `component.Width`, `component.Height`
-   - Log frame sizes: `style.GetHorizontalFrameSize()`, `style.GetVerticalFrameSize()`
-   - Compare: terminal size → calculated sizes → rendered sizes
-   - Off-by-one errors usually indicate frame size or padding miscalculation
+6. **List Components**: Split multi-line content: `strings.Split(text, "\n")`. Set zero padding on list styles.
 
-7. **List Component - Multi-Line Content Handling**
-   - **CRITICAL**: List delegates report each item as 1 row height, but multi-line content will render taller
-   - **DON'T** add multi-line strings (with `\n`) as single list items - this causes overflow
-   - **DO** split multi-line content into separate items: `strings.Split(text, "\n")`
-   - Example problem: Adding "Line1\nLine2\nLine3" as 1 item renders 3 rows but list thinks it's 1 row
-   - Example solution: Add each line separately: `for _, line := range strings.Split(text, "\n") { list.InsertItem(...) }`
-   - Set list styles with zero padding to prevent additional height: `list.Styles.PaginationStyle = list.Styles.PaginationStyle.Padding(0)`
+7. **Background Colors**: Set explicit `.Background()` on wrappers. Pad lines to full width with matching background to avoid artifacts.
 
-8. **Background Colors and Content Wrapping**
-   - **CRITICAL**: When rendering styled content (borders/padding) inside a container with a background, empty space must be explicitly filled
-   - **Problem**: `lipgloss.NewStyle().Width(w).Render(styledContent)` creates transparent space, showing mismatched backgrounds
-   - **Solution**: Always set `.Background()` on wrapper styles to match the parent container:
-     ```go
-     bubble := messageStyle.Render(content)
-     wrapper := lipgloss.NewStyle().
-         Width(containerWidth).
-         Background(lipgloss.Color(parentBackground)).
-         Align(lipgloss.Left)
-     rendered := wrapper.Render(bubble)
-     ```
-   - This ensures the entire line has consistent background color with no visible "boxes" or artifacts
-   - **CRITICAL**: When rendering content that will be concatenated/joined, ensure ALL message styles have explicit backgrounds:
-     ```go
-     // In theme styles, ALWAYS set backgrounds
-     UserMessage: lipgloss.NewStyle().
-         Border(lipgloss.RoundedBorder()).
-         Background(lipgloss.Color(ui.Theme.Primary.Background)).  // REQUIRED
-         Foreground(lipgloss.Color(ui.Theme.Bright.White)).
-         Padding(0, 1)
-     ```
-   - **CRITICAL**: After rendering styled bubbles, pad each line to full container width with matching background:
-     ```go
-     // Render the bubble with style
-     bubble := messageStyle.Render(content)
-     
-     // Pad each line to full width with background color
-     bg := lipgloss.Color(theme.Primary.Background)
-     lines := strings.Split(bubble, "\n")
-     for i, line := range lines {
-         if lipgloss.Width(line) < containerWidth {
-             padStyle := lipgloss.NewStyle().Width(containerWidth).Background(bg)
-             lines[i] = padStyle.Render(line)
-         }
-     }
-     result := strings.Join(lines, "\n")
-     ```
-   - Without line padding, you'll see different colored backgrounds where content doesn't reach full width
-
-9. **Nested Borders - Apply ONE Border Per Visual Pane**
-   - **CRITICAL**: When stacking multiple components in a single visual pane, apply borders AFTER joining, not before
-   - **Problem**: Wrapping each component with a border style before joining causes border duplication
-   - **DON'T**:
-     ```go
-     comp1View := borderStyle.Render(comp1.View())  // adds 4 rows (border + padding)
-     comp2View := borderStyle.Render(comp2.View())  // adds 4 rows (border + padding)
-     combined := lipgloss.JoinVertical(lipgloss.Left, comp1View, comp2View)  // 8 extra rows!
-     ```
-   - **DO**:
-     ```go
-     comp1Inner := comp1.View()
-     comp2Inner := comp2.View()
-     combined := lipgloss.JoinVertical(lipgloss.Left, comp1Inner, comp2Inner)
-     finalView := borderStyle.Render(combined)  // only 4 extra rows total
-     ```
-   - When calculating inner heights, account for the SINGLE border that wraps the combined content
-   - Example: For agent status (8 rows) + log (71 rows) in one pane:
-     - Inner total: 8 + 71 = 79 rows
-     - Subtract ONE border frame: `contentHeight - style.GetVerticalFrameSize()` = 83 - 4 = 79 ✓
-     - NOT per-component: `(8 + 4) + (71 + 4)` = 87 ✗
+8. **Nested Borders**: Apply borders AFTER joining, not before. Account for single border in height calculations.
 
 **Common Pitfalls:**
-- ❌ Using `style.GetHeight()` when the style has no explicit height (returns 0)
-- ❌ Setting `.Width()` on a style that already has padding/borders (double-counts frame)
-- ❌ Forgetting to subtract frame sizes when calculating inner dimensions
-- ❌ Not accounting for status bars, borders, or other UI chrome in height calculations
-- ❌ Adding multi-line content (`\n` newlines) as single list items - causes height overflow
-- ❌ Creating width wrappers without explicit backgrounds - causes background color mismatches
-- ❌ **Forgetting to set explicit backgrounds on message/bubble styles** - causes transparent backgrounds showing terminal default color
-- ❌ **Not padding rendered lines to full container width** - causes visible background color boxes/artifacts where content doesn't fill the line
-- ❌ Applying borders to components BEFORE joining them vertically/horizontally - causes border duplication
-- ❌ **NEVER** add debug logging inside `View()` methods - they're called in render loops and will cause infinite spam/lockups
+- Using `style.GetHeight()` for padded styles (returns 0)
+- Setting `.Width()` on styles with borders/padding (double-counts)
+- Forgetting frame size subtraction
+- Adding multi-line content as single list items
+- Creating wrappers without explicit backgrounds
+- Applying borders before joining
+- Debug logging in `View()` methods
+
+## UI Component Research Guidelines
+
+### Always Use Bubbles Library Components First
+
+This project uses [Bubble Tea](https://github.com/charmbracelet/bubbletea) for TUI development. The [bubbles](https://github.com/charmbracelet/bubbles) library provides pre-built, well-tested components.
+
+**Before implementing ANY UI component:**
+
+1. **Check if a bubbles component exists**:
+   - `textinput.Model` - for text input fields
+   - `textarea.Model` - for multi-line text input
+   - `list.Model` - for selectable lists
+   - `spinner.Model` - for loading indicators
+   - `table.Model` - for tabular data
+   - `viewport.Model` - for scrollable content
+   - `progress.Model` - for progress bars
+   - `key.Binding` - for keyboard shortcuts
+   - `help.Model` - for help screens
+
+2. **Research proper usage**:
+   - Consult the official documentation at `reference/bubbletea` and `reference/lipgloss`
+   - Check the examples in `reference/bubbletea/examples/`
+   - Review `reference/bubbletea/tutorials/` for guided learning
+   - Look at `reference/lipgloss/examples/` for styling patterns
+
+3. **When adding UI features**:
+   - Use the `call_omo_agent` tool with `librarian` subagent to fetch documentation from official sources
+   - Search for existing implementations in the codebase first
+   - Review test patterns in `reference/bubbletea/` and `reference/lipgloss/`
+
+**Reference Repositories (as submodules)**:
+- `reference/bubbletea/` - Main Bubble Tea framework
+- `reference/lipgloss/` - Styling library for terminal UI
+
+**Example Workflow for New UI Feature:**
+
+```go
+// Before implementing an autocomplete menu:
+// 1. Check bubbles for existing components: list, textinput
+// 2. Review reference/bubbletea/examples/ for similar patterns
+// 3. Check reference/lipgloss/ for styling autocomplete dropdowns
+// 4. Search codebase for "autocomplete" or "suggestion" patterns
+// 5. Use librarian agent to fetch official documentation
+
+// Correct approach: Extend existing bubbles components
+type autocompleteModel struct {
+    textinput.Model
+    suggestions []string
+    selected    int
+}
+
+// NOT: Building a custom rendering engine from scratch
+```
+
+**Never build from scratch when bubbles has a solution:**
+- Bubbles components handle keyboard navigation, focus, accessibility
+- They integrate properly with Bubble Tea's Update/View loop
+- They work seamlessly with lipgloss styling
 
 ## Testing
 
@@ -254,9 +325,9 @@ No Cursor or Copilot rules detected.
 
 ## Development Workflow
 - **ASSUME** the user is running `make dev` in another terminal/thread with automatic file watching and reload enabled.
-- **NEVER** run the application yourself (e.g., `./clai` or `make run`).
-- **NEVER** run `make dev` yourself - it blocks execution indefinitely while watching for file changes.
-- **NEVER** start, stop, or restart servers (main app or benchmark server) - the user will handle this.
+- **🚨 ABSOLUTELY FORBIDDEN**: Agents MUST NEVER run the application themselves (e.g., `./clai` or `make run`).
+- **🚨 ABSOLUTELY FORBIDDEN**: Agents MUST NEVER run `make dev` themselves - it blocks execution indefinitely while watching for file changes.
+- **🚨 ABSOLUTELY FORBIDDEN**: Agents MUST NEVER start, stop, or restart servers (main app or benchmark server) - the user will handle this.
 - After making code changes, **ASSUME** the automatic reload has already occurred.
 - To verify your changes:
   1. Check `debug.log` for runtime logs: `tail -f debug.log` or `cat debug.log`
