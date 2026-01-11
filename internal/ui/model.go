@@ -8,6 +8,7 @@ import (
 	"clai/internal/tools"
 	"fmt"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/brittonhayes/glitter/glitter"
@@ -16,6 +17,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+func stripANSI(s string) string {
+	// More comprehensive ANSI escape sequence removal
+	ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\([0-9]|\x1b\)[0-9]|\x1b\[\?25[lh]|\x1b\[\?1049[lh]|\x1b\[\?2004[lh]`)
+	return ansiRegex.ReplaceAllString(s, "")
+}
 
 type ActivePane int
 
@@ -124,6 +131,7 @@ type Model struct {
 	Conversation  interface{}
 	Agent         *llm.Agent
 	statusChan    chan tea.Msg
+	chunkChan     chan tea.Msg
 }
 
 type (
@@ -239,14 +247,9 @@ func StartsWithLLMError(s string) bool {
 }
 
 func getThemeName(currentTheme *glitter.UI) string {
-	availableThemes := GetAvailableThemes()
-	themeNames := GetAvailableThemeNames()
-	for i, theme := range availableThemes {
-		if theme == currentTheme {
-			if i < len(themeNames) {
-				return themeNames[i]
-			}
-			break
+	for _, theme := range ThemeRegistry {
+		if theme.GlitterUI == currentTheme {
+			return theme.Name
 		}
 	}
 	return "Unknown"
@@ -254,6 +257,7 @@ func getThemeName(currentTheme *glitter.UI) string {
 
 func (m *Model) Init() tea.Cmd {
 	m.statusChan = make(chan tea.Msg, 100)
+	m.chunkChan = make(chan tea.Msg, 100)
 	return tea.Batch(TailLogFileCmd(m), m.Chat.Init(), tea.WindowSize())
 }
 
@@ -412,7 +416,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Send updated conversation back to agent for final response
 		m.Chat.Streaming = true
-		return m, tea.Batch(RunAgentCmd(m.Agent, "continue", m.statusChan), readStatusChanCmd(m.statusChan))
+		return m, tea.Batch(RunAgentCmd(m.Agent, "continue", m.statusChan, m.chunkChan), readStatusChanCmd(m.statusChan), readChunkChanCmd(m.chunkChan))
 	case smoothScrollMsg:
 		if m.Chat.SmoothScrollActive {
 			currentOffset := m.Chat.Viewport.YOffset
@@ -466,10 +470,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.AgentStatus.CompleteCurrentTask()
 		} else {
 			logger.Info("[AGENT-RESPONSE] Agent completed: %s", msg.Response)
-			m.Chat.Messages = append(m.Chat.Messages, llm.Message{
-				Role:    "assistant",
-				Content: msg.Response,
-			})
+			// Always add the final response to ensure it's visible
+			// (streaming may have been incomplete or the response may be different)
+			if msg.Response != "" {
+				m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+					Role:    "assistant",
+					Content: msg.Response,
+				})
+				// Force auto-scroll to show the final response
+				m.Chat.UserScrolled = false
+				m.Chat.AutoScroll = true
+				m.Chat.ContentDirty = true
+			}
 			m.AgentStatus.CompleteCurrentAction()
 			m.AgentStatus.CompleteCurrentTask()
 		}
@@ -492,6 +504,37 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.AgentStatus.SetExecutingCode(msg.Status.CodeLanguage, msg.Code)
 		}
 		return m, readStatusChanCmd(m.statusChan)
+	case AgentChunkMsg:
+		chunk := msg.Chunk
+		if chunk == "" {
+			break
+		}
+		// Find the last assistant message (may not be the very last message if tool messages exist)
+		lastAssistantIdx := -1
+		for i := len(m.Chat.Messages) - 1; i >= 0; i-- {
+			if m.Chat.Messages[i].Role == "assistant" {
+				lastAssistantIdx = i
+				break
+			}
+		}
+
+		if lastAssistantIdx >= 0 && m.Chat.Streaming && !StartsWithLLMError(chunk) {
+			m.Chat.Messages[lastAssistantIdx].Content += chunk
+			m.Chat.ContentDirty = true
+			// Force auto-scroll for agent responses
+			m.Chat.UserScrolled = false
+			m.Chat.AutoScroll = true
+		} else if chunk != "" {
+			m.Chat.Messages = append(m.Chat.Messages, llm.Message{Role: "assistant", Content: chunk})
+			m.Chat.ContentDirty = true
+			// Force auto-scroll for agent responses
+			m.Chat.UserScrolled = false
+			m.Chat.AutoScroll = true
+		}
+		if StartsWithLLMError(chunk) {
+			m.Chat.Streaming = false
+		}
+		return m, readChunkChanCmd(m.chunkChan)
 	default:
 		var cmd tea.Cmd
 		updatedChat, cmd := m.Chat.Update(msg)
@@ -518,12 +561,48 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		// Signal log tailer to stop
 		if m.logDone != nil {
 			close(m.logDone)
+			m.logDone = nil
 		}
 		return tea.Quit
 	case "enter":
 		if m.Chat.TextInput.Focused() {
 			userMsg := m.Chat.TextInput.Value()
 			if userMsg != "" {
+				// Check if this is a slash command
+				isSlash, slashResult, err := HandleSlashCommand(userMsg, m, m.chunkChan)
+				if isSlash {
+					// Add the command to chat history
+					m.Chat.Messages = append(m.Chat.Messages, llm.Message{Role: "user", Content: userMsg})
+					m.Chat.ContentDirty = true
+					m.Chat.AutoScroll = true
+					m.Chat.UserScrolled = false
+					m.Chat.Viewport.GotoBottom()
+					m.Chat.TextInput.SetValue("")
+					m.Chat.QueryHistory = append(m.Chat.QueryHistory, userMsg)
+					m.Chat.HistoryIndex = 0
+
+					if err != nil {
+						// Command failed
+						m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+							Role:    "assistant",
+							Content: fmt.Sprintf("Error: %v", err),
+						})
+						m.Chat.ContentDirty = true
+						return nil
+					} else if slashResult != "" {
+						// Command succeeded - the result is streamed via chunkChan
+						// Create initial assistant message that will be updated
+						m.Chat.Messages = append(m.Chat.Messages, llm.Message{
+							Role:    "assistant",
+							Content: slashResult,
+						})
+						m.Chat.Streaming = false
+						m.Chat.ContentDirty = true
+					}
+					return readChunkChanCmd(m.chunkChan)
+				}
+
+				// Regular chat message
 				m.Chat.Messages = append(m.Chat.Messages, llm.Message{Role: "user", Content: userMsg})
 				m.Chat.ContentDirty = true
 				m.Chat.AutoScroll = true
@@ -549,7 +628,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 
 				if m.Agent != nil {
 					logger.Info("[AGENT-MODE] Running query through agent: %s", userMsg)
-					return tea.Batch(RunAgentCmd(m.Agent, userMsg, m.statusChan), readStatusChanCmd(m.statusChan))
+					return tea.Batch(RunAgentCmd(m.Agent, userMsg, m.statusChan, m.chunkChan), readStatusChanCmd(m.statusChan), readChunkChanCmd(m.chunkChan))
 				}
 
 				logger.Warn("[AGENT-MODE] Agent is nil, cannot process query")
@@ -574,6 +653,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		// Signal log tailer to stop
 		if m.logDone != nil {
 			close(m.logDone)
+			m.logDone = nil
 		}
 		return tea.Quit
 	case "ctrl+h":
@@ -775,9 +855,9 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 		resp = DebugResponse{
 			Success: true,
 			Data: map[string]interface{}{
-				"viewport_content": chatView,
-				"full_chat_view":   fullChatView,
-				"full_view":        fullView,
+				"viewport_content": stripANSI(chatView),
+				"full_chat_view":   stripANSI(fullChatView),
+				"full_view":        stripANSI(fullView),
 				"width":            m.Width,
 				"height":           m.Height,
 				"chat_width":       m.Chat.Width,
@@ -790,7 +870,7 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 				"theme":            "current",
 				"show_help":        m.ShowHelp,
 				"help_show_all":    m.Help.ShowAll,
-				"help_content":     helpContent,
+				"help_content":     stripANSI(helpContent),
 			},
 		}
 
@@ -949,7 +1029,7 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 	const minViewportHeight = 3
 
 	// Calculate pane widths (chat left, agent status + log right)
-	chatPaneWidth := int(float64(m.Width) * 0.6)
+	chatPaneWidth := int(float64(m.Width) * 0.8)
 	rightPaneWidth := m.Width - chatPaneWidth
 
 	if chatPaneWidth < minPaneWidth {
@@ -996,6 +1076,8 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 	// Mark content dirty so it re-renders, and flag for initial scroll
 	m.Chat.ContentDirty = true
 	m.Chat.NeedsInitialScroll = true
+
+	m.Chat.updateViewportHeight()
 
 	// Update status bar text with theme name
 	themeName := getThemeName(m.Theme)

@@ -38,15 +38,18 @@ func StartDebugServer(p *tea.Program) error {
 	}
 
 	debugListener = listener
-	logger.Debug("[DEBUG] Server listening on %s", SocketPath)
+	logger.Info("[DEBUG] Server listening on %s", SocketPath)
 
 	go func() {
+		logger.Info("[DEBUG] Debug server goroutine started")
 		for {
+			logger.Debug("[DEBUG] Waiting for connection...")
 			conn, err := listener.Accept()
 			if err != nil {
-				logger.Debug("[DEBUG] Accept error (listener closed): %v", err)
+				logger.Info("[DEBUG] Accept error (listener closed): %v", err)
 				return
 			}
+			logger.Info("[DEBUG] Accepted connection from client")
 
 			go handleConnection(conn, p)
 		}
@@ -63,11 +66,12 @@ func StopDebugServer() {
 }
 
 func handleConnection(conn net.Conn, p *tea.Program) {
+	logger.Info("[DEBUG] Handling new connection")
 	decoder := json.NewDecoder(conn)
 	var cmd DebugCommand
 
 	if err := decoder.Decode(&cmd); err != nil {
-		logger.Debug("[DEBUG] Decode error: %v", err)
+		logger.Info("[DEBUG] Decode error: %v", err)
 		sendResponse(conn, DebugResponse{
 			Success: false,
 			Error:   err.Error(),
@@ -76,7 +80,7 @@ func handleConnection(conn net.Conn, p *tea.Program) {
 		return
 	}
 
-	logger.Debug("[DEBUG] Received command: %s", cmd.Command)
+	logger.Info("[DEBUG] Received command: %s", cmd.Command)
 
 	p.Send(DebugServerMsg{
 		Conn: conn,
