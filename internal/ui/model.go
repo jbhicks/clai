@@ -906,6 +906,31 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 			}
 		}
 
+	case "type_text":
+		text, textOk := msg.Cmd.Args["text"].(string)
+		if !textOk {
+			resp = DebugResponse{
+				Success: false,
+				Error:   "Missing required arg: text",
+			}
+		} else {
+			// Send each character as a key event
+			for _, ch := range text {
+				keyMsg := tea.KeyMsg{
+					Type:  tea.KeyRunes,
+					Runes: []rune{ch},
+				}
+				m.Update(keyMsg)
+			}
+			resp = DebugResponse{
+				Success: true,
+				Data: map[string]interface{}{
+					"chars_sent": len(text),
+					"text":       text,
+				},
+			}
+		}
+
 	default:
 		resp = DebugResponse{
 			Success: false,
