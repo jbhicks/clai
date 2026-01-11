@@ -124,6 +124,8 @@ When debugging Bubble Tea TUI rendering problems, layout issues, or terminal dim
    - `clai-debug_inspect_styles` - Get structured viewport dimensions and state info (JSON format)
    - `clai-debug_get_history` - Get the conversation history/messages
    - `clai-debug_ping` - Test connectivity to the CLAI debug server
+   - `clai-debug_send_key KEY` - Send a keystroke to the TUI (e.g., "enter", "ctrl+h", "up", "down")
+   - `clai-debug_type_text TEXT` - Type text into the input field (e.g., "hello world")
 
 4. **WHAT TO LOOK FOR**:
    - Terminal dimensions (should NOT be 0x0)
