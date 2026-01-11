@@ -7,3 +7,6 @@
 [submodule "reference-docs/vscode-copilot-chat"]
 	path = reference-docs/vscode-copilot-chat
 	url = https://github.com/microsoft/vscode-copilot-chat
+[submodule "reference/ralph"]
+	path = reference/ralph
+	url = https://github.com/snarktank/ralph.git

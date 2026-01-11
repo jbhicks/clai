@@ -1,0 +1,22 @@
+{
+  "version": "1.0",
+  "iterations": [],
+  "currentTask": null,
+  "qualityChecks": {
+    "lastRun": null,
+    "passed": true,
+    "failures": [],
+    "buildTime": null,
+    "testCount": 0
+  },
+  "patternsLearned": 0,
+  "totalIterationsTime": 0,
+  "averageIterationTime": 0,
+  "successRate": 1.0,
+  "lastUpdate": "2026-01-11T01:00:00.000Z",
+  "systemInfo": {
+    "claiVersion": "1.0.0",
+    "goVersion": "1.24.5",
+    "lastRestart": "2026-01-11T01:00:00.000Z"
+  }
+}
