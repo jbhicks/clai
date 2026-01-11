@@ -1,0 +1,198 @@
+{
+  "version": "1.0",
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "Implement Autonomous Agent Loop Infrastructure",
+      "description": "As a developer, I want CLAI to orchestrate multiple concurrent tasks using goroutines so that complex features can be implemented autonomously.",
+      "acceptanceCriteria": [
+        "CLAI can spawn goroutines with AI-analyzed minimal contexts for each task",
+        "Main orchestrator can monitor and coordinate goroutine tasks via channels",
+        "Goroutines inherit necessary context through channel communication",
+        "Intelligent error handling - orchestrator analyzes failures and decides retry/skip/stop",
+        "Context summarization - goroutine results compressed back to orchestrator's context window",
+        "Graceful shutdown and cleanup of goroutines using context cancellation",
+        "Goroutine lifecycle management prevents leaks",
+        "Typecheck passes"
+      ],
+      "passes": true,
+      "priority": "high",
+      "phase": "Phase 1",
+      "created": "2025-01-10T17:30:00.000Z",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "id": "US-002",
+      "title": "Add Memory Persistence System",
+      "description": "As an autonomous agent, I need persistent memory across iterations so that learnings and progress are maintained without in-memory state.",
+      "acceptanceCriteria": [
+        "Create .clai/progress.json format for structured progress logging",
+        "Implement .clai/stories.json for task completion tracking",
+        "Add .clai/patterns.log append-only pattern learning log",
+        "Git history integration for immutable code changes and automatic backups",
+        "Memory system survives process restarts",
+        "Typecheck passes"
+      ],
+      "passes": false,
+      "priority": "high",
+      "phase": "Phase 1",
+      "created": "2025-01-10T17:30:00.000Z",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "id": "US-003",
+      "title": "Implement Small Task Decomposition",
+      "description": "As a user, I want to break large features into executable tasks so that CLAI can implement them incrementally without context overflow.",
+      "acceptanceCriteria": [
+        "CLI command clai decompose [feature-description] creates task breakdown using configured model",
+        "Tasks sized for single CLAI context window using llama.cpp-style context tracking",
+        "Basic dependency ordering (schema → backend → UI)",
+        "Task validation prevents oversized tasks based on context limits",
+        "JSON export of decomposed tasks to .clai/stories.json",
+        "Integration with existing task view UI (tasks list, step details below, logs pane right)",
+        "Qwen-specific formatting and tool calling support",
+        "Typecheck passes"
+      ],
+      "passes": false,
+      "priority": "high",
+      "phase": "Phase 2",
+      "created": "2025-01-10T17:30:00.000Z",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "id": "US-004",
+      "title": "Add Quality Assurance Integration",
+      "description": "As a developer, I want mandatory quality checks before commits so that broken code cannot compound across iterations.",
+      "acceptanceCriteria": [
+        "Integration with existing make test and make lint",
+        "Quality check execution per task completion with parallelization where possible",
+        "Live UI state verification through CLAI process connection for feature testing",
+        "Efficient UI state transfer to avoid context window overflow",
+        "Failed checks prevent commits and mark tasks incomplete",
+        "Allow partial commits for save states before major changes/refactors",
+        "Never commit non-working application state",
+        "Quality metrics logged to progress tracking",
+        "Rollback capability for failed iterations",
+        "Typecheck passes"
+      ],
+      "passes": false,
+      "priority": "high",
+      "phase": "Phase 3",
+      "created": "2025-01-10T17:30:00.000Z",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "id": "US-005",
+      "title": "Add Pattern Discovery & AGENTS.md Enhancement",
+      "description": "As an autonomous agent, I want to learn and document patterns so that future iterations benefit from discovered knowledge.",
+      "acceptanceCriteria": [
+        "Enhanced AGENTS.md update system for important learnings only",
+        "Document API/framework research findings and bug resolution insights",
+        "Context-aware AGENTS.md file selection",
+        "Pattern compaction system to prevent context window overflow",
+        "Pattern search and retrieval for future tasks",
+        "Typecheck passes"
+      ],
+      "passes": false,
+      "priority": "medium",
+      "phase": "Phase 4",
+      "created": "2025-01-10T17:30:00.000Z",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "id": "US-006",
+      "title": "Create Orchestrator CLI Commands",
+      "description": "As a user, I want CLI commands to control autonomous execution so that I can start, monitor, and stop agent orchestrations.",
+      "acceptanceCriteria": [
+        "clai orchestrate start [stories.json] - Begin autonomous execution",
+        "clai orchestrate status [--watch] - Show current progress with optional live updates",
+        "clai orchestrate stop - Gracefully halt execution",
+        "clai orchestrate resume [--from-failure] - Continue from last checkpoint with failure handling",
+        "clai task execute [task-id] [--skip-checks] - Execute single task manually with optional quality check bypass",
+        "Typecheck passes"
+      ],
+      "passes": false,
+      "priority": "medium",
+      "phase": "Phase 4",
+      "created": "2025-01-10T17:30:00.000Z",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "id": "US-007",
+      "title": "Add Completion Detection & Exit Conditions",
+      "description": "As an autonomous system, I want to detect completion and exit cleanly so that orchestration terminates reliably.",
+      "acceptanceCriteria": [
+        "All tasks completed: true triggers completion",
+        "<COMPLETE> signal in orchestrator output",
+        "Clean shutdown of all child processes",
+        "Final progress report generation",
+        "Success/failure status reporting",
+        "Typecheck passes"
+      ],
+      "passes": false,
+      "priority": "medium",
+      "phase": "Phase 4",
+      "created": "2025-01-10T17:30:00.000Z",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "id": "US-008",
+      "title": "Implement Archival & Feature Branching",
+      "description": "As a user, I want completed orchestrations archived so that feature development history is preserved and isolated.",
+      "acceptanceCriteria": [
+        "Automatic archival to archive/YYYY-MM-DD-feature-name/ on branch changes",
+        "Archive .clai/ files, progress logs, and generated code",
+        "Tight git branch integration for feature isolation",
+        "Archive restoration and browsing capabilities",
+        "Configurable archive cleanup and compression",
+        "Typecheck passes"
+      ],
+      "passes": false,
+      "priority": "medium",
+      "phase": "Phase 2",
+      "created": "2025-01-10T17:30:00.000Z",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "id": "US-009",
+      "title": "Implement Parallel Command Execution Within Tasks",
+      "description": "As a sub-agent, I want to execute multiple shell commands in parallel within a single task so that development operations complete faster.",
+      "acceptanceCriteria": [
+        "Support for parallel command execution using goroutines and exec.Cmd",
+        "Command dependency management using errgroup for coordination",
+        "Context-based cancellation for failure handling",
+        "Resource monitoring to prevent command conflicts",
+        "Parallel execution results aggregation",
+        "Typecheck passes"
+      ],
+      "passes": false,
+      "priority": "low",
+      "phase": "Phase 3",
+      "created": "2025-01-10T17:30:00.000Z",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "id": "US-010",
+      "title": "Implement Parallel Task Execution with Memory Management",
+      "description": "As a system, I want to run multiple CLAI tasks simultaneously so that development speed is maximized without memory exhaustion.",
+      "acceptanceCriteria": [
+        "Memory usage monitoring per goroutine",
+        "Dynamic task spawning based on available RAM",
+        "LLM server sharing between goroutines",
+        "Task priority queuing for resource management",
+        "Memory cleanup and optimization between iterations",
+        "Typecheck passes"
+      ],
+      "passes": false,
+      "priority": "low",
+      "phase": "Phase 5",
+      "created": "2025-01-10T17:30:00.000Z",
+      "updated": "2025-01-10T17:30:00.000Z"
+    }
+  ],
+  "completed": 1,
+  "total": 10,
+  "currentIteration": 1,
+  "startTime": "2026-01-11T00:36:58.907Z",
+  "lastUpdate": "2026-01-11T01:00:00.000Z"
+}
