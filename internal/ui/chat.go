@@ -77,11 +77,8 @@ func (c *ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 		}
 	}
 
-	shouldAutoScroll := c.AutoScroll && !c.UserScrolled && c.ContentDirty
-	// Also auto-scroll during streaming to keep latest content visible
-	shouldAutoScroll = shouldAutoScroll || (c.AutoScroll && !c.UserScrolled && c.Streaming)
-
 	c.rebuildContentIfDirty()
+	shouldAutoScroll := c.AutoScroll && !c.UserScrolled && c.ContentDirty
 	c.updateViewportHeight()
 
 	// Auto-scroll after viewport height is finalized
@@ -103,7 +100,56 @@ func (c *ChatModel) rebuildContentIfDirty() {
 	maxBubbleWidth := int(float64(c.Width) * 0.95)
 
 	for i, msg := range c.Messages {
-		rendered := c.renderMessage(msg, maxBubbleWidth, themeStyles)
+		var rendered string
+		switch msg.Role {
+		case "user":
+			userInnerWidth := maxBubbleWidth - themeStyles.UserMessage.GetHorizontalFrameSize()
+			wrapperStyle := lipgloss.NewStyle().
+				Width(userInnerWidth).
+				Background(lipgloss.Color(c.Theme.Theme.Primary.Background))
+			wrappedContent := wrapperStyle.Render(msg.Content)
+			bubble := themeStyles.UserMessage.Render(wrappedContent)
+			// Pad each line to full chat width with background
+			rendered = c.padLinesToWidth(bubble, c.Width)
+		case "assistant":
+			assistantInnerWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
+			cleanedContent := llm.StripTextBasedFunctionCalls(msg.Content)
+			contentWithHighlighting := llm.RenderWithSyntaxHighlighting(cleanedContent, assistantInnerWidth, themeStyles.CodeBlockBadge, themeStyles.CodeBlockContainer)
+			paddedContent := contentWithHighlighting
+			bubble := themeStyles.AssistantMessage.Render(paddedContent)
+			// Pad each line to full chat width with background
+			rendered = c.padLinesToWidth(bubble, c.Width)
+		case "tool":
+			toolInnerWidth := maxBubbleWidth - themeStyles.ToolMessage.GetHorizontalFrameSize()
+			cleanContent := ansiRegex.ReplaceAllString(msg.Content, "")
+			languageIcon := "⚙️"
+			header := "Execution Result"
+			if strings.Contains(cleanContent, "code block") && strings.Contains(cleanContent, "executed") {
+				header = "Code Execution Complete"
+				if strings.Contains(cleanContent, "(bash)") || strings.Contains(strings.ToLower(cleanContent), "bash") {
+					languageIcon = "🐚"
+				} else if strings.Contains(strings.ToLower(cleanContent), "python") {
+					languageIcon = "🐍"
+				} else if strings.Contains(strings.ToLower(cleanContent), "javascript") || strings.Contains(strings.ToLower(cleanContent), "node") {
+					languageIcon = "📜"
+				}
+			}
+			displayContent := cleanContent
+			const maxToolOutputLength = 1000
+			if len(displayContent) > maxToolOutputLength {
+				displayContent = displayContent[:maxToolOutputLength] + "\n... (output truncated)"
+			}
+			toolHeader := themeStyles.ToolBadge.Render(languageIcon + " " + header)
+			wrapperStyle := lipgloss.NewStyle().
+				Width(toolInnerWidth).
+				Background(lipgloss.Color(c.Theme.Theme.Dim.Black))
+			wrappedContent := wrapperStyle.Render(displayContent)
+			bubble := themeStyles.ToolMessage.Render(toolHeader + "\n" + wrappedContent)
+			// Pad each line to full chat width with background
+			rendered = c.padLinesToWidth(bubble, c.Width)
+		default:
+			rendered = msg.Content
+		}
 		chatContent += rendered
 		if i < len(c.Messages)-1 {
 			chatContent += "\n"
@@ -153,60 +199,6 @@ func (c *ChatModel) updateViewportHeight() {
 	}
 }
 
-func (c *ChatModel) renderMessage(msg llm.Message, maxBubbleWidth int, themeStyles ThemeStyles) string {
-	var bubbleStyle lipgloss.Style
-	var innerWidth int
-	var processedContent string
-	var wrapperBg lipgloss.Color
-
-	switch msg.Role {
-	case "user":
-		bubbleStyle = themeStyles.UserMessage
-		innerWidth = maxBubbleWidth - bubbleStyle.GetHorizontalFrameSize()
-		processedContent = msg.Content
-		wrapperBg = lipgloss.Color(c.Theme.Theme.Primary.Background)
-	case "assistant":
-		bubbleStyle = themeStyles.AssistantMessage
-		innerWidth = maxBubbleWidth - bubbleStyle.GetHorizontalFrameSize()
-		cleanedContent := llm.StripTextBasedFunctionCalls(msg.Content)
-		processedContent = llm.RenderWithSyntaxHighlighting(cleanedContent, innerWidth, themeStyles.CodeBlockBadge, themeStyles.CodeBlockContainer)
-		wrapperBg = lipgloss.Color(c.Theme.Theme.Primary.Background)
-	case "tool":
-		bubbleStyle = themeStyles.ToolMessage
-		innerWidth = maxBubbleWidth - bubbleStyle.GetHorizontalFrameSize()
-		cleanContent := ansiRegex.ReplaceAllString(msg.Content, "")
-		languageIcon := "⚙️"
-		header := "Execution Result"
-		if strings.Contains(cleanContent, "code block") && strings.Contains(cleanContent, "executed") {
-			header = "Code Execution Complete"
-			if strings.Contains(cleanContent, "(bash)") || strings.Contains(strings.ToLower(cleanContent), "bash") {
-				languageIcon = "🐚"
-			} else if strings.Contains(strings.ToLower(cleanContent), "python") {
-				languageIcon = "🐍"
-			} else if strings.Contains(strings.ToLower(cleanContent), "javascript") || strings.Contains(strings.ToLower(cleanContent), "node") {
-				languageIcon = "📜"
-			}
-		}
-		displayContent := cleanContent
-		const maxToolOutputLength = 1000
-		if len(displayContent) > maxToolOutputLength {
-			displayContent = displayContent[:maxToolOutputLength] + "\n... (output truncated)"
-		}
-		toolHeader := themeStyles.ToolBadge.Render(languageIcon + " " + header)
-		processedContent = toolHeader + "\n" + displayContent
-		wrapperBg = lipgloss.Color(c.Theme.Theme.Dim.Black)
-	default:
-		return msg.Content
-	}
-
-	wrapperStyle := lipgloss.NewStyle().
-		Width(innerWidth).
-		Background(wrapperBg)
-	wrappedContent := wrapperStyle.Render(processedContent)
-	bubble := bubbleStyle.Render(wrappedContent)
-	return c.padLinesToWidth(bubble, c.Width)
-}
-
 func (c *ChatModel) padLinesToWidth(content string, width int) string {
 	bg := lipgloss.Color(c.Theme.Theme.Primary.Background)
 	bgStyle := lipgloss.NewStyle().Background(bg)
@@ -227,7 +219,7 @@ func (c *ChatModel) View() string {
 	c.rebuildContentIfDirty()
 
 	themeStyles := GetThemeStyles(c.Theme)
-	inputStyle := lipgloss.NewStyle().Background(lipgloss.Color(c.Theme.Theme.Primary.Background))
+	inputStyle := lipgloss.NewStyle()
 	if c.TextInput.Focused() {
 		inputStyle = inputStyle.Border(lipgloss.RoundedBorder(), true).BorderForeground(lipgloss.Color(c.Theme.Theme.Bright.Yellow))
 	}

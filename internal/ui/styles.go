@@ -13,13 +13,6 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// Theme represents a complete theme definition with glitter UI and Glamour style
-type Theme struct {
-	Name         string
-	GlitterUI    *glitter.UI
-	GlamourStyle string
-}
-
 // Custom theme definitions with vibrant colors
 var DraculaTheme = theme.Theme{
 	Primary: theme.Primary{
@@ -250,14 +243,32 @@ var TokyoNightTheme256 = theme.Theme{
 	},
 }
 
-// ThemeRegistry is the central registry of all available themes
-var ThemeRegistry = []Theme{
-	{Name: "Dracula", GlitterUI: glitter.NewUI(DraculaTheme), GlamourStyle: "dark"},
-	{Name: "Tokyo Night", GlitterUI: glitter.NewUI(TokyoNightTheme), GlamourStyle: "dark"},
-	{Name: "Catppuccin", GlitterUI: glitter.NewUI(CatppuccinTheme), GlamourStyle: "dark"},
-	{Name: "Solarized Dark", GlitterUI: glitter.NewUI(SolarizedDarkTheme), GlamourStyle: "dark"},
-	{Name: "Dracula 256", GlitterUI: glitter.NewUI(DraculaTheme256), GlamourStyle: "dark"},
-	{Name: "Tokyo Night 256", GlitterUI: glitter.NewUI(TokyoNightTheme256), GlamourStyle: "dark"},
+// AvailableThemes provides a list of custom vibrant themes
+var AvailableThemes = []*glitter.UI{
+	glitter.NewUI(DraculaTheme),
+	glitter.NewUI(TokyoNightTheme),
+	glitter.NewUI(CatppuccinTheme),
+	glitter.NewUI(SolarizedDarkTheme),
+}
+
+// AvailableThemes256 provides 256-color compatible themes for remote terminals
+var AvailableThemes256 = []*glitter.UI{
+	glitter.NewUI(DraculaTheme256),
+	glitter.NewUI(TokyoNightTheme256),
+}
+
+// ThemeNames provides human-readable names for the themes
+var ThemeNames = []string{
+	"Dracula",
+	"Tokyo Night",
+	"Catppuccin",
+	"Solarized Dark",
+}
+
+// ThemeNames256 provides human-readable names for the 256-color themes
+var ThemeNames256 = []string{
+	"Dracula 256",
+	"Tokyo Night 256",
 }
 
 // HasTrueColor checks if terminal supports true color (16M colors)
@@ -333,67 +344,20 @@ func GetAvailableThemes() []*glitter.UI {
 
 	logger(fmt.Sprintf("TERM=%s, COLORTERM=%s, TERM_PROGRAM=%s, HasTrueColor=%v", term, colorterm, termProgram, hasTrueColor))
 
-	var themes []*glitter.UI
-	for _, theme := range ThemeRegistry {
-		if hasTrueColor && !strings.HasSuffix(theme.Name, "256") {
-			themes = append(themes, theme.GlitterUI)
-		} else if !hasTrueColor && strings.HasSuffix(theme.Name, "256") {
-			themes = append(themes, theme.GlitterUI)
-		}
-	}
-
 	if hasTrueColor {
 		logger("Using true color themes")
-	} else {
-		logger("Using 256-color themes")
+		return AvailableThemes
 	}
-
-	return themes
+	logger("Using 256-color themes")
+	return AvailableThemes256
 }
 
 // GetAvailableThemeNames returns the appropriate theme name set based on terminal color support
 func GetAvailableThemeNames() []string {
-	hasTrueColor := HasTrueColor()
-
-	var names []string
-	for _, theme := range ThemeRegistry {
-		if hasTrueColor && !strings.HasSuffix(theme.Name, "256") {
-			names = append(names, theme.Name)
-		} else if !hasTrueColor && strings.HasSuffix(theme.Name, "256") {
-			names = append(names, theme.Name)
-		}
+	if HasTrueColor() {
+		return ThemeNames
 	}
-
-	return names
-}
-
-// GetThemeByName returns a theme by name with validation
-func GetThemeByName(name string) (*Theme, error) {
-	for _, theme := range ThemeRegistry {
-		if theme.Name == name {
-			return &theme, nil
-		}
-	}
-	return nil, fmt.Errorf("theme '%s' not found", name)
-}
-
-// ListThemes returns all available theme names
-func ListThemes() []string {
-	var names []string
-	for _, theme := range ThemeRegistry {
-		names = append(names, theme.Name)
-	}
-	return names
-}
-
-// GetGlamourStyle returns the Glamour style name for a given glitter UI
-func GetGlamourStyle(ui *glitter.UI) string {
-	for _, theme := range ThemeRegistry {
-		if theme.GlitterUI == ui {
-			return theme.GlamourStyle
-		}
-	}
-	return "dark" // fallback
+	return ThemeNames256
 }
 
 // GetThemeStyles returns lipgloss styles compatible with the current glitter theme
@@ -428,9 +392,9 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 		AssistantMessage: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Green)).
-			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
-			Padding(0, 1).
-			Bold(true),
+			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)).
+			Padding(0, 1),
 
 		ToolMessage: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -454,7 +418,7 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 		CodeBlockContainer: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Magenta)).
-			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			Background(lipgloss.Color(ui.Theme.Dim.Black)).
 			Padding(0, 1).
 			MarginTop(1).
 			MarginBottom(1),
