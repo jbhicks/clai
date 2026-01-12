@@ -183,6 +183,9 @@ func TailLogFileCmd(m *Model) tea.Cmd {
 }
 
 func tailLogFile(logChan chan<- tea.Msg, done <-chan struct{}) {
+	// Truncate debug.log on startup to avoid reading old content
+	os.WriteFile("debug.log", []byte{}, 0644)
+
 	f, err := os.Open("debug.log")
 	if err == nil {
 		scanner := bufio.NewScanner(f)
@@ -831,6 +834,11 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 			m.Chat.ContentDirty = true
 			m.Chat.AutoScroll = true
 			m.Chat.UserScrolled = false
+
+			// Manually trigger scrolling since debug commands bypass chat.Update()
+			if m.Chat.AutoScroll && !m.Chat.UserScrolled && m.Chat.ContentDirty {
+				m.Chat.Viewport.GotoBottom()
+			}
 
 			if role == "user" {
 				m.Chat.QueryHistory = append(m.Chat.QueryHistory, content)
