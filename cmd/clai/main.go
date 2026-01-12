@@ -135,17 +135,20 @@ func main() {
 		}
 	}
 
+	availableThemes := ui.GetAvailableThemes()
+	theme := availableThemes[0]
+
 	chatInput := textinput.New()
 	chatInput.Prompt = "> "
 	chatInput.Placeholder = "Type your message..."
-	chatInput.Focus()
 	chatInput.CharLimit = 256
 	chatInput.Width = 40
 	chatInput.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFAA")).Bold(true).Underline(true)
+	chatInput.TextStyle = lipgloss.NewStyle().Background(lipgloss.Color(theme.Theme.Primary.Background))
+	chatInput.Focus()
+
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
-	availableThemes := ui.GetAvailableThemes()
-	theme := availableThemes[0]
 	helpModel := help.New()
 	helpModel.ShowAll = false
 	helpModel.Styles.FullKey = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.Foreground))

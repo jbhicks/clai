@@ -3,32 +3,44 @@ dev:
 		echo "Error: tmux is not installed."; \
 		exit 1; \
 	fi
-	@if tmux has-session -t clai_dev 2>/dev/null; then \
-		echo "Existing clai_dev session found. Killing it..."; \
-		tmux kill-session -t clai_dev 2>/dev/null; \
+	@if ! command -v inotifywait >/dev/null 2>&1; then \
+		echo "Error: inotifywait not installed."; \
+		echo "Install with: sudo apt-get install inotify-tools"; \
+		exit 1; \
 	fi
-	@echo "Starting CLAI in tmux..."
-	@echo "Note: After making code changes, press Ctrl+C then Up+Enter to rebuild"
-	@echo ""
+	@echo "Cleaning up any existing CLAI processes..."
+	@for pid in $$(ps aux | grep "[g]o run ./cmd/clai" | awk '{print $$2}'); do \
+		kill -9 $$pid 2>/dev/null || true; \
+	done
+	@for pid in $$(ps aux | grep "[d]ev_watch.sh" | awk '{print $$2}'); do \
+		kill -9 $$pid 2>/dev/null || true; \
+	done
+	@for pid in $$(ps aux | grep "/clai" | grep -v "make" | grep -v "grep" | awk '{print $$2}'); do \
+		kill -9 $$pid 2>/dev/null || true; \
+	done
+	@tmux kill-session -t clai_dev 2>/dev/null || true
+	@sleep 0.5
 	@truncate -s 0 debug.log
-	@tmux new-session -d -s clai_dev -x $$(tput cols) -y $$(tput lines) 'clear && TERM=xterm-256color go run ./cmd/clai'
-	@echo "✓ tmux session 'clai_dev' started"
+	@tmux new-session -d -P -s clai_dev -x 120 -y 40 'clear && TERM=xterm-256color bash -c "while true; do go run ./cmd/clai; echo '\''CLAI exited, restarting in 2 seconds...'\''; sleep 2; done"'
+	@echo "✓ tmux session 'clai_dev' started with auto-reload (120x40)"
 	@echo ""
-	@echo "Controls:"
-	@echo "  Ctrl+b then d - Detach"
-	@echo "  Ctrl+C then up-arrow + enter - Rebuild and restart"
+	@echo "Trying to attach to tmux session..."
+	@-tmux attach -t clai_dev 2>/dev/null || echo "Could not attach automatically (not in interactive terminal)"
 	@echo ""
-	@if [ -z "$$TMUX" ]; then \
-		echo "Attaching to tmux session..."; \
-		tmux attach -t clai_dev; \
-	else \
-		echo "Already in tmux. Attach with: tmux attach -t clai_dev"; \
-	fi
+	@echo "Manual controls:"
+	@echo "  tmux attach -t clai_dev   # Attach to session"
+	@echo "  Ctrl+b then d              # Detach"
+	@echo "  Ctrl+C                     # Stop"
+	@echo ""
+	@echo "Alternative: ./dev.sh       # Run directly (blocks terminal)"
 
 dev-clean:
 	@echo "Cleaning up old development processes..."
 	@pkill -f "inotifywait.*clai" 2>/dev/null || echo "No inotifywait processes found"
 	@pkill -f "dev\.sh" 2>/dev/null || echo "No dev.sh processes found"
+	@for pid in $$(ps aux | grep "/clai" | grep -v "make" | grep -v "grep" | awk '{print $$2}'); do \
+		kill -9 $$pid 2>/dev/null || true; \
+	done
 	@for session in $$(tmux ls -F "#{session_name}" 2>/dev/null | grep "^clai_dev" | head -10 || true); do \
 		echo "Killing tmux session: $$session"; \
 		tmux kill-session -t "$$session" 2>/dev/null || true; \
