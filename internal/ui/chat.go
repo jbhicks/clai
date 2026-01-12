@@ -110,7 +110,7 @@ func (c *ChatModel) rebuildContentIfDirty() {
 			wrappedContent := wrapperStyle.Render(msg.Content)
 			bubble := themeStyles.UserMessage.Render(wrappedContent)
 			// Pad each line to full chat width with background
-			rendered = c.padLinesToWidth(bubble, c.Width)
+			rendered = c.padLinesToWidth(bubble, c.Width, lipgloss.Color(c.Theme.Theme.Primary.Background))
 		case "assistant":
 			assistantInnerWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
 			cleanedContent := llm.StripTextBasedFunctionCalls(msg.Content)
@@ -118,7 +118,7 @@ func (c *ChatModel) rebuildContentIfDirty() {
 			paddedContent := contentWithHighlighting
 			bubble := themeStyles.AssistantMessage.Render(paddedContent)
 			// Pad each line to full chat width with background
-			rendered = c.padLinesToWidth(bubble, c.Width)
+			rendered = c.padLinesToWidth(bubble, c.Width, lipgloss.Color(c.Theme.Theme.Primary.Background))
 		case "tool":
 			toolInnerWidth := maxBubbleWidth - themeStyles.ToolMessage.GetHorizontalFrameSize()
 			cleanContent := ansiRegex.ReplaceAllString(msg.Content, "")
@@ -146,7 +146,7 @@ func (c *ChatModel) rebuildContentIfDirty() {
 			wrappedContent := wrapperStyle.Render(displayContent)
 			bubble := themeStyles.ToolMessage.Render(toolHeader + "\n" + wrappedContent)
 			// Pad each line to full chat width with background
-			rendered = c.padLinesToWidth(bubble, c.Width)
+			rendered = c.padLinesToWidth(bubble, c.Width, lipgloss.Color(c.Theme.Theme.Dim.Black))
 		default:
 			rendered = msg.Content
 		}
@@ -199,9 +199,8 @@ func (c *ChatModel) updateViewportHeight() {
 	}
 }
 
-func (c *ChatModel) padLinesToWidth(content string, width int) string {
-	bg := lipgloss.Color(c.Theme.Theme.Primary.Background)
-	bgStyle := lipgloss.NewStyle().Background(bg)
+func (c *ChatModel) padLinesToWidth(content string, width int, bgColor lipgloss.Color) string {
+	bgStyle := lipgloss.NewStyle().Background(bgColor)
 	lines := strings.Split(content, "\n")
 
 	for i, line := range lines {
@@ -211,6 +210,7 @@ func (c *ChatModel) padLinesToWidth(content string, width int) string {
 			padding := width - lineWidth
 			lines[i] = line + bgStyle.Render(strings.Repeat(" ", padding))
 		}
+		// If lineWidth >= width, don't pad (line is already wide enough or wider)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -219,7 +219,8 @@ func (c *ChatModel) View() string {
 	c.rebuildContentIfDirty()
 
 	themeStyles := GetThemeStyles(c.Theme)
-	inputStyle := lipgloss.NewStyle()
+	inputStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color(c.Theme.Theme.Primary.Background))
 	if c.TextInput.Focused() {
 		inputStyle = inputStyle.Border(lipgloss.RoundedBorder(), true).BorderForeground(lipgloss.Color(c.Theme.Theme.Bright.Yellow))
 	}
