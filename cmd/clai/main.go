@@ -143,8 +143,11 @@ func main() {
 	chatInput.Placeholder = "Type your message..."
 	chatInput.CharLimit = 256
 	chatInput.Width = 40
-	chatInput.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFAA")).Bold(true).Underline(true)
-	chatInput.TextStyle = lipgloss.NewStyle().Background(lipgloss.Color(theme.Theme.Primary.Background))
+	bgColor := lipgloss.Color(theme.Theme.Primary.Background)
+	chatInput.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFAA")).Bold(true).Underline(true).Background(bgColor)
+	chatInput.TextStyle = lipgloss.NewStyle().Background(bgColor)
+	chatInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground)).Background(bgColor)
+	chatInput.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Bright.Yellow)).Background(bgColor)
 	chatInput.Focus()
 
 	spin := spinner.New()
