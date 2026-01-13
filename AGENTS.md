@@ -219,6 +219,25 @@ c.updateViewportHeight()  // Actually called
 
 8. **Nested Borders**: Apply borders AFTER joining, not before. Account for single border in height calculations.
 
+9. **Background Transparency Prevention**:
+   - **Problem**: Border characters (especially rounded borders like `╭╮╰╯`) don't automatically fill their rendered area with background color, causing transparent gaps that show through to content behind
+   - **Solution**: Apply background at multiple layers:
+     ```go
+     // Inner layer: Component-level styling
+     chatInput.TextStyle = lipgloss.NewStyle().Background(bgColor)
+     chatInput.Cursor.Style = lipgloss.NewStyle().Background(bgColor)
+     chatInput.PlaceholderStyle = lipgloss.NewStyle().Background(bgColor)
+     chatInput.PromptStyle = lipgloss.NewStyle().Background(bgColor)
+
+     // Outer layer: Lipgloss wrapper style
+     InputFocused: lipgloss.NewStyle().
+         Background(lipgloss.Color(bgColor)).
+         Border(lipgloss.NormalBorder()).  // Use solid over rounded
+         Padding(0, 1)  // Add padding to fill gaps
+     ```
+   - **Always wrap with background**: Ensure background wrapper is applied regardless of content width to guarantee full coverage
+   - **Prefer solid borders**: Normal borders are more reliable than rounded corners for background coverage
+
 **Common Pitfalls:**
 - Using `style.GetHeight()` for padded styles (returns 0)
 - Setting `.Width()` on styles with borders/padding (double-counts)

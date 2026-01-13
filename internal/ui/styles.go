@@ -243,32 +243,52 @@ var TokyoNightTheme256 = theme.Theme{
 	},
 }
 
-// AvailableThemes provides a list of custom vibrant themes
-var AvailableThemes = []*glitter.UI{
-	glitter.NewUI(DraculaTheme),
-	glitter.NewUI(TokyoNightTheme),
-	glitter.NewUI(CatppuccinTheme),
-	glitter.NewUI(SolarizedDarkTheme),
+// Theme represents a complete theme configuration
+type Theme struct {
+	Name         string      // Human-readable name
+	GlitterUI    *glitter.UI // Glitter UI instance
+	GlamourStyle string      // Glamour style name for markdown rendering
+	Is256Color   bool        // Whether this is a 256-color theme
 }
 
-// AvailableThemes256 provides 256-color compatible themes for remote terminals
-var AvailableThemes256 = []*glitter.UI{
-	glitter.NewUI(DraculaTheme256),
-	glitter.NewUI(TokyoNightTheme256),
-}
-
-// ThemeNames provides human-readable names for the themes
-var ThemeNames = []string{
-	"Dracula",
-	"Tokyo Night",
-	"Catppuccin",
-	"Solarized Dark",
-}
-
-// ThemeNames256 provides human-readable names for the 256-color themes
-var ThemeNames256 = []string{
-	"Dracula 256",
-	"Tokyo Night 256",
+// ThemeRegistry is the central registry of all available themes
+var ThemeRegistry = []Theme{
+	{
+		Name:         "Dracula",
+		GlitterUI:    glitter.NewUI(DraculaTheme),
+		GlamourStyle: "dark",
+		Is256Color:   false,
+	},
+	{
+		Name:         "Tokyo Night",
+		GlitterUI:    glitter.NewUI(TokyoNightTheme),
+		GlamourStyle: "dark",
+		Is256Color:   false,
+	},
+	{
+		Name:         "Catppuccin",
+		GlitterUI:    glitter.NewUI(CatppuccinTheme),
+		GlamourStyle: "dark",
+		Is256Color:   false,
+	},
+	{
+		Name:         "Solarized Dark",
+		GlitterUI:    glitter.NewUI(SolarizedDarkTheme),
+		GlamourStyle: "dark",
+		Is256Color:   false,
+	},
+	{
+		Name:         "Dracula 256",
+		GlitterUI:    glitter.NewUI(DraculaTheme256),
+		GlamourStyle: "dark",
+		Is256Color:   true,
+	},
+	{
+		Name:         "Tokyo Night 256",
+		GlitterUI:    glitter.NewUI(TokyoNightTheme256),
+		GlamourStyle: "dark",
+		Is256Color:   true,
+	},
 }
 
 // HasTrueColor checks if terminal supports true color (16M colors)
@@ -327,37 +347,61 @@ func HasTrueColor() bool {
 // GetAvailableThemes returns the appropriate theme set based on terminal color support
 func GetAvailableThemes() []*glitter.UI {
 	hasTrueColor := HasTrueColor()
+	var themes []*glitter.UI
 
-	// Debug logging for color detection
-	term := os.Getenv("TERM")
-	colorterm := os.Getenv("COLORTERM")
-	termProgram := os.Getenv("TERM_PROGRAM")
-
-	// Log to debug file for troubleshooting
-	logger := func(msg string) {
-		// Simple logging without importing logger package to avoid circular dependency
-		if f, err := os.OpenFile("debug.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644); err == nil {
-			fmt.Fprintf(f, "[COLOR-DETECT] %s\n", msg)
-			f.Close()
+	for _, theme := range ThemeRegistry {
+		if hasTrueColor && !theme.Is256Color {
+			themes = append(themes, theme.GlitterUI)
+		} else if !hasTrueColor && theme.Is256Color {
+			themes = append(themes, theme.GlitterUI)
 		}
 	}
 
-	logger(fmt.Sprintf("TERM=%s, COLORTERM=%s, TERM_PROGRAM=%s, HasTrueColor=%v", term, colorterm, termProgram, hasTrueColor))
-
-	if hasTrueColor {
-		logger("Using true color themes")
-		return AvailableThemes
-	}
-	logger("Using 256-color themes")
-	return AvailableThemes256
+	return themes
 }
 
 // GetAvailableThemeNames returns the appropriate theme name set based on terminal color support
 func GetAvailableThemeNames() []string {
-	if HasTrueColor() {
-		return ThemeNames
+	hasTrueColor := HasTrueColor()
+	var names []string
+
+	for _, theme := range ThemeRegistry {
+		if hasTrueColor && !theme.Is256Color {
+			names = append(names, theme.Name)
+		} else if !hasTrueColor && theme.Is256Color {
+			names = append(names, theme.Name)
+		}
 	}
-	return ThemeNames256
+
+	return names
+}
+
+// GetThemeByName finds a theme by name with validation
+func GetThemeByName(name string) (*Theme, error) {
+	for _, theme := range ThemeRegistry {
+		if theme.Name == name {
+			return &theme, nil
+		}
+	}
+	return nil, fmt.Errorf("theme '%s' not found", name)
+}
+
+// ListThemes returns all available theme names
+func ListThemes() []string {
+	var names []string
+	for _, theme := range ThemeRegistry {
+		names = append(names, theme.Name)
+	}
+	return names
+}
+
+// GetThemeGlamourStyle returns the Glamour style name for a given theme name
+func GetThemeGlamourStyle(themeName string) (string, error) {
+	theme, err := GetThemeByName(themeName)
+	if err != nil {
+		return "", err
+	}
+	return theme.GlamourStyle, nil
 }
 
 // GetThemeStyles returns lipgloss styles compatible with the current glitter theme
@@ -369,6 +413,11 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 		lipgloss.SetColorProfile(termenv.ANSI256)
 	}
 
+	// Base style for all message bubbles - common properties shared across message types
+	baseMessageStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Padding(0, 1)
+
 	return ThemeStyles{
 		MainPane: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -379,30 +428,24 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 		StatusBar: lipgloss.NewStyle().
 			Background(lipgloss.Color(ui.Theme.Primary.Background)).
 			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)).
-			Bold(true).
-			Padding(0, 1),
-
-		UserMessage: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(ui.Theme.Bright.Blue)).
-			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
-			Padding(0, 1).
 			Bold(true),
 
-		AssistantMessage: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+		UserMessage: baseMessageStyle.
+			BorderForeground(lipgloss.Color(ui.Theme.Bright.Blue)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
+			Bold(true),
+
+		AssistantMessage: baseMessageStyle.
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Green)).
 			Background(lipgloss.Color(ui.Theme.Primary.Background)).
-			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)).
-			Padding(0, 1),
+			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)),
 
-		ToolMessage: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+		ToolMessage: baseMessageStyle.
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Blue)).
-			Background(lipgloss.Color(ui.Theme.Dim.Black)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)).
 			Foreground(lipgloss.Color(ui.Theme.Dim.White)).
-			Italic(true).
-			Padding(0, 1),
+			Italic(true),
 
 		ToolBadge: lipgloss.NewStyle().
 			Background(lipgloss.Color(ui.Theme.Bright.Blue)).
@@ -429,6 +472,51 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 			Padding(0, 1).
 			Align(lipgloss.Center).
 			Bold(true),
+
+		InputFocused: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			Border(lipgloss.NormalBorder(), true).
+			BorderForeground(lipgloss.Color(ui.Theme.Bright.Yellow)).
+			Padding(0, 1),
+
+		InputUnfocused: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Primary.Background)),
+
+		Tooltip: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Bright.Blue)).
+			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
+			Padding(0, 1),
+
+		BackgroundWrapper: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			Align(lipgloss.Left),
+
+		ActionCompleted: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ui.Theme.Bright.Green)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)),
+
+		ActionFailed: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ui.Theme.Bright.Red)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)),
+
+		ActionInProgress: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ui.Theme.Bright.Yellow)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)),
+
+		HelpBox: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			Padding(1, 2).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
+			Align(lipgloss.Center),
+
+		LogDim: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ui.Theme.Primary.DimForeground)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)),
+
+		LogValue: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)),
 	}
 }
 
@@ -443,4 +531,17 @@ type ThemeStyles struct {
 	CodeBlockBadge     lipgloss.Style
 	CodeBlockContainer lipgloss.Style
 	ScrollIndicator    lipgloss.Style
+	InputFocused       lipgloss.Style
+	InputUnfocused     lipgloss.Style
+	Tooltip            lipgloss.Style
+	BackgroundWrapper  lipgloss.Style
+	ActionCompleted    lipgloss.Style
+	ActionFailed       lipgloss.Style
+	ActionInProgress   lipgloss.Style
+	HelpBox            lipgloss.Style
+	LogDim             lipgloss.Style
+	LogValue           lipgloss.Style
 }
+
+// test comment
+// test

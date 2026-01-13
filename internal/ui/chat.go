@@ -78,13 +78,17 @@ func (c *ChatModel) Update(msg tea.Msg) (ChatModel, tea.Cmd) {
 	}
 
 	c.rebuildContentIfDirty()
-	shouldAutoScroll := c.AutoScroll && !c.UserScrolled && c.ContentDirty
-	c.updateViewportHeight()
+	// Rebuild content before auto-scrolling to ensure TotalLineCount() is accurate
+	if c.ContentDirty {
+		c.rebuildContentIfDirty()
+	}
 
-	// Auto-scroll after viewport height is finalized
+	shouldAutoScroll := c.AutoScroll && !c.UserScrolled
 	if shouldAutoScroll {
 		c.Viewport.GotoBottom()
 	}
+
+	c.updateViewportHeight()
 
 	return *c, tea.Batch(cmds...)
 }
@@ -97,30 +101,26 @@ func (c *ChatModel) rebuildContentIfDirty() {
 	themeStyles := GetThemeStyles(c.Theme)
 	logger.Debug("[CHAT] Rendering %d messages, c.Width=%d", len(c.Messages), c.Width)
 	chatContent := ""
-	maxBubbleWidth := int(float64(c.Width) * 0.95)
 
 	for i, msg := range c.Messages {
 		var rendered string
 		switch msg.Role {
 		case "user":
-			userInnerWidth := maxBubbleWidth - themeStyles.UserMessage.GetHorizontalFrameSize()
-			wrapperStyle := lipgloss.NewStyle().
-				Width(userInnerWidth).
-				Background(lipgloss.Color(c.Theme.Theme.Primary.Background))
-			wrappedContent := wrapperStyle.Render(msg.Content)
-			bubble := themeStyles.UserMessage.Render(wrappedContent)
-			// Pad each line to full chat width with background
-			rendered = c.padLinesToWidth(bubble, c.Width, lipgloss.Color(c.Theme.Theme.Primary.Background))
+			// Width() on bordered styles gives Width + 2, so subtract 2 to get desired total width
+			bubbleWidth := c.Width - 2
+			wrappedContent := msg.Content
+			bubble := themeStyles.UserMessage.Width(bubbleWidth).Render(wrappedContent)
+			// Pad each line to full chat width
+			rendered = c.padLinesToWidth(bubble, c.Width)
 		case "assistant":
-			assistantInnerWidth := maxBubbleWidth - themeStyles.AssistantMessage.GetHorizontalFrameSize()
+			bubbleWidth := c.Width - 2
 			cleanedContent := llm.StripTextBasedFunctionCalls(msg.Content)
-			contentWithHighlighting := llm.RenderWithSyntaxHighlighting(cleanedContent, assistantInnerWidth, themeStyles.CodeBlockBadge, themeStyles.CodeBlockContainer)
-			paddedContent := contentWithHighlighting
-			bubble := themeStyles.AssistantMessage.Render(paddedContent)
-			// Pad each line to full chat width with background
-			rendered = c.padLinesToWidth(bubble, c.Width, lipgloss.Color(c.Theme.Theme.Primary.Background))
+			contentWithHighlighting := llm.RenderWithSyntaxHighlighting(cleanedContent, bubbleWidth, themeStyles.CodeBlockBadge, themeStyles.CodeBlockContainer)
+			bubble := themeStyles.AssistantMessage.Width(bubbleWidth).Render(contentWithHighlighting)
+			// Pad each line to full chat width
+			rendered = c.padLinesToWidth(bubble, c.Width)
 		case "tool":
-			toolInnerWidth := maxBubbleWidth - themeStyles.ToolMessage.GetHorizontalFrameSize()
+			bubbleWidth := c.Width - 2
 			cleanContent := ansiRegex.ReplaceAllString(msg.Content, "")
 			languageIcon := "⚙️"
 			header := "Execution Result"
@@ -140,13 +140,9 @@ func (c *ChatModel) rebuildContentIfDirty() {
 				displayContent = displayContent[:maxToolOutputLength] + "\n... (output truncated)"
 			}
 			toolHeader := themeStyles.ToolBadge.Render(languageIcon + " " + header)
-			wrapperStyle := lipgloss.NewStyle().
-				Width(toolInnerWidth).
-				Background(lipgloss.Color(c.Theme.Theme.Dim.Black))
-			wrappedContent := wrapperStyle.Render(displayContent)
-			bubble := themeStyles.ToolMessage.Render(toolHeader + "\n" + wrappedContent)
-			// Pad each line to full chat width with background
-			rendered = c.padLinesToWidth(bubble, c.Width, lipgloss.Color(c.Theme.Theme.Dim.Black))
+			bubble := themeStyles.ToolMessage.Width(bubbleWidth).Render(toolHeader + "\n" + displayContent)
+			// Pad each line to full chat width
+			rendered = c.padLinesToWidth(bubble, c.Width)
 		default:
 			rendered = msg.Content
 		}
@@ -199,18 +195,15 @@ func (c *ChatModel) updateViewportHeight() {
 	}
 }
 
-func (c *ChatModel) padLinesToWidth(content string, width int, bgColor lipgloss.Color) string {
-	bgStyle := lipgloss.NewStyle().Background(bgColor)
+func (c *ChatModel) padLinesToWidth(content string, width int) string {
 	lines := strings.Split(content, "\n")
 
 	for i, line := range lines {
-		lineWidth := lipgloss.Width(line)
-		if lineWidth < width {
-			// Add background-colored spaces to fill the remaining width
-			padding := width - lineWidth
-			lines[i] = line + bgStyle.Render(strings.Repeat(" ", padding))
+		visualWidth := lipgloss.Width(line)
+		if visualWidth < width {
+			paddingNeeded := width - visualWidth
+			lines[i] = line + strings.Repeat(" ", paddingNeeded)
 		}
-		// If lineWidth >= width, don't pad (line is already wide enough or wider)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -219,53 +212,43 @@ func (c *ChatModel) View() string {
 	c.rebuildContentIfDirty()
 
 	themeStyles := GetThemeStyles(c.Theme)
-	inputStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color(c.Theme.Theme.Primary.Background))
+	inputStyle := themeStyles.InputUnfocused
 	if c.TextInput.Focused() {
-		inputStyle = inputStyle.Border(lipgloss.RoundedBorder(), true).BorderForeground(lipgloss.Color(c.Theme.Theme.Bright.Yellow))
+		inputStyle = themeStyles.InputFocused
 	}
 
 	scrollIndicator := ""
 	if c.Viewport.TotalLineCount() > 0 {
-		scrollPct := int(c.Viewport.ScrollPercent() * 100)
-		arrow := ""
 		if !c.Viewport.AtTop() && !c.Viewport.AtBottom() {
-			arrow = "↕"
-		} else if !c.Viewport.AtTop() {
-			arrow = "↑"
-		} else if !c.Viewport.AtBottom() {
-			arrow = "↓"
-		}
-		if arrow != "" {
-			scrollText := themeStyles.ScrollIndicator.Render(fmt.Sprintf(" %s %d%% ", arrow, scrollPct))
-			scrollWrapper := lipgloss.NewStyle().
-				Width(c.Width).
-				Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
-				Align(lipgloss.Center)
-			scrollIndicator = scrollWrapper.Render(scrollText)
+			scrollPct := int(c.Viewport.ScrollPercent() * 100)
+			arrow := ""
+			if !c.Viewport.AtTop() && !c.Viewport.AtBottom() {
+				arrow = "↕"
+			} else if !c.Viewport.AtTop() {
+				arrow = "↑"
+			} else if !c.Viewport.AtBottom() {
+				arrow = "↓"
+			}
+			if arrow != "" {
+				scrollText := themeStyles.ScrollIndicator.Render(fmt.Sprintf(" %s %d%% ", arrow, scrollPct))
+				scrollWrapper := themeStyles.BackgroundWrapper.Width(c.Width).Align(lipgloss.Center)
+				scrollIndicator = scrollWrapper.Render(scrollText)
+			}
 		}
 	}
 
 	spinnerView := ""
 	if c.Streaming {
 		spinnerText := c.Spinner.View() + " Generating..."
-		spinnerView = lipgloss.NewStyle().
-			Width(c.Width).
-			Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
-			Render(spinnerText)
+		spinnerView = themeStyles.BackgroundWrapper.Width(c.Width).Render(spinnerText)
 	}
 
 	inputFieldRendered := inputStyle.Render(c.TextInput.View())
-	if lipgloss.Width(inputFieldRendered) < c.Width {
-		inputWrapper := lipgloss.NewStyle().
-			Width(c.Width).
-			Background(lipgloss.Color(c.Theme.Theme.Primary.Background)).
-			Align(lipgloss.Left)
-		inputFieldRendered = inputWrapper.Render(inputFieldRendered)
-	}
+	inputWrapper := themeStyles.BackgroundWrapper.Width(c.Width).Align(lipgloss.Left)
+	inputFieldRendered = inputWrapper.Render(inputFieldRendered)
 
 	if !c.TextInput.Focused() {
-		tooltip := lipgloss.NewStyle().Background(lipgloss.Color(c.Theme.Theme.Bright.Blue)).Foreground(lipgloss.Color(c.Theme.Theme.Bright.White)).Padding(0, 1).Render("Ctrl+T: switch panes | Ctrl+H: help | Ctrl+D: theme | Ctrl+Q: quit")
+		tooltip := themeStyles.Tooltip.Render("Ctrl+T: switch panes | Ctrl+H: help | Ctrl+D: theme | Ctrl+Q: quit")
 		inputFieldRendered = lipgloss.JoinVertical(lipgloss.Left, inputFieldRendered, tooltip)
 	}
 
@@ -273,14 +256,8 @@ func (c *ChatModel) View() string {
 	var joined string
 	var parts []string
 
-	// Wrap viewport content with background (no explicit height to avoid overflow)
 	viewportContent := c.Viewport.View()
-	viewportWrapper := lipgloss.NewStyle().
-		Width(c.Width).
-		Background(lipgloss.Color(c.Theme.Theme.Primary.Background))
-	viewportContentFilled := viewportWrapper.Render(viewportContent)
-
-	parts = append(parts, viewportContentFilled)
+	parts = append(parts, viewportContent)
 	if scrollIndicator != "" {
 		parts = append(parts, scrollIndicator)
 	}
