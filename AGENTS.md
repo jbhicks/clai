@@ -150,6 +150,17 @@ When debugging Bubble Tea TUI rendering problems, layout issues, or terminal dim
 - Use Go doc comments for exported functions/types.
 - Prefer explicit types and avoid unnecessary complexity.
 
+## UI Corruption Prevention
+
+**CRITICAL**: To prevent the UI corruption issues experienced in recent commits (orphaned code blocks, incomplete expressions, duplicate calculations):
+
+- **Always run `go build ./cmd/clai` after changes to UI/layout code** - Verify compilation succeeds before committing. LSP diagnostics may show false positives.
+- **Remove orphaned code blocks immediately** - Code outside function bodies (e.g., after Init() but before Update()) can cause compilation errors and runtime corruption.
+- **Complete all expressions** - Missing parentheses, incomplete strings, or syntax errors in layout calculations (especially in handleWindowSizeMsg and View methods) will break rendering.
+- **Avoid duplicate calculations** - Ensure handleWindowSizeMsg and View() methods have consistent, non-duplicate dimension logic. Use constants for ratios (e.g., 0.6 for chat pane width).
+- **Test UI changes** - Use `clai debug inspect` to verify pane dimensions, viewport sizes, and overall layout after changes. Check for 0x0 dimensions or misaligned panes.
+- **Verify Bubble Tea calculations** - Frame sizes (GetHorizontalFrameSize/GetVerticalFrameSize) must be subtracted correctly from outer dimensions to get inner component sizes.
+
 ## UI Component Guidelines
 - Always use Charm Bubble components for all UI pieces.
 - Do not write custom UI components unless absolutely necessary (e.g., when no Bubble component exists for your use case).
