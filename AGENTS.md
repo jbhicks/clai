@@ -150,6 +150,30 @@ When debugging Bubble Tea TUI rendering problems, layout issues, or terminal dim
 - Use Go doc comments for exported functions/types.
 - Prefer explicit types and avoid unnecessary complexity.
 
+### Code Comment Accuracy
+
+**CRITICAL**: Code comments must accurately reflect implementation. Comments that state functions are called or behaviors exist, but aren't actually implemented, lead to bugs and confusion.
+
+**Problem**: Comments suggesting a function is called in a certain place when it's not (e.g., "Viewport.Height is set by chat.updateViewportHeight() in chat.Update()") can hide bugs for months.
+
+**Prevention**:
+- When writing comments about function calls or behaviors, immediately verify they exist in the code
+- Use grep searches to confirm function calls: `grep -r "functionName" .` 
+- For Bubble Tea Update() methods, check that all referenced functions are actually invoked
+- Review comments during code review - if a comment says "X is called here" but X isn't called, it's a bug
+- Prefer self-documenting code over comments when possible
+
+**Example**:
+```go
+// ✅ GOOD: Comment matches code
+// Note: Viewport.Height is set by chat.updateViewportHeight() in chat.Update()
+c.updateViewportHeight()  // Actually called
+
+// ❌ BAD: Comment doesn't match code  
+// Note: Viewport.Height is set by chat.updateViewportHeight() in chat.Update()
+// ...but updateViewportHeight() is never called!
+```
+
 ## UI Corruption Prevention
 
 **CRITICAL**: To prevent the UI corruption issues experienced in recent commits (orphaned code blocks, incomplete expressions, duplicate calculations):
@@ -400,6 +424,93 @@ tmux kill-session -t clai-test
   4. Run `clai debug inspect` again to verify fix
   5. Compare before/after output
 - Other debug commands: `clai debug ping`, `clai debug switch_pane`, `clai debug get_history`
+
+## Mandatory Testing with clai-debug Tools
+
+**CRITICAL: Agents MUST use clai-debug MCP tools to verify ALL changes that affect user interaction, UI, or functionality**
+
+This requirement applies to ANY changes that could impact how users see or interact with the application, including (but not limited to):
+- UI layout, rendering, or styling changes
+- New features or user interactions
+- Message handling or conversation flow
+- Tool execution and results display
+- Status indicators, loading states, or error messages
+- Keyboard shortcuts, navigation, or input handling
+- Any modifications to `internal/ui/` files or Bubble Tea models
+
+**❌ FORBIDDEN**: Agents may NOT ask users to test changes or report UI issues. Agents MUST verify functionality themselves.
+
+### Required Testing Workflow
+
+**BEFORE making ANY UI/affecting changes:**
+1. Use `clai-debug_inspect` to capture baseline application state
+2. Use `clai-debug_inspect_styles` to document current layout and dimensions
+3. Use `clai-debug_get_history` to verify conversation state if relevant
+
+**AFTER making changes:**
+1. Wait for automatic reload (assume `make dev` is running)
+2. Use `clai-debug_inspect` to verify the change is visible and correct
+3. Use `clai-debug_inspect_styles` to confirm layout/dimensions are proper
+4. Use `clai-debug_send_key` to test user interactions (e.g., keyboard navigation, inputs)
+5. Use `clai-debug_get_history` to verify conversation flow if affected
+
+**For tool/functionality testing:**
+1. Use `clai-debug_send_key` to simulate user input that triggers the functionality
+2. Use `clai-debug_inspect` to verify tool execution status and results appear correctly
+3. Use `clai-debug_get_history` to confirm tool results are added to conversation
+
+### Documentation Requirements
+
+After testing, agents MUST document:
+- What was tested using which clai-debug commands
+- Expected vs. actual results
+- Any issues found and how they were resolved
+- Screenshots or detailed descriptions of UI state
+
+**Example Workflow:**
+```
+Agent: Making changes to message rendering in internal/ui/model.go
+- BEFORE: clai-debug_inspect shows current chat pane layout
+- Change: Modify View() method for better message formatting
+- AFTER: clai-debug_inspect confirms messages render correctly
+- Test: clai-debug_send_key "test message<enter>" verifies input works
+- Result: Messages display properly, no layout issues
+```
+
+### Common clai-debug Commands (MUST BE USED BY AGENTS)
+
+**❌ WRONG**: "Can you test this and tell me if the UI looks right?"
+**✅ RIGHT**: Agent runs clai-debug_inspect themselves and reports findings
+
+Available tools (use via MCP skill_mcp tool with mcp_name="clai-debug"):
+- `clai-debug_inspect` - Get full UI inspection including viewport content, dimensions, and state
+- `clai-debug_inspect_styles` - Get structured viewport dimensions and state info (JSON format)
+- `clai-debug_get_history` - Get the conversation history/messages
+- `clai-debug_ping` - Test connectivity to the CLAI debug server
+- `clai-debug_send_key KEY` - Send a keystroke to the TUI (e.g., "enter", "ctrl+h", "up", "down")
+- `clai-debug_type_text TEXT` - Type text into the input field
+
+**Workflow Enforcement:**
+- Agents MUST include clai-debug testing results in their responses
+- If clai-debug tools are unavailable or fail, agents MUST report this and cannot proceed with changes
+- All UI changes are considered incomplete until verified with clai-debug tools
+- This ensures agents are fully responsible for change validation, not users
+
+### Why This Is Mandatory
+
+Without agent-driven testing:
+- Users become the primary testers, slowing development
+- UI issues go undetected until user reports
+- Agents cannot iterate quickly on UI problems
+- Quality suffers from lack of immediate feedback
+
+With mandatory clai-debug testing:
+- Agents verify changes immediately and accurately
+- Issues are caught and fixed before user involvement
+- Development velocity increases through rapid iteration
+- Users only see working, tested features
+
+**VIOLATION**: Making UI changes without clai-debug verification = incomplete work that must be reverted.
 
 ## Running Blocking Scripts
 - Do **not** run blocking scripts (such as `dev_run.sh` or `dev_watch.sh`) directly in the foreground, as this will block the thread and prevent further interaction.
