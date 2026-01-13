@@ -196,13 +196,16 @@ func (c *ChatModel) updateViewportHeight() {
 }
 
 func (c *ChatModel) padLinesToWidth(content string, width int) string {
+	themeStyles := GetThemeStyles(c.Theme)
+
 	lines := strings.Split(content, "\n")
 
 	for i, line := range lines {
 		visualWidth := lipgloss.Width(line)
 		if visualWidth < width {
-			paddingNeeded := width - visualWidth
-			lines[i] = line + strings.Repeat(" ", paddingNeeded)
+			paddingSize := width - visualWidth
+			paddedLine := themeStyles.BackgroundWrapper.Width(paddingSize).Render(line)
+			lines[i] = paddedLine
 		}
 	}
 	return strings.Join(lines, "\n")

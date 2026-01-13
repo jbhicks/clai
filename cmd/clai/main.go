@@ -95,7 +95,7 @@ func main() {
 	}
 	host := os.Getenv("OLLAMA_HOST")
 	if host == "" {
-		host = "http://localhost:11434"
+		host = "http://localhost:8081"
 	}
 	systemPrompt := os.Getenv("SYSTEM_PROMPT")
 

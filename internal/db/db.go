@@ -98,6 +98,8 @@ func (s *Store) init() error {
 		response TEXT NOT NULL,
 		failure_reason TEXT,
 		code_executed TEXT,
+		tokens_generated INTEGER DEFAULT 0,
+		tokens_per_second REAL DEFAULT 0.0,
 		FOREIGN KEY (run_id) REFERENCES benchmark_runs(id) ON DELETE CASCADE
 	);
 	CREATE INDEX IF NOT EXISTS idx_updated_at ON conversations(updated_at DESC);

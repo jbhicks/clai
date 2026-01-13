@@ -1,5 +1,0 @@
-Hello World
-This is a test file.
-Line 3: Important data
-Line 4: More content
-TOTAL_COUNT: 42

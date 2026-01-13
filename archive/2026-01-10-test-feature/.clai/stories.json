@@ -1,0 +1,614 @@
+{
+  "version": "1.0",
+  "stories": [
+    {
+      "acceptanceCriteria": [
+        "CLAI can spawn goroutines with AI-analyzed minimal contexts for each task",
+        "Main orchestrator can monitor and coordinate goroutine tasks via channels",
+        "Goroutines inherit necessary context through channel communication",
+        "Intelligent error handling - orchestrator analyzes failures and decides retry/skip/stop",
+        "Context summarization - goroutine results compressed back to orchestrator's context window",
+        "Graceful shutdown and cleanup of goroutines using context cancellation",
+        "Goroutine lifecycle management prevents leaks",
+        "Typecheck passes"
+      ],
+      "created": "2025-01-10T17:30:00.000Z",
+      "description": "As a developer, I want CLAI to orchestrate multiple concurrent tasks using goroutines so that complex features can be implemented autonomously.",
+      "id": "US-001",
+      "passes": true,
+      "phase": "Phase 1",
+      "priority": "high",
+      "title": "Implement Autonomous Agent Loop Infrastructure",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Create .clai/progress.json format for structured progress logging",
+        "Implement .clai/stories.json for task completion tracking",
+        "Add .clai/patterns.log append-only pattern learning log",
+        "Git history integration for immutable code changes and automatic backups",
+        "Memory system survives process restarts",
+        "Typecheck passes"
+      ],
+      "created": "2025-01-10T17:30:00.000Z",
+      "description": "As an autonomous agent, I need persistent memory across iterations so that learnings and progress are maintained without in-memory state.",
+      "id": "US-002",
+      "passes": true,
+      "phase": "Phase 1",
+      "priority": "high",
+      "title": "Add Memory Persistence System",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "CLI command clai decompose [feature-description] creates task breakdown using configured model",
+        "Tasks sized for single CLAI context window using llama.cpp-style context tracking",
+        "Basic dependency ordering (schema → backend → UI)",
+        "Task validation prevents oversized tasks based on context limits",
+        "JSON export of decomposed tasks to .clai/stories.json",
+        "Integration with existing task view UI (tasks list, step details below, logs pane right)",
+        "Qwen-specific formatting and tool calling support",
+        "Typecheck passes"
+      ],
+      "created": "2025-01-10T17:30:00.000Z",
+      "description": "As a user, I want to break large features into executable tasks so that CLAI can implement them incrementally without context overflow.",
+      "id": "US-003",
+      "passes": true,
+      "phase": "Phase 2",
+      "priority": "high",
+      "title": "Implement Small Task Decomposition",
+      "updated": "2026-01-11T02:00:00.000Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Integration with existing make test and make lint",
+        "Quality check execution per task completion with parallelization where possible",
+        "Live UI state verification through CLAI process connection for feature testing",
+        "Efficient UI state transfer to avoid context window overflow",
+        "Failed checks prevent commits and mark tasks incomplete",
+        "Allow partial commits for save states before major changes/refactors",
+        "Never commit non-working application state",
+        "Quality metrics logged to progress tracking",
+        "Rollback capability for failed iterations",
+        "Typecheck passes"
+      ],
+      "created": "2025-01-10T17:30:00.000Z",
+      "description": "As a developer, I want mandatory quality checks before commits so that broken code cannot compound across iterations.",
+      "id": "US-004",
+      "passes": true,
+      "phase": "Phase 3",
+      "priority": "high",
+      "title": "Add Quality Assurance Integration",
+      "updated": "2026-01-11T02:30:00.000Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Enhanced AGENTS.md update system for important learnings only",
+        "Document API/framework research findings and bug resolution insights",
+        "Context-aware AGENTS.md file selection",
+        "Pattern compaction system to prevent context window overflow",
+        "Pattern search and retrieval for future tasks",
+        "Typecheck passes"
+      ],
+      "created": "2025-01-10T17:30:00.000Z",
+      "description": "As an autonomous agent, I want to learn and document patterns so that future iterations benefit from discovered knowledge.",
+      "id": "US-005",
+      "passes": true,
+      "phase": "Phase 4",
+      "priority": "medium",
+      "title": "Add Pattern Discovery \u0026 AGENTS.md Enhancement",
+      "updated": "2026-01-11T02:30:00.000Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "clai orchestrate start [stories.json] - Begin autonomous execution",
+        "clai orchestrate status [--watch] - Show current progress with optional live updates",
+        "clai orchestrate stop - Gracefully halt execution",
+        "clai orchestrate resume [--from-failure] - Continue from last checkpoint with failure handling",
+        "clai task execute [task-id] [--skip-checks] - Execute single task manually with optional quality check bypass",
+        "Typecheck passes"
+      ],
+      "created": "2025-01-10T17:30:00.000Z",
+      "description": "As a user, I want CLI commands to control autonomous execution so that I can start, monitor, and stop agent orchestrations.",
+      "id": "US-006",
+      "passes": true,
+      "phase": "Phase 4",
+      "priority": "medium",
+      "title": "Create Orchestrator CLI Commands",
+      "updated": "2026-01-11T02:45:00.000Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "All tasks completed: true triggers completion",
+        "\u003cCOMPLETE\u003e signal in orchestrator output",
+        "Clean shutdown of all child processes",
+        "Final progress report generation",
+        "Success/failure status reporting",
+        "Typecheck passes"
+      ],
+      "created": "2025-01-10T17:30:00.000Z",
+      "description": "As an autonomous system, I want to detect completion and exit cleanly so that orchestration terminates reliably.",
+      "id": "US-007",
+      "passes": true,
+      "phase": "Phase 4",
+      "priority": "medium",
+      "title": "Add Completion Detection \u0026 Exit Conditions",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Automatic archival to archive/YYYY-MM-DD-feature-name/ on branch changes",
+        "Archive .clai/ files, progress logs, and generated code",
+        "Tight git branch integration for feature isolation",
+        "Archive restoration and browsing capabilities",
+        "Configurable archive cleanup and compression",
+        "Typecheck passes"
+      ],
+      "created": "2025-01-10T17:30:00.000Z",
+      "description": "As a user, I want completed orchestrations archived so that feature development history is preserved and isolated.",
+      "id": "US-008",
+      "passes": false,
+      "phase": "Phase 2",
+      "priority": "medium",
+      "title": "Implement Archival \u0026 Feature Branching",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Support for parallel command execution using goroutines and exec.Cmd",
+        "Command dependency management using errgroup for coordination",
+        "Context-based cancellation for failure handling",
+        "Resource monitoring to prevent command conflicts",
+        "Parallel execution results aggregation",
+        "Typecheck passes"
+      ],
+      "created": "2025-01-10T17:30:00.000Z",
+      "description": "As a sub-agent, I want to execute multiple shell commands in parallel within a single task so that development operations complete faster.",
+      "id": "US-009",
+      "passes": false,
+      "phase": "Phase 3",
+      "priority": "low",
+      "title": "Implement Parallel Command Execution Within Tasks",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Memory usage monitoring per goroutine",
+        "Dynamic task spawning based on available RAM",
+        "LLM server sharing between goroutines",
+        "Task priority queuing for resource management",
+        "Memory cleanup and optimization between iterations",
+        "Typecheck passes"
+      ],
+      "created": "2025-01-10T17:30:00.000Z",
+      "description": "As a system, I want to run multiple CLAI tasks simultaneously so that development speed is maximized without memory exhaustion.",
+      "id": "US-010",
+      "passes": false,
+      "phase": "Phase 5",
+      "priority": "low",
+      "title": "Implement Parallel Task Execution with Memory Management",
+      "updated": "2025-01-10T17:30:00.000Z"
+    },
+    {
+      "acceptanceCriteria": [
+        "Users table with email, password hash, created_at",
+        "Sessions table with user_id, token, expires_at",
+        "Database migration script created",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:14:50-07:00",
+      "description": "Design and implement database tables for user accounts, sessions, and authentication tokens",
+      "id": "TASK-001",
+      "passes": false,
+      "phase": "schema",
+      "priority": "high",
+      "title": "Create user authentication database schema",
+      "updated": "2026-01-10T18:14:50-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "JWT service with sign and verify methods",
+        "Token expiration handling",
+        "Environment-based secret key configuration",
+        "Unit tests for token operations",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:14:50-07:00",
+      "description": "Create JWT service for generating access tokens and validating incoming requests",
+      "id": "TASK-002",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Implement JWT token generation and validation",
+      "updated": "2026-01-10T18:14:50-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "POST /api/auth/register endpoint",
+        "Email validation and uniqueness checking",
+        "Password hashing with bcrypt",
+        "Success response with user data",
+        "Error handling for validation failures",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:14:50-07:00",
+      "description": "Implement POST /api/auth/register endpoint with input validation and password hashing",
+      "id": "TASK-003",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Create user registration endpoint",
+      "updated": "2026-01-10T18:14:50-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "POST /api/auth/login endpoint",
+        "Password verification against stored hash",
+        "JWT token generation on successful login",
+        "Session storage in database",
+        "Error responses for invalid credentials",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:14:50-07:00",
+      "description": "Implement POST /api/auth/login endpoint that validates credentials and returns JWT token",
+      "id": "TASK-004",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Create user login endpoint",
+      "updated": "2026-01-10T18:14:50-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "JWT validation middleware function",
+        "Extract user ID from valid tokens",
+        "Attach user context to request",
+        "401 responses for invalid/missing tokens",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:14:50-07:00",
+      "description": "Create middleware to validate JWT tokens on protected routes",
+      "id": "TASK-005",
+      "passes": false,
+      "phase": "backend",
+      "priority": "medium",
+      "title": "Add JWT authentication middleware",
+      "updated": "2026-01-10T18:14:50-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "Registration form with email/password fields",
+        "Login form with email/password fields",
+        "Form validation and error display",
+        "Success feedback and redirect",
+        "Responsive design",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:14:50-07:00",
+      "description": "Build React/HTML forms for user registration and login",
+      "id": "TASK-006",
+      "passes": false,
+      "phase": "ui",
+      "priority": "medium",
+      "title": "Create login/register UI components",
+      "updated": "2026-01-10T18:14:50-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "Users table with email, password hash, created_at",
+        "Sessions table with user_id, token, expires_at",
+        "Database migration script created",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:08-07:00",
+      "description": "Design and implement database tables for user accounts, sessions, and authentication tokens",
+      "id": "TASK-001",
+      "passes": false,
+      "phase": "schema",
+      "priority": "high",
+      "title": "Create user authentication database schema",
+      "updated": "2026-01-10T18:15:08-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "JWT service with sign and verify methods",
+        "Token expiration handling",
+        "Environment-based secret key configuration",
+        "Unit tests for token operations",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:08-07:00",
+      "description": "Create JWT service for generating access tokens and validating incoming requests",
+      "id": "TASK-002",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Implement JWT token generation and validation",
+      "updated": "2026-01-10T18:15:08-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "POST /api/auth/register endpoint",
+        "Email validation and uniqueness checking",
+        "Password hashing with bcrypt",
+        "Success response with user data",
+        "Error handling for validation failures",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:08-07:00",
+      "description": "Implement POST /api/auth/register endpoint with input validation and password hashing",
+      "id": "TASK-003",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Create user registration endpoint",
+      "updated": "2026-01-10T18:15:08-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "POST /api/auth/login endpoint",
+        "Password verification against stored hash",
+        "JWT token generation on successful login",
+        "Session storage in database",
+        "Error responses for invalid credentials",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:08-07:00",
+      "description": "Implement POST /api/auth/login endpoint that validates credentials and returns JWT token",
+      "id": "TASK-004",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Create user login endpoint",
+      "updated": "2026-01-10T18:15:08-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "JWT validation middleware function",
+        "Extract user ID from valid tokens",
+        "Attach user context to request",
+        "401 responses for invalid/missing tokens",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:08-07:00",
+      "description": "Create middleware to validate JWT tokens on protected routes",
+      "id": "TASK-005",
+      "passes": false,
+      "phase": "backend",
+      "priority": "medium",
+      "title": "Add JWT authentication middleware",
+      "updated": "2026-01-10T18:15:08-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "Registration form with email/password fields",
+        "Login form with email/password fields",
+        "Form validation and error display",
+        "Success feedback and redirect",
+        "Responsive design",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:08-07:00",
+      "description": "Build React/HTML forms for user registration and login",
+      "id": "TASK-006",
+      "passes": false,
+      "phase": "ui",
+      "priority": "medium",
+      "title": "Create login/register UI components",
+      "updated": "2026-01-10T18:15:08-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "Users table with email, password hash, created_at",
+        "Sessions table with user_id, token, expires_at",
+        "Database migration script created",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:27-07:00",
+      "description": "Design and implement database tables for user accounts, sessions, and authentication tokens",
+      "id": "TASK-001",
+      "passes": false,
+      "phase": "schema",
+      "priority": "high",
+      "title": "Create user authentication database schema",
+      "updated": "2026-01-10T18:15:27-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "JWT service with sign and verify methods",
+        "Token expiration handling",
+        "Environment-based secret key configuration",
+        "Unit tests for token operations",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:27-07:00",
+      "description": "Create JWT service for generating access tokens and validating incoming requests",
+      "id": "TASK-002",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Implement JWT token generation and validation",
+      "updated": "2026-01-10T18:15:27-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "POST /api/auth/register endpoint",
+        "Email validation and uniqueness checking",
+        "Password hashing with bcrypt",
+        "Success response with user data",
+        "Error handling for validation failures",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:27-07:00",
+      "description": "Implement POST /api/auth/register endpoint with input validation and password hashing",
+      "id": "TASK-003",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Create user registration endpoint",
+      "updated": "2026-01-10T18:15:27-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "POST /api/auth/login endpoint",
+        "Password verification against stored hash",
+        "JWT token generation on successful login",
+        "Session storage in database",
+        "Error responses for invalid credentials",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:27-07:00",
+      "description": "Implement POST /api/auth/login endpoint that validates credentials and returns JWT token",
+      "id": "TASK-004",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Create user login endpoint",
+      "updated": "2026-01-10T18:15:27-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "JWT validation middleware function",
+        "Extract user ID from valid tokens",
+        "Attach user context to request",
+        "401 responses for invalid/missing tokens",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:27-07:00",
+      "description": "Create middleware to validate JWT tokens on protected routes",
+      "id": "TASK-005",
+      "passes": false,
+      "phase": "backend",
+      "priority": "medium",
+      "title": "Add JWT authentication middleware",
+      "updated": "2026-01-10T18:15:27-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "Registration form with email/password fields",
+        "Login form with email/password fields",
+        "Form validation and error display",
+        "Success feedback and redirect",
+        "Responsive design",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:27-07:00",
+      "description": "Build React/HTML forms for user registration and login",
+      "id": "TASK-006",
+      "passes": false,
+      "phase": "ui",
+      "priority": "medium",
+      "title": "Create login/register UI components",
+      "updated": "2026-01-10T18:15:27-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "Users table with email, password hash, created_at",
+        "Sessions table with user_id, token, expires_at",
+        "Database migration script created",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:58-07:00",
+      "description": "Design and implement database tables for user accounts, sessions, and authentication tokens",
+      "id": "TASK-001",
+      "passes": false,
+      "phase": "schema",
+      "priority": "high",
+      "title": "Create user authentication database schema",
+      "updated": "2026-01-10T18:15:58-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "JWT service with sign and verify methods",
+        "Token expiration handling",
+        "Environment-based secret key configuration",
+        "Unit tests for token operations",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:58-07:00",
+      "description": "Create JWT service for generating access tokens and validating incoming requests",
+      "id": "TASK-002",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Implement JWT token generation and validation",
+      "updated": "2026-01-10T18:15:58-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "POST /api/auth/register endpoint",
+        "Email validation and uniqueness checking",
+        "Password hashing with bcrypt",
+        "Success response with user data",
+        "Error handling for validation failures",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:58-07:00",
+      "description": "Implement POST /api/auth/register endpoint with input validation and password hashing",
+      "id": "TASK-003",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Create user registration endpoint",
+      "updated": "2026-01-10T18:15:58-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "POST /api/auth/login endpoint",
+        "Password verification against stored hash",
+        "JWT token generation on successful login",
+        "Session storage in database",
+        "Error responses for invalid credentials",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:58-07:00",
+      "description": "Implement POST /api/auth/login endpoint that validates credentials and returns JWT token",
+      "id": "TASK-004",
+      "passes": false,
+      "phase": "backend",
+      "priority": "high",
+      "title": "Create user login endpoint",
+      "updated": "2026-01-10T18:15:58-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "JWT validation middleware function",
+        "Extract user ID from valid tokens",
+        "Attach user context to request",
+        "401 responses for invalid/missing tokens",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:58-07:00",
+      "description": "Create middleware to validate JWT tokens on protected routes",
+      "id": "TASK-005",
+      "passes": false,
+      "phase": "backend",
+      "priority": "medium",
+      "title": "Add JWT authentication middleware",
+      "updated": "2026-01-10T18:15:58-07:00"
+    },
+    {
+      "acceptanceCriteria": [
+        "Registration form with email/password fields",
+        "Login form with email/password fields",
+        "Form validation and error display",
+        "Success feedback and redirect",
+        "Responsive design",
+        "Typecheck passes"
+      ],
+      "created": "2026-01-10T18:15:58-07:00",
+      "description": "Build React/HTML forms for user registration and login",
+      "id": "TASK-006",
+      "passes": false,
+      "phase": "ui",
+      "priority": "medium",
+      "title": "Create login/register UI components",
+      "updated": "2026-01-10T18:15:58-07:00"
+    }
+  ],
+  "completed": 7,
+  "total": 34,
+  "currentIteration": 2,
+  "startTime": "2026-01-11T00:36:58.907Z",
+  "lastUpdate": "2026-01-11T02:00:00Z"
+}

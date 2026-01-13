@@ -64,6 +64,19 @@ To prevent zombie processes from old development sessions:
 - Regular HTTP endpoints are fine to test with curl
 - If you must test SSE endpoints programmatically, run curl in the background with output redirection: `curl -s <sse_url> > /tmp/output.txt &`
 
+## Model Server Configuration
+
+**CRITICAL: Use the same LLM server configuration as the main clai application**
+- The project uses a llama.cpp server (not Ollama) for LLM operations
+- CLI benchmarks (`clai benchmark --cli`) use the same configuration as clai
+- **Unified Benchmark Suite**: 29 tests total (12 model + 17 agentic + 5 advanced benchmarks)
+- Environment variables (same as clai):
+  - `OLLAMA_HOST`: Server URL (default: `http://localhost:8081`)
+  - `OLLAMA_MODEL`: Model name (default: `llama3.1-gpu:latest`)
+- If `OLLAMA_MODEL` is not explicitly set, CLI benchmarks automatically detect the actual model running on the server
+- **DO NOT attempt to install or run Ollama** - use the existing llama.cpp server
+- The server supports OpenAI-compatible API format for chat completions
+
 ## OpenCode/MCP Socket Connections
 
 **CRITICAL: Handle socket disconnections gracefully with large models**
@@ -237,6 +250,21 @@ c.updateViewportHeight()  // Actually called
      ```
    - **Always wrap with background**: Ensure background wrapper is applied regardless of content width to guarantee full coverage
    - **Prefer solid borders**: Normal borders are more reliable than rounded corners for background coverage
+
+10. **Chat Bubble Background Transparency**:
+   - **Problem**: When message bubbles have borders and backgrounds, but padding is added with plain spaces instead of background-colored text, transparent gaps appear between border and content background
+   - **Root Cause**: `padLinesToWidth()` was adding space-only padding: `line + strings.Repeat(" ", paddingNeeded)`. These spaces are transparent and show through to whatever's behind the bubble (like the chat pane)
+   - **Solution**: Use `BackgroundWrapper` style with background color for padding instead of plain spaces:
+     ```go
+     // WRONG - transparent spaces
+     paddedLine := line + strings.Repeat(" ", paddingNeeded)
+
+     // CORRECT - background-colored padding
+     paddedLine := themeStyles.BackgroundWrapper.Width(width).Render(line)
+     ```
+   - **Applies to**: User messages, Assistant messages, Tool messages
+   - **Pattern**: Always use existing wrapper styles (BackgroundWrapper) for padding to ensure consistency
+   - **Result**: No visible transparent gaps, borders frame content properly with matching background
 
 **Common Pitfalls:**
 - Using `style.GetHeight()` for padded styles (returns 0)

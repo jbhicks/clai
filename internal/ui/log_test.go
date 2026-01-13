@@ -11,13 +11,13 @@ import (
 // TestLogUpdateMsg verifies that LogUpdateMsg messages are properly added to the log buffer
 // and displayed in the Log viewport.
 func TestLogUpdateMsg(t *testing.T) {
-	theme := AvailableThemes[0] // Use Gruvbox theme
+	theme := GetAvailableThemes()[0] // Use first available theme
 
 	m := &Model{
 		Width:       100,
 		Height:      40,
 		Theme:       theme,
-		Log:         viewport.New(50, 20),
+		Log:         viewport.New(LogViewportWidth, DefaultViewportHeight),
 		AgentStatus: NewAgentStatusView(theme),
 	}
 
@@ -61,13 +61,13 @@ func TestLogUpdateMsg(t *testing.T) {
 // TestLogBufferAccumulation verifies that log messages accumulate correctly
 // in the buffer without losing previous content.
 func TestLogBufferAccumulation(t *testing.T) {
-	theme := AvailableThemes[0] // Use Gruvbox theme
+	theme := GetAvailableThemes()[0] // Use first available theme
 
 	m := &Model{
 		Width:       100,
 		Height:      40,
 		Theme:       theme,
-		Log:         viewport.New(50, 20),
+		Log:         viewport.New(LogViewportWidth, DefaultViewportHeight),
 		AgentStatus: NewAgentStatusView(theme),
 	}
 
@@ -97,13 +97,13 @@ func TestLogBufferAccumulation(t *testing.T) {
 
 // TestLogViewportDimensions verifies that the Log viewport respects dimension constraints.
 func TestLogViewportDimensions(t *testing.T) {
-	theme := AvailableThemes[0] // Use Gruvbox theme
+	theme := GetAvailableThemes()[0] // Use first available theme
 
 	m := &Model{
 		Width:       100,
 		Height:      40,
 		Theme:       theme,
-		Log:         viewport.New(50, 20),
+		Log:         viewport.New(LogViewportWidth, DefaultViewportHeight),
 		AgentStatus: NewAgentStatusView(theme),
 	}
 

@@ -3,6 +3,7 @@ package llm
 import (
 	"clai/internal/logger"
 	"clai/internal/tools"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -13,6 +14,11 @@ type AgentResponse struct {
 	Code     string
 	Language string
 	Final    string
+}
+
+type ThinkResult struct {
+	Content   string
+	ToolCalls []tools.ToolCall
 }
 
 type Agent struct {
@@ -46,11 +52,15 @@ func NewAgent(client LLMClientInterface) *Agent {
 	}
 }
 
-func (a *Agent) AddMessage(role, content string) {
-	a.messages = append(a.messages, Message{
+func (a *Agent) AddMessage(role, content string, toolCallID ...string) {
+	message := Message{
 		Role:    role,
 		Content: content,
-	})
+	}
+	if len(toolCallID) > 0 {
+		message.ToolCallID = toolCallID[0]
+	}
+	a.messages = append(a.messages, message)
 	a.trimMessages()
 }
 
@@ -195,29 +205,150 @@ func (a *Agent) parseResponse(response string) (*AgentResponse, error) {
 	result.Final = strings.TrimSpace(response)
 	result.Thought = strings.TrimSpace(response)
 
-	logger.Debug("[AGENT-PARSE] Thought: %q, Code: %d chars (%s), Final: %q",
-		result.Thought, len(result.Code), result.Language, result.Final)
-
+	logger.Debug("[AGENT-PARSE] Thought: %q, Code: %d chars (%s), Final: %q", result.Thought, len(result.Code), result.Language, result.Final)
 	return result, nil
 }
-
-func (a *Agent) Think() (string, error) {
+func (a *Agent) Think() (ThinkResult, error) {
+	logger.Debug("[AGENT-THINK] Think method called")
 	streamChan := make(chan string, 100)
 
-	_, err := a.client.SendMessageStreamNoTools(a.messages, streamChan, false)
+	_, err := a.client.SendMessageStreamWithTools(a.messages, tools.GetAvailableTools(), streamChan, true)
 	if err != nil {
-		return "", fmt.Errorf("LLM request failed: %w", err)
+		return ThinkResult{}, fmt.Errorf("LLM request failed: %w", err)
 	}
 
-	var fullResponse strings.Builder
+	var fullContent strings.Builder
+	var toolCalls []tools.ToolCall
+
 	for chunk := range streamChan {
-		fullResponse.WriteString(chunk)
+		logger.Debug("[AGENT-THINK] Received chunk: %q", chunk)
+		// For now, collect all chunks as content - tool calls will be parsed from final content
+		fullContent.WriteString(chunk)
 	}
 
-	response := fullResponse.String()
-	logger.Debug("[AGENT-THINK] Full response:\n%s", response)
+	response := fullContent.String()
+	logger.Debug("[AGENT-THINK] Full response content: %s", response)
 
-	return response, nil
+	// Parse tool calls from the complete response content (Hermes-style)
+	toolCalls = a.parseToolCallsFromContent(response)
+
+	logger.Debug("[AGENT-THINK] Tool calls found: %d", len(toolCalls))
+
+	return ThinkResult{
+		Content:   response,
+		ToolCalls: toolCalls,
+	}, nil
+}
+
+// parseToolCallsFromContent extracts tool calls from response content (Hermes-style)
+func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
+	logger.Debug("[AGENT-PARSE-TOOL] Method called with content length: %d", len(content))
+	var toolCalls []tools.ToolCall
+	logger.Debug("[AGENT-PARSE-TOOL] Parsing content for tool calls: %s", content)
+
+	// First try to parse <tool_call> + JSON format (model's current format)
+	// Handle both single JSON objects and concatenated multiple objects
+	toolCallRe := regexp.MustCompile(`<tool_call>\s*(\{.+\}(?:\{.+?\})*)`)
+	toolCallMatches := toolCallRe.FindAllStringSubmatch(content, -1)
+	logger.Debug("[AGENT-PARSE-TOOL] Found %d <tool_call> + JSON matches", len(toolCallMatches))
+
+	for _, match := range toolCallMatches {
+		jsonStr := match[1]
+		logger.Debug("[AGENT-PARSE-TOOL] Trying to parse <tool_call> JSON: %s", jsonStr)
+
+		// Try to parse as single JSON object first
+		var toolCall tools.ToolCall
+		if err := json.Unmarshal([]byte(jsonStr), &toolCall); err == nil && toolCall.Type == "function" && toolCall.Function.Name != "" {
+			toolCalls = append(toolCalls, toolCall)
+			logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed <tool_call> JSON: %s", toolCall.Function.Name)
+		} else {
+			// Try to split concatenated JSON objects
+			jsonObjects := splitJSONObjects(jsonStr)
+			for _, objStr := range jsonObjects {
+				if err := json.Unmarshal([]byte(objStr), &toolCall); err == nil && toolCall.Type == "function" && toolCall.Function.Name != "" {
+					toolCalls = append(toolCalls, toolCall)
+					logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed split JSON: %s", toolCall.Function.Name)
+				}
+			}
+		}
+	}
+
+	// Also try XML-style tool calls (Hermes format)
+	xmlRe := regexp.MustCompile(`<tool_call><function=(\w+)\{(.+)\}`)
+	xmlMatches := xmlRe.FindAllStringSubmatch(content, -1)
+	logger.Debug("[AGENT-PARSE-TOOL] Found %d XML tool call matches", len(xmlMatches))
+
+	for _, match := range xmlMatches {
+		logger.Debug("[AGENT-PARSE-TOOL] XML match: %v", match)
+		if len(match) >= 3 {
+			functionName := match[1]
+			argsStr := match[2]
+			logger.Debug("[AGENT-PARSE-TOOL] Parsing XML tool call: %s with args: %s", functionName, argsStr)
+
+			// Parse the arguments as JSON
+			var args map[string]interface{}
+			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
+				logger.Debug("[AGENT-PARSE-TOOL] Failed to parse JSON args: %v", err)
+				continue
+			}
+
+			// Create tool call based on function name
+			var toolCall tools.ToolCall
+			toolCall.Type = "function"
+			toolCall.ID = "xml-parsed-" + functionName
+			toolCall.Function.Name = functionName
+
+			// Convert args to JSON string
+			argsJSON, _ := json.Marshal(args)
+			toolCall.Function.Arguments = string(argsJSON)
+
+			toolCalls = append(toolCalls, toolCall)
+			logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed XML tool call: %s", functionName)
+		}
+	}
+
+	// Also try JSON format as fallback
+	re := regexp.MustCompile(`\{[^{}]*"function"[^{}]*\}`)
+	jsonMatches := re.FindAllString(content, -1)
+	logger.Debug("[AGENT-PARSE-TOOL] Found %d JSON tool call matches", len(jsonMatches))
+
+	for _, match := range jsonMatches {
+		logger.Debug("[AGENT-PARSE-TOOL] Trying to parse JSON: %s", match)
+		var toolCall tools.ToolCall
+		if err := json.Unmarshal([]byte(match), &toolCall); err == nil && toolCall.Type == "function" && toolCall.Function.Name != "" {
+			toolCalls = append(toolCalls, toolCall)
+			logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed JSON tool call: %s", toolCall.Function.Name)
+		} else {
+			logger.Debug("[AGENT-PARSE-TOOL] Failed to parse JSON as tool call: %v", err)
+		}
+	}
+
+	return toolCalls
+}
+
+// splitJSONObjects attempts to split concatenated JSON objects
+func splitJSONObjects(jsonStr string) []string {
+	var objects []string
+	braceCount := 0
+	start := 0
+
+	for i, char := range jsonStr {
+		switch char {
+		case '{':
+			if braceCount == 0 {
+				start = i
+			}
+			braceCount++
+		case '}':
+			braceCount--
+			if braceCount == 0 {
+				// Found a complete JSON object
+				objects = append(objects, jsonStr[start:i+1])
+			}
+		}
+	}
+
+	return objects
 }
 
 func (ld *LoopDetector) detectLoop(code, observation string) (bool, string) {
@@ -289,12 +420,38 @@ func (a *Agent) Run(query string) (string, error) {
 		iteration++
 		logger.Debug("[AGENT-ITER] Iteration %d", iteration)
 
-		response, err := a.Think()
+		thinkResult, err := a.Think()
 		if err != nil {
 			return "", err
 		}
 
-		parsed, err := a.parseResponse(response)
+		// Handle tool calls first
+		if len(thinkResult.ToolCalls) > 0 {
+			logger.Debug("[AGENT-TOOL-CALLS] Processing %d tool calls", len(thinkResult.ToolCalls))
+
+			// Add assistant message with tool calls
+			a.AddMessage("assistant", thinkResult.Content)
+
+			// Execute each tool call and add tool results
+			for _, toolCall := range thinkResult.ToolCalls {
+				logger.Debug("[AGENT-TOOL] Executing tool: %s", toolCall.Function.Name)
+
+				toolResult, err := tools.ExecuteTool(toolCall)
+				if err != nil {
+					logger.Debug("[AGENT-TOOL-ERROR] Tool execution failed: %v", err)
+					a.AddMessage("tool", fmt.Sprintf("Tool execution error: %v", err), toolCall.ID)
+				} else {
+					logger.Debug("[AGENT-TOOL-SUCCESS] Tool result: %s", toolResult)
+					a.AddMessage("tool", toolResult, toolCall.ID)
+				}
+			}
+
+			// Continue the loop to get next response after tool execution
+			continue
+		}
+
+		// No tool calls, fall back to XML code block parsing
+		parsed, err := a.parseResponse(thinkResult.Content)
 		if err != nil {
 			return "", fmt.Errorf("failed to parse response: %w", err)
 		}
@@ -302,7 +459,7 @@ func (a *Agent) Run(query string) (string, error) {
 		// If no code block found, treat as final answer
 		if parsed.Code == "" {
 			logger.Debug("[AGENT-NO-CODE] No code block found, treating as final answer")
-			parsed.Final = response
+			parsed.Final = thinkResult.Content
 		}
 
 		if parsed.Thought != "" {
@@ -345,12 +502,12 @@ func (a *Agent) Run(query string) (string, error) {
 				return fmt.Sprintf("Task stopped: %s\n\nLast observation:\n%s", loopReason, obsStr), nil
 			}
 
-			a.AddMessage("assistant", response)
+			a.AddMessage("assistant", thinkResult.Content)
 			a.AddMessage("user", obsStr)
 			logger.Debug("[AGENT-OBSERVATION] Added observation: %s", obsStr)
 		} else {
 			logger.Debug("[AGENT-WARNING] No delegation or code found, but no final answer either - returning full response")
-			return response, nil
+			return thinkResult.Content, nil
 		}
 	}
 }

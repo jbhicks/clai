@@ -1,0 +1,344 @@
+package ui
+
+import (
+	"fmt"
+	"io"
+	"strings"
+	"time"
+
+	"github.com/brittonhayes/glitter/glitter"
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// AgentListItem represents an agent action/task for the list component
+type AgentListItem struct {
+	ID        string
+	Desc      string
+	Status    string
+	Iteration int
+	Timestamp time.Time
+}
+
+func (a AgentListItem) Title() string {
+	statusIcon := getStatusIcon(a.Status)
+	return fmt.Sprintf("%s %s", statusIcon, a.Desc)
+}
+
+func (a AgentListItem) Description() string {
+	return fmt.Sprintf("Iteration %d • %s", a.Iteration, a.Timestamp.Format("15:04:05"))
+}
+
+func (a AgentListItem) FilterValue() string {
+	return a.Desc
+}
+
+// AgentListDelegate customizes how list items are rendered
+type AgentListDelegate struct {
+	list.DefaultDelegate
+}
+
+func NewAgentListDelegate() AgentListDelegate {
+	d := list.NewDefaultDelegate()
+	d.ShowDescription = true
+	d.SetHeight(2)
+	d.SetSpacing(1)
+
+	// Customize colors for agent actions
+	styles := list.NewDefaultItemStyles()
+	styles.SelectedTitle = styles.SelectedTitle.
+		Foreground(lipgloss.Color("#00FFAA")).
+		BorderLeftForeground(lipgloss.Color("#00FFAA"))
+
+	styles.SelectedDesc = styles.SelectedDesc.
+		Foreground(lipgloss.Color("#888888"))
+
+	d.Styles = styles
+
+	return AgentListDelegate{DefaultDelegate: d}
+}
+
+func (d AgentListDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	agentItem, ok := item.(AgentListItem)
+	if !ok {
+		d.DefaultDelegate.Render(w, m, index, item)
+		return
+	}
+
+	// Custom rendering for agent items
+	var style lipgloss.Style
+	if index == m.Index() {
+		style = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#00FFAA")).
+			BorderLeft(true).
+			BorderLeftForeground(lipgloss.Color("#00FFAA")).
+			PaddingLeft(1)
+	} else {
+		style = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFFFF"))
+	}
+
+	title := agentItem.Title()
+	desc := agentItem.Description()
+
+	fmt.Fprintf(w, "%s\n%s", style.Render(title), style.Copy().Foreground(lipgloss.Color("#888888")).Render(desc))
+}
+
+// Enhanced AgentStatusView using bubbles/list
+type EnhancedAgentStatusView struct {
+	list        list.Model
+	spinner     spinner.Model
+	width       int
+	height      int
+	theme       *glitter.UI
+	currentTask string
+	isActive    bool
+}
+
+func NewEnhancedAgentStatusView(theme *glitter.UI) *EnhancedAgentStatusView {
+	delegate := NewAgentListDelegate()
+
+	l := list.New([]list.Item{}, delegate, 0, 0)
+	l.SetShowTitle(true)
+	// l.SetTitle("🤖 Agent Actions") // TODO: SetTitle method not available in current bubbles version
+	l.SetShowFilter(false)
+	l.SetShowHelp(false)
+	l.SetShowPagination(false)
+	l.SetShowStatusBar(false)
+
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFAA"))
+
+	return &EnhancedAgentStatusView{
+		list:    l,
+		spinner: s,
+		theme:   theme,
+	}
+}
+
+func (v *EnhancedAgentStatusView) SetSize(width, height int) {
+	v.width = width
+	v.height = height
+	v.list.SetSize(width, height)
+}
+
+func (v *EnhancedAgentStatusView) UpdateStatus(active bool, currentTask string, actions []AgentAction) {
+	v.isActive = active
+	v.currentTask = currentTask
+
+	items := make([]list.Item, len(actions))
+	for i, action := range actions {
+		items[i] = AgentListItem{
+			ID:        fmt.Sprintf("action-%d", i),
+			Desc:      action.Description,
+			Status:    action.Status,
+			Iteration: action.Iteration,
+			Timestamp: time.Now(), // In real implementation, use actual timestamps
+		}
+	}
+
+	v.list.SetItems(items)
+}
+
+func (v *EnhancedAgentStatusView) View() string {
+	if v.width == 0 || v.height == 0 {
+		return "Agent status: uninitialized"
+	}
+
+	var content strings.Builder
+
+	// Status header
+	if v.isActive {
+		status := fmt.Sprintf("%s Agent Active", v.spinner.View())
+		content.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#00FFAA")).
+			Bold(true).
+			Render(status))
+		content.WriteString("\n\n")
+
+		if v.currentTask != "" {
+			content.WriteString(lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Render("Current: "))
+			content.WriteString(lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FFFF00")).
+				Render(v.currentTask))
+			content.WriteString("\n\n")
+		}
+	} else {
+		content.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888")).
+			Render("🤖 Agent Idle - Waiting for task..."))
+		content.WriteString("\n\n")
+	}
+
+	// Agent actions list
+	if len(v.list.Items()) > 0 {
+		content.WriteString(v.list.View())
+	} else {
+		content.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#666666")).
+			Render("No actions yet"))
+	}
+
+	return content.String()
+}
+
+// getStatusIcon returns appropriate icon for action status
+func getStatusIcon(status string) string {
+	switch status {
+	case "completed":
+		return "✅"
+	case "failed":
+		return "❌"
+	case "in_progress":
+		return "🔄"
+	case "pending":
+		return "⏳"
+	default:
+		return "•"
+	}
+}
+
+// OrchestratorStatusView shows multi-agent orchestration status
+type OrchestratorStatusView struct {
+	agentList  list.Model
+	spinner    spinner.Model
+	width      int
+	height     int
+	theme      *glitter.UI
+	lastUpdate time.Time
+}
+
+type AgentStatusItem struct {
+	ID        string
+	Name      string
+	Type      string
+	Status    string
+	Task      string
+	Duration  time.Duration
+	StartTime time.Time
+}
+
+func (a AgentStatusItem) Title() string {
+	statusIcon := getAgentStatusIcon(a.Status)
+	return fmt.Sprintf("%s %s (%s)", statusIcon, a.Name, a.Type)
+}
+
+func (a AgentStatusItem) Description() string {
+	desc := fmt.Sprintf("Task: %s", a.Task)
+	if a.Duration > 0 {
+		desc += fmt.Sprintf(" • Duration: %v", a.Duration.Round(time.Second))
+	}
+	return desc
+}
+
+func (a AgentStatusItem) FilterValue() string {
+	return fmt.Sprintf("%s %s %s", a.Name, a.Type, a.Task)
+}
+
+func NewOrchestratorStatusView(theme *glitter.UI) *OrchestratorStatusView {
+	delegate := NewAgentListDelegate()
+
+	l := list.New([]list.Item{}, delegate, 0, 0)
+	l.SetShowTitle(true)
+	// l.SetTitle("🚀 Agent Orchestrator") // TODO: SetTitle method not available in current bubbles version
+	l.SetShowFilter(false)
+	l.SetShowHelp(false)
+	l.SetShowPagination(true)
+	l.SetShowStatusBar(true)
+	l.SetStatusBarItemName("agent", "agents")
+
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFAA"))
+
+	return &OrchestratorStatusView{
+		agentList:  l,
+		spinner:    s,
+		theme:      theme,
+		lastUpdate: time.Now(),
+	}
+}
+
+func (v *OrchestratorStatusView) SetSize(width, height int) {
+	v.width = width
+	v.height = height
+	v.agentList.SetSize(width, height-4) // Leave space for header
+}
+
+func (v *OrchestratorStatusView) UpdateAgents(agents []AgentStatusItem) {
+	items := make([]list.Item, len(agents))
+	for i, agent := range agents {
+		items[i] = agent
+	}
+	v.agentList.SetItems(items)
+	v.lastUpdate = time.Now()
+}
+
+func (v *OrchestratorStatusView) View() string {
+	if v.width == 0 || v.height == 0 {
+		return "Orchestrator: uninitialized"
+	}
+
+	var content strings.Builder
+
+	// Header with stats
+	totalAgents := len(v.agentList.Items())
+	running := 0
+	completed := 0
+	failed := 0
+
+	for _, item := range v.agentList.Items() {
+		if agentItem, ok := item.(AgentStatusItem); ok {
+			switch agentItem.Status {
+			case "running":
+				running++
+			case "completed":
+				completed++
+			case "error", "failed":
+				failed++
+			}
+		}
+	}
+
+	header := fmt.Sprintf("🚀 Agent Orchestrator • %d total • %d running • %d completed • %d failed",
+		totalAgents, running, completed, failed)
+
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#00FFAA")).
+		Bold(true).
+		Render(header))
+	content.WriteString("\n")
+
+	content.WriteString(lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#666666")).
+		Render(fmt.Sprintf("Last update: %s", v.lastUpdate.Format("15:04:05"))))
+	content.WriteString("\n\n")
+
+	// Agent list
+	content.WriteString(v.agentList.View())
+
+	return content.String()
+}
+
+// getAgentStatusIcon returns appropriate icon for agent status
+func getAgentStatusIcon(status string) string {
+	switch status {
+	case "running":
+		return "🔄"
+	case "completed":
+		return "✅"
+	case "error", "failed":
+		return "❌"
+	case "idle":
+		return "⏸️"
+	case "starting":
+		return "🚀"
+	default:
+		return "🤖"
+	}
+}

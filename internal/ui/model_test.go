@@ -21,7 +21,7 @@ func newTestModel() *Model {
 
 	spin := spinner.New()
 	mockLLM := uitesting.NewMockLLM()
-	theme := AvailableThemes[0] // Use Gruvbox theme
+	theme := GetAvailableThemes()[0] // Use first available theme
 
 	m := &Model{
 		Log:         viewport.New(0, 0),
@@ -37,7 +37,7 @@ func newTestModel() *Model {
 		TextInput: chatInput,
 		Spinner:   spin,
 		Theme:     m.Theme,
-		Viewport:  viewport.New(80, 20),
+		Viewport:  viewport.New(DefaultViewportWidth, DefaultViewportHeight),
 		Messages:  []llm.Message{},
 		LlmClient: mockLLM,
 	}

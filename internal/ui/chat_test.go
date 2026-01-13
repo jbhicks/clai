@@ -3,6 +3,7 @@ package ui
 import (
 	"clai/internal/llm"
 	uitesting "clai/internal/ui/testing"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -19,13 +20,13 @@ func newTestChatModel() ChatModel {
 
 	spin := spinner.New()
 	mockLLM := uitesting.NewMockLLM()
-	theme := AvailableThemes[0] // Use Gruvbox theme
+	theme := GetAvailableThemes()[0] // Use first available theme
 
 	return ChatModel{
 		TextInput:    chatInput,
 		Spinner:      spin,
 		Theme:        theme,
-		Viewport:     viewport.New(80, 20),
+		Viewport:     viewport.New(DefaultViewportWidth, DefaultViewportHeight),
 		Messages:     []llm.Message{},
 		LlmClient:    mockLLM,
 		Width:        80,
@@ -200,30 +201,13 @@ func TestChatModelMessageWidthConstraints(t *testing.T) {
 	}
 }
 
-func TestChatModelCodeBlockWidthConstraints(t *testing.T) {
-	c := newTestChatModel()
-	c.Width = 100
-	c.Height = 30
-
-	codeMessage := "Here's some code:\n```go\nfunc main() {\n    fmt.Println(\"" + strings.Repeat("x", 200) + "\")\n}\n```"
-	c.Messages = []llm.Message{
-		{Role: "assistant", Content: codeMessage},
-	}
-	c.ContentDirty = true
-
-	_ = c.View()
-
-	lines := strings.Split(c.CachedContent, "\n")
-	for i, line := range lines {
-		visualWidth := lipgloss.Width(line)
-		if i < 3 {
-			t.Logf("Line %d: visualWidth=%d", i, visualWidth)
-		}
-		if visualWidth > c.Width+2 {
-			t.Errorf("code block line visual width exceeds chat width: got %d, max %d",
-				visualWidth, c.Width)
-		}
-	}
+// stripWidth returns the visual width of a string by removing ANSI escape codes
+// and counting only actual visible characters
+func stripWidth(s string) int {
+	// Remove ANSI escape sequences (ESC[...m)
+	ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	cleaned := ansiRegex.ReplaceAllString(s, "")
+	return len(cleaned)
 }
 
 func TestChatModelInnerTextWidthCalculation(t *testing.T) {

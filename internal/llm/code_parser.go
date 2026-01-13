@@ -41,7 +41,7 @@ func ParseCodeBlocks(content string) []CodeBlock {
 	}
 
 	// Pattern 2: Simplified XML format (complete blocks) - <code python>
-	simplifiedXMLRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>(.+?)</code>`)
+	simplifiedXMLRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py|go)>(.+?)</code>`)
 	for _, match := range simplifiedXMLRegex.FindAllStringSubmatchIndex(content, -1) {
 		lang := content[match[2]:match[3]]
 		code := content[match[4]:match[5]]
@@ -65,7 +65,7 @@ func ParseCodeBlocks(content string) []CodeBlock {
 	}
 
 	// Pattern 3: Markdown code blocks - ```python
-	markdownRegex := regexp.MustCompile("(?s)```(bash|python|javascript|js|sh|py)\\s*\\n(.+?)```")
+	markdownRegex := regexp.MustCompile("(?s)```(bash|python|javascript|js|sh|py|go)\\s*\\n(.+?)```")
 	for _, match := range markdownRegex.FindAllStringSubmatchIndex(content, -1) {
 		lang := content[match[2]:match[3]]
 		code := content[match[4]:match[5]]
@@ -106,7 +106,7 @@ func ParseCodeBlocks(content string) []CodeBlock {
 
 		// Incomplete simplified XML: <code python>... (no closing tag)
 		if len(blocksWithPos) == 0 {
-			incompleteSimplifiedRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>(.+?)(?:</code|$)`)
+			incompleteSimplifiedRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py|go)>(.+?)(?:</code|$)`)
 			for _, match := range incompleteSimplifiedRegex.FindAllStringSubmatchIndex(content, -1) {
 				lang := content[match[2]:match[3]]
 				code := content[match[4]:match[5]]
@@ -132,7 +132,7 @@ func ParseCodeBlocks(content string) []CodeBlock {
 		// Malformed simplified XML: <code python (missing > on opening tag, no closing tag)
 		// This handles cases where streaming was cut off or the model output is malformed
 		if len(blocksWithPos) == 0 {
-			malformedSimplifiedRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)\s+(.+?)(?:</code|$)`)
+			malformedSimplifiedRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py|go)\s+(.+?)(?:</code|$)`)
 			for _, match := range malformedSimplifiedRegex.FindAllStringSubmatchIndex(content, -1) {
 				lang := content[match[2]:match[3]]
 				code := content[match[4]:match[5]]
@@ -157,7 +157,7 @@ func ParseCodeBlocks(content string) []CodeBlock {
 
 		// Incomplete markdown: ```python\n... (no closing backticks)
 		if len(blocksWithPos) == 0 {
-			incompleteMarkdownRegex := regexp.MustCompile("(?s)```(bash|python|javascript|js|sh|py)\\s*\\n(.+?)$")
+			incompleteMarkdownRegex := regexp.MustCompile("(?s)```(bash|python|javascript|js|sh|py|go)\\s*\\n(.+?)$")
 			for _, match := range incompleteMarkdownRegex.FindAllStringSubmatchIndex(content, -1) {
 				lang := content[match[2]:match[3]]
 				code := content[match[4]:match[5]]
@@ -196,19 +196,19 @@ func StripCodeTags(content string) string {
 	cleaned := regexp.MustCompile(`(?s)<code\s+language="[^"]+">.*?</code>`).ReplaceAllString(content, "")
 
 	// Strip simplified XML format
-	cleaned = regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>.*?</code>`).ReplaceAllString(cleaned, "")
+	cleaned = regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py|go)>.*?</code>`).ReplaceAllString(cleaned, "")
 
 	// Strip markdown code blocks
-	cleaned = regexp.MustCompile("(?s)```(?:bash|python|javascript|js|sh|py)\\s*\\n.*?```").ReplaceAllString(cleaned, "")
+	cleaned = regexp.MustCompile("(?s)```(?:bash|python|javascript|js|sh|py|go)\\s*\\n.*?```").ReplaceAllString(cleaned, "")
 
 	// Strip incomplete full XML
 	cleaned = regexp.MustCompile(`(?s)<code\s+language="[^"]+">.*`).ReplaceAllString(cleaned, "")
 
 	// Strip incomplete simplified XML
-	cleaned = regexp.MustCompile(`(?s)<code\s+(?:bash|python|javascript|js|sh|py)>.*`).ReplaceAllString(cleaned, "")
+	cleaned = regexp.MustCompile(`(?s)<code\s+(?:bash|python|javascript|js|sh|py|go)>.*`).ReplaceAllString(cleaned, "")
 
 	// Strip incomplete markdown
-	cleaned = regexp.MustCompile("(?s)```(?:bash|python|javascript|js|sh|py)\\s*\\n.*").ReplaceAllString(cleaned, "")
+	cleaned = regexp.MustCompile("(?s)```(?:bash|python|javascript|js|sh|py|go)\\s*\\n.*").ReplaceAllString(cleaned, "")
 
 	return strings.TrimSpace(cleaned)
 }
@@ -224,8 +224,29 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 	codeContainerWidth := maxWidth - codeBlockContainer.GetHorizontalFrameSize()
 
 	renderCodeBlock := func(language, code string) string {
-		markdown := fmt.Sprintf("```%s\n%s\n```", language, code)
+		// Manually wrap code to fit within container width BEFORE passing to Glamour
+		// This is necessary because Glamour doesn't wrap code blocks even with WithWordWrap
+		maxLineLen := codeContainerWidth - 2 // Leave room for padding
+		var wrappedLines []string
+		for _, line := range strings.Split(code, "\n") {
+			if len(line) <= maxLineLen {
+				wrappedLines = append(wrappedLines, line)
+			} else {
+				// Hard wrap at maxLineLen
+				remaining := line
+				for len(remaining) > maxLineLen {
+					wrappedLines = append(wrappedLines, remaining[:maxLineLen])
+					remaining = remaining[maxLineLen:]
+				}
+				if len(remaining) > 0 {
+					wrappedLines = append(wrappedLines, remaining)
+				}
+			}
+		}
+		// Reconstruct the markdown with wrapped code
+		markdown := fmt.Sprintf("```%s\n%s\n```", language, strings.Join(wrappedLines, "\n"))
 
+		// Render with glamour for syntax highlighting (wrapping already done)
 		renderer, err := glamour.NewTermRenderer(
 			glamour.WithStylePath("dark"),
 			glamour.WithWordWrap(codeContainerWidth),
@@ -240,6 +261,9 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 			logger.Warn("[SYNTAX-HIGHLIGHT] Failed to render markdown: %v", err)
 			return markdown
 		}
+
+		// Keep glamour's background colors - bubble containers apply their own backgrounds
+		// which will work with the ANSI codes properly
 
 		lines := strings.Split(rendered, "\n")
 		var cleanLines []string
@@ -272,7 +296,7 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 		})
 
 		// Replace simplified XML format
-		simplifiedXMLRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>(.+?)</code>`)
+		simplifiedXMLRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py|go)>(.+?)</code>`)
 		result = simplifiedXMLRegex.ReplaceAllStringFunc(result, func(match string) string {
 			submatches := simplifiedXMLRegex.FindStringSubmatch(match)
 			if len(submatches) < 3 {
@@ -290,7 +314,7 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 		})
 
 		// Replace markdown code blocks
-		markdownRegex := regexp.MustCompile("(?s)```(bash|python|javascript|js|sh|py)\\s*\\n(.+?)```")
+		markdownRegex := regexp.MustCompile("(?s)```(bash|python|javascript|js|sh|py|go)\\s*\\n(.+?)```")
 		result = markdownRegex.ReplaceAllStringFunc(result, func(match string) string {
 			submatches := markdownRegex.FindStringSubmatch(match)
 			if len(submatches) < 3 {
@@ -318,7 +342,7 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 		})
 
 		// Replace incomplete simplified XML
-		incompleteSimplifiedRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py)>(.+?)(?:</code|$)`)
+		incompleteSimplifiedRegex := regexp.MustCompile(`(?s)<code\s+(bash|python|javascript|js|sh|py|go)>(.+?)(?:</code|$)`)
 		result = incompleteSimplifiedRegex.ReplaceAllStringFunc(result, func(match string) string {
 			submatches := incompleteSimplifiedRegex.FindStringSubmatch(match)
 			if len(submatches) < 3 {
@@ -336,6 +360,8 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 		})
 	}
 
+	// Use "dark" style for markdown rendering with proper word wrap,
+	// then strip background codes to avoid conflicts with message bubble backgrounds
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithStylePath("dark"),
 		glamour.WithWordWrap(maxWidth),
@@ -350,6 +376,8 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 		logger.Warn("[MARKDOWN-RENDER] Failed to render markdown: %v", err)
 		return result
 	}
+
+	// Keep glamour's background colors - bubble containers apply their own backgrounds
 
 	lines := strings.Split(rendered, "\n")
 	var cleanLines []string

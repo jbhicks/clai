@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"clai/internal/logger"
+	"clai/internal/tools"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,6 +49,7 @@ const (
 
 type LLMClientInterface interface {
 	SendMessageStreamNoTools(messages []Message, streamChan chan<- string, includeSystemPrompt bool) (Response, error)
+	SendMessageStreamWithTools(messages []Message, tools []Tool, streamChan chan<- string, includeSystemPrompt bool) (Response, error)
 	Model() string
 	Host() string
 	APIFormatString() string
@@ -64,6 +66,18 @@ func NewClient(host, model, systemPrompt string) *Client {
 	if systemPrompt == "" {
 		systemPrompt = defaultSystemPrompt
 	}
+
+	// For Qwen models, append tool schemas to system prompt
+	if strings.Contains(strings.ToLower(model), "qwen") {
+		tools := tools.GetAvailableTools()
+		if len(tools) > 0 {
+			toolsJSON, err := json.Marshal(tools)
+			if err == nil {
+				systemPrompt = systemPrompt + "\n\nAvailable tools:\n" + string(toolsJSON)
+			}
+		}
+	}
+
 	c := &Client{
 		host:         host,
 		model:        model,
@@ -118,15 +132,27 @@ func (c *Client) detectAPIFormat() {
 		return
 	}
 
-	logger.Debug("[FORMAT-DETECT] Unknown format, defaulting to Ollama native")
-	c.apiFormat = FormatOllama
+	logger.Debug("[FORMAT-DETECT] Final API format for model %s: %d (%s)", c.model, c.apiFormat, c.APIFormatString())
 }
 
+func (c *Client) getChatEndpoint() string {
+	if c.apiFormat == FormatOpenAI {
+		return c.host + "/chat/completions"
+	}
+	return c.host + "/api/chat"
+}
 
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content,omitempty"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
+
+type Tool = tools.Tool
+type ToolFunction = tools.ToolFunction
+type ToolCall = tools.ToolCall
+type ToolCallFunc = tools.ToolCallFunc
 
 type Request struct {
 	Model    string    `json:"model"`
@@ -140,8 +166,9 @@ type Response struct {
 }
 
 type OpenAIDelta struct {
-	Content string `json:"content"`
-	Role    string `json:"role,omitempty"`
+	Content   string     `json:"content,omitempty"`
+	Role      string     `json:"role,omitempty"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
 
 type OpenAIChoice struct {
@@ -152,8 +179,9 @@ type OpenAIChoice struct {
 }
 
 type OpenAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role      string           `json:"role"`
+	Content   string           `json:"content"`
+	ToolCalls []tools.ToolCall `json:"tool_calls,omitempty"`
 }
 
 type OpenAIStreamChunk struct {
@@ -164,9 +192,31 @@ type OpenAIStreamChunk struct {
 	Choices []OpenAIChoice `json:"choices"`
 }
 
+type OpenAIResponse struct {
+	ID      string         `json:"id"`
+	Object  string         `json:"object"`
+	Created int64          `json:"created"`
+	Model   string         `json:"model"`
+	Choices []OpenAIChoice `json:"choices"`
+}
+
 type OpenAIRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
+	Stream   bool      `json:"stream"`
+}
+
+type RequestWithTools struct {
+	Model    string    `json:"model"`
+	Messages []Message `json:"messages"`
+	Tools    []Tool    `json:"tools,omitempty"`
+	Stream   bool      `json:"stream"`
+}
+
+type OpenAIRequestWithTools struct {
+	Model    string    `json:"model"`
+	Messages []Message `json:"messages"`
+	Tools    []Tool    `json:"tools,omitempty"`
 	Stream   bool      `json:"stream"`
 }
 
@@ -201,7 +251,7 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 	prettyReq, _ := json.MarshalIndent(reqBody, "", "  ")
 	logger.Debug("[LLM-REQ-NO-TOOLS] %s", string(prettyReq))
 
-	req, err := http.NewRequest("POST", c.host+"/api/chat", bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest("POST", c.getChatEndpoint(), bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return Response{}, err
 	}
@@ -283,6 +333,140 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 
 				if llmResp.Message.Content != "" {
 					streamChan <- llmResp.Message.Content
+				}
+
+				if llmResp.Done {
+					return
+				}
+			}
+		}
+	}()
+
+	return Response{}, nil
+}
+
+func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, streamChan chan<- string, includeSystemPrompt bool) (Response, error) {
+	var allMessages []Message
+
+	// Prepare system prompt with tools for Hermes-style (Qwen) or include tools in request for OpenAI-style
+	systemPrompt := c.systemPrompt
+	if includeSystemPrompt && c.systemPrompt != "" {
+		if len(tools) > 0 && c.apiFormat == FormatOllama {
+			// For Ollama/Hermes-style (Qwen): inject tools as JSON in system prompt
+			toolsJSON, err := json.Marshal(tools)
+			if err != nil {
+				return Response{}, fmt.Errorf("failed to marshal tools: %w", err)
+			}
+			systemPrompt = c.systemPrompt + "\n\nAvailable tools:\n" + string(toolsJSON)
+		}
+		allMessages = append([]Message{{Role: "system", Content: systemPrompt}}, messages...)
+	} else {
+		allMessages = messages
+	}
+
+	var reqBody interface{}
+	if c.apiFormat == FormatOpenAI {
+		// OpenAI format: include tools in request
+		reqBody = OpenAIRequestWithTools{
+			Model:    c.model,
+			Messages: allMessages,
+			Tools:    tools,
+			Stream:   false,
+		}
+	} else {
+		// Ollama format: tools already injected into system prompt
+		reqBody = Request{
+			Model:    c.model,
+			Messages: allMessages,
+			Stream:   true,
+		}
+	}
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return Response{}, err
+	}
+
+	prettyReq, _ := json.MarshalIndent(reqBody, "", "  ")
+	logger.Debug("[LLM-REQ-WITH-TOOLS] %s", string(prettyReq))
+
+	req, err := http.NewRequest("POST", c.getChatEndpoint(), bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return Response{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.Debug("[LLM-STREAM-ERROR] HTTP request failed: %v", err)
+		return Response{}, err
+	}
+
+	logger.Debug("[LLM-STREAM] HTTP response received, status: %s, starting goroutine", resp.Status)
+
+	go func() {
+		defer resp.Body.Close()
+		defer close(streamChan)
+		logger.Debug("[LLM-STREAM] Goroutine started for tools, apiFormat=%d (2=OpenAI)", c.apiFormat)
+
+		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 4096), bufio.MaxScanTokenSize)
+
+		if c.apiFormat == FormatOpenAI {
+			logger.Info("[LLM-OPENAI-STREAM] Starting OpenAI response reading (with tools)")
+
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				logger.Info("[LLM-OPENAI-ERROR] Failed to read response body: %v", err)
+				return
+			}
+
+			var openaiResp OpenAIResponse
+			if err := json.Unmarshal(body, &openaiResp); err != nil {
+				logger.Info("[LLM-OPENAI-ERROR] Failed to parse response: %v", err)
+				return
+			}
+
+			if len(openaiResp.Choices) > 0 {
+				content := openaiResp.Choices[0].Message.Content
+				if content != "" {
+					streamChan <- content
+				}
+
+				if len(openaiResp.Choices[0].Message.ToolCalls) > 0 {
+					for _, toolCall := range openaiResp.Choices[0].Message.ToolCalls {
+						toolCallJSON, _ := json.Marshal(toolCall)
+						streamChan <- string(toolCallJSON)
+					}
+				}
+			}
+
+			logger.Info("[LLM-OPENAI-STREAM] Response processed (non-stream)")
+		} else {
+			// Ollama/Hermes-style streaming
+			for scanner.Scan() {
+				raw := scanner.Bytes()
+				var llmResp Response
+				if err := json.Unmarshal(raw, &llmResp); err != nil {
+					logger.Debug("[LLM-RAW-ERROR] %v", err)
+					return
+				}
+
+				prettyResp, _ := json.MarshalIndent(llmResp, "", "  ")
+				logger.Debug("[LLM-RESP-STREAM] %s", string(prettyResp))
+
+				if llmResp.Message.Content != "" {
+					streamChan <- llmResp.Message.Content
+				}
+
+				// Handle tool calls in Ollama response (Hermes-style)
+				if len(llmResp.Message.ToolCalls) > 0 {
+					for _, toolCall := range llmResp.Message.ToolCalls {
+						toolCallJSON, _ := json.Marshal(toolCall)
+						streamChan <- string(toolCallJSON)
+					}
 				}
 
 				if llmResp.Done {

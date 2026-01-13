@@ -1,5 +1,0 @@
-=== clai development mode ===
-./dev.sh: line 45: /dev/tty: No such device or address
-[H[2J[3JRebuilding...
-[H[2J[3J./dev.sh: line 33: /dev/tty: No such device or address
-./dev.sh: line 8: /dev/tty: No such device or address

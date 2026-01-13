@@ -1,0 +1,67 @@
+{
+  "project": "CLAI",
+  "branchName": "ralph/core-stabilization",
+  "description": "Core Stabilization - Theme system refactor, code execution safety, legacy tool removal, test fixes",
+  "userStories": [
+    {
+      "id": "CORE-001",
+      "title": "Centralize Theme Management System",
+      "description": "As a developer, I need a centralized theme registry so themes are easy to add and maintain.",
+      "acceptanceCriteria": [
+        "Create Theme struct with Name, GlitterUI, GlamourStyle fields",
+        "Build central theme registry with all 9 themes",
+        "Replace AvailableThemes + ThemeNames arrays with registry lookups",
+        "Add GetThemeByName(name) function with validation",
+        "Add ListThemes() function for UI display",
+        "Verify all theme switching works correctly"
+      ],
+      "priority": "high",
+      "passes": true,
+      "notes": "Already implemented - Theme struct, ThemeRegistry, GetThemeByName, ListThemes all exist in styles.go"
+    },
+    {
+      "id": "CORE-002",
+      "title": "Add Code Execution Safety Guardrails",
+      "description": "As a maintainer, I need code execution safety features so the app doesn't hang or expose security risks.",
+      "acceptanceCriteria": [
+        "Add configurable timeout (default 30s) to ExecuteCode()",
+        "Add output size limit (1MB default) with truncation warning",
+        "Add dangerous command detection (rm -rf, sudo, mkfs, fork bombs)",
+        "Add execution audit log to database",
+        "Verify all safety features work correctly"
+      ],
+      "priority": "high",
+      "passes": true,
+      "notes": "Already implemented - timeouts, MaxOutputSize, dangerousPatterns regex, and logExecution all exist in code_executor.go"
+    },
+    {
+      "id": "CORE-003",
+      "title": "Remove Legacy Tool System",
+      "description": "As a developer, I want to remove the unused legacy tool system so the codebase is simpler.",
+      "acceptanceCriteria": [
+        "Delete internal/tools/tools.go (calculator, echo, web_search schemas)",
+        "Remove parseTextBasedToolCalls() from internal/llm/llm.go",
+        "Remove stripToolCallTags() functions from llm.go and model.go",
+        "Remove ToolCallFormat enum values (keep Auto or remove entirely)",
+        "Update buildToolCallSystemPrompt() to remove format-specific instructions",
+        "Verify rg 'tool_call' returns 0 results (except comments)"
+      ],
+      "priority": "high",
+      "passes": true,
+      "notes": "Already removed - tools.go is just a comment, no parseTextBasedToolCalls or stripToolCallTags found. Current tool calls are active agent functionality."
+    },
+    {
+      "id": "CORE-004",
+      "title": "Fix Incomplete Model Test",
+      "description": "As a developer, I need the model test completed so test coverage is accurate.",
+      "acceptanceCriteria": [
+        "Complete the TODO at internal/ui/model_test.go:163",
+        "Run tests to verify the test passes",
+        "Verify test coverage improves"
+      ],
+      "priority": "medium",
+      "passes": true,
+      "notes": "Already complete - no TODO found in model_test.go, file has 8 passing tests"
+    }
+  ]
+}

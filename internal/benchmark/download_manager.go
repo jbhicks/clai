@@ -501,9 +501,9 @@ func (dm *DownloadManager) downloadFileAttempt(downloadID string) error {
 		if statErr == nil && fileInfo.Size() == bytesDownloaded {
 			log.Printf("File size on disk matches bytes downloaded, but expected %s total", formatBytes(totalBytes))
 			// Mark as failed so user knows something is wrong
-			return fmt.Errorf(errMsg)
+			return fmt.Errorf("%s", errMsg)
 		}
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Mark as completed

@@ -13,8 +13,11 @@ if ! command -v inotifywait >/dev/null 2>&1; then
 fi
 
 restart_app() {
-    # Kill any existing clai processes
+    # Kill any existing clai processes more comprehensively
     pkill -9 -f "go run ./cmd/clai" 2>/dev/null || true
+    for pid in $(ps aux | grep "/clai" | grep -v "grep" | awk '{print $2}'); do
+        kill -9 $pid 2>/dev/null || true
+    done
     sleep 0.2
     
     # Start clai in background (within the tmux session which has TTY)

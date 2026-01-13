@@ -6,8 +6,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Runner executes benchmark tests and saves results to the database
@@ -54,14 +56,16 @@ func (r *Runner) RunBenchmark(ctx context.Context, modelName, modelURL string) (
 
 		// Convert to db.BenchmarkResult
 		dbResult := db.BenchmarkResult{
-			TestName:      result.TestName,
-			Query:         test.Query,
-			Passed:        result.Passed,
-			Iterations:    result.Iterations,
-			TimeSeconds:   result.TimeElapsed.Seconds(),
-			Response:      result.Response,
-			FailureReason: result.FailureReason,
-			CodeExecuted:  strings.Join(result.CodeExecuted, "\n---\n"),
+			TestName:        result.TestName,
+			Query:           test.Query,
+			Passed:          result.Passed,
+			Iterations:      result.Iterations,
+			TimeSeconds:     result.TimeElapsed.Seconds(),
+			Response:        result.Response,
+			FailureReason:   result.FailureReason,
+			CodeExecuted:    strings.Join(result.CodeExecuted, "\n---\n"),
+			TokensGenerated: result.TokensGenerated,
+			TokensPerSecond: result.TokensPerSecond,
 		}
 
 		results = append(results, dbResult)
@@ -94,6 +98,9 @@ func (r *Runner) RunBenchmark(ctx context.Context, modelName, modelURL string) (
 			log.Printf("Failed to save result for test '%s': %v", results[i].TestName, err)
 		}
 	}
+
+	// Clean up test-created files
+	cleanupTestFiles()
 
 	return runID, nil
 }
@@ -135,6 +142,12 @@ Answer questions clearly and execute code when needed to provide accurate inform
 	// Simple iteration count (could be improved to track actual iterations)
 	result.Iterations = 1
 
+	// Calculate token metrics
+	if response != "" {
+		result.TokensGenerated = estimateTokenCount(response)
+		result.TokensPerSecond = float64(result.TokensGenerated) / result.TimeElapsed.Seconds()
+	}
+
 	if err != nil {
 		result.FailureReason = fmt.Sprintf("Error: %v", err)
 		return result
@@ -169,4 +182,44 @@ Answer questions clearly and execute code when needed to provide accurate inform
 	// Test passed!
 	result.Passed = true
 	return result
+}
+
+// estimateTokenCount provides a rough estimate of token count in text
+// This is a simplified approximation: ~4 characters per token for English text
+func estimateTokenCount(text string) int {
+	if text == "" {
+		return 0
+	}
+
+	// Count alphanumeric characters and spaces
+	charCount := 0
+	for _, r := range text {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsSpace(r) {
+			charCount++
+		}
+	}
+
+	// Rough approximation: 4 characters per token
+	// This is a simplification - actual tokenization is more complex
+	tokens := charCount / 4
+	if tokens == 0 && charCount > 0 {
+		tokens = 1 // At least 1 token for non-empty text
+	}
+
+	return tokens
+}
+
+// cleanupTestFiles removes files that are known to be created by benchmark tests
+func cleanupTestFiles() {
+	filesToClean := []string{
+		"user_count.txt",
+		"nonexistent_file_xyz_999.txt",
+		// Add other test-created files here as needed
+	}
+
+	for _, filename := range filesToClean {
+		if err := os.Remove(filename); err != nil && !os.IsNotExist(err) {
+			log.Printf("Warning: failed to clean up test file '%s': %v", filename, err)
+		}
+	}
 }

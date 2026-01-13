@@ -1,0 +1,291 @@
+package ui
+
+import (
+	"clai/internal/llm"
+	"clai/internal/logger"
+	"fmt"
+	"strings"
+
+	"github.com/brittonhayes/glitter/glitter"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// EnhancedChatModel uses textarea for multi-line input
+type EnhancedChatModel struct {
+	TextArea           textarea.Model
+	LlmClient          llm.LLMClientInterface
+	Spinner            spinner.Model
+	Theme              *glitter.UI
+	AutoScroll         bool
+	UserScrolled       bool
+	Messages           []llm.Message
+	ContentDirty       bool
+	NeedsInitialScroll bool
+	Width              int
+	Height             int
+	Viewport           viewport.Model
+}
+
+// NewEnhancedChatModel creates a new chat model with textarea
+func NewEnhancedChatModel(llmClient llm.LLMClientInterface, theme *glitter.UI) *EnhancedChatModel {
+	ta := textarea.New()
+	ta.Placeholder = "Type your message... (Shift+Enter for new line, Enter to send)"
+	ta.CharLimit = 0 // No character limit for LLM prompts
+	ta.MaxHeight = 8 // Allow up to 8 lines for input
+	ta.ShowLineNumbers = false
+
+	// Style the textarea
+	focusedStyle, blurredStyle := textarea.DefaultStyles()
+	focusedStyle.Base = focusedStyle.Base.
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#00FFAA")).
+		Background(lipgloss.Color("#282a36"))
+
+	focusedStyle.CursorLine = focusedStyle.CursorLine.Background(lipgloss.Color("#3c3c3c"))
+	focusedStyle.Placeholder = focusedStyle.Placeholder.Foreground(lipgloss.Color("#666666"))
+
+	ta.FocusedStyle = focusedStyle
+	ta.BlurredStyle = blurredStyle
+
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFAA"))
+
+	vp := viewport.New(80, 20)
+	vp.MouseWheelEnabled = true
+	vp.MouseWheelDelta = 3
+
+	return &EnhancedChatModel{
+		TextArea:           ta,
+		LlmClient:          llmClient,
+		Spinner:            s,
+		Theme:              theme,
+		AutoScroll:         true,
+		Messages:           []llm.Message{{Role: "assistant", Content: "🤖 CLAI ready. Type your message or use agent commands."}},
+		ContentDirty:       true,
+		NeedsInitialScroll: true,
+		Viewport:           vp,
+	}
+}
+
+func (m *EnhancedChatModel) Init() tea.Cmd {
+	return tea.Batch(
+		textarea.Blink,
+		m.Spinner.Tick,
+	)
+}
+
+func (m *EnhancedChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.Width = msg.Width
+		m.Height = msg.Height
+
+		// Reserve space for textarea at bottom
+		availableHeight := msg.Height - 8 // 8 lines for textarea
+		if availableHeight < 10 {
+			availableHeight = 10
+		}
+
+		m.Viewport.Width = msg.Width
+		m.Viewport.Height = availableHeight
+
+		m.TextArea.SetWidth(msg.Width - 4) // Account for border padding
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+
+		case "enter":
+			// Send message on Enter (check if Shift is not pressed)
+			if !strings.Contains(msg.String(), "shift+") && m.TextArea.Focused() {
+				content := strings.TrimSpace(m.TextArea.Value())
+				if content != "" {
+					return m, m.sendMessage(content)
+				}
+			}
+
+		case "ctrl+n":
+			// Focus textarea
+			cmds = append(cmds, m.TextArea.Focus())
+
+		case "esc":
+			// Blur textarea and focus viewport
+			m.TextArea.Blur()
+		}
+
+	case LLMSendMsg:
+		m.Messages = append(m.Messages, llm.Message{Role: "user", Content: string(msg)})
+		m.ContentDirty = true
+
+		// Start spinner and send to LLM
+		cmds = append(cmds, m.Spinner.Tick)
+		cmds = append(cmds, m.callLLM())
+
+	case EnhancedLLMResponseMsg:
+		// Handle LLM response
+		_ = msg.Content
+	case EnhancedStreamUpdateMsg:
+		// Handle streaming responses
+		if len(m.Messages) > 0 && m.Messages[len(m.Messages)-1].Role == "assistant" {
+			m.Messages[len(m.Messages)-1].Content += string(msg)
+		} else {
+			m.Messages = append(m.Messages, llm.Message{Role: "assistant", Content: string(msg)})
+		}
+		m.ContentDirty = true
+	}
+
+	// Update components
+	var taCmd tea.Cmd
+	m.TextArea, taCmd = m.TextArea.Update(msg)
+	cmds = append(cmds, taCmd)
+
+	var spinCmd tea.Cmd
+	m.Spinner, spinCmd = m.Spinner.Update(msg)
+	cmds = append(cmds, spinCmd)
+
+	var vpCmd tea.Cmd
+	m.Viewport, vpCmd = m.Viewport.Update(msg)
+	cmds = append(cmds, vpCmd)
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m *EnhancedChatModel) View() string {
+	if m.ContentDirty {
+		content := m.renderMessages()
+		m.Viewport.SetContent(content)
+		m.ContentDirty = false
+
+		if m.AutoScroll && !m.UserScrolled {
+			m.Viewport.GotoBottom()
+		}
+	}
+
+	// Layout: messages above, textarea below
+	return lipgloss.JoinVertical(lipgloss.Left,
+		m.Viewport.View(),
+		lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#333333")).
+			Padding(0, 1).
+			Render(m.TextArea.View()),
+	)
+}
+
+func (m *EnhancedChatModel) renderMessages() string {
+	var rendered []string
+
+	for _, msg := range m.Messages {
+		var style lipgloss.Style
+
+		if msg.Role == "user" {
+			style = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#00FFAA")).
+				Align(lipgloss.Right).
+				Width(m.Viewport.Width - 4)
+		} else {
+			style = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FFFFFF")).
+				Width(m.Viewport.Width - 4)
+		}
+
+		// Handle multi-line messages
+		lines := strings.Split(msg.Content, "\n")
+		for _, line := range lines {
+			rendered = append(rendered, style.Render(line))
+		}
+
+		// Add spacing between messages
+		rendered = append(rendered, "")
+	}
+
+	return strings.Join(rendered, "\n")
+}
+
+func (m *EnhancedChatModel) sendMessage(content string) tea.Cmd {
+	m.TextArea.Reset()
+	return func() tea.Msg {
+		return LLMSendMsg(content)
+	}
+}
+
+func (m *EnhancedChatModel) callLLM() tea.Cmd {
+	return func() tea.Msg {
+		// Get the last user message
+		var lastUserMsg string
+		for i := len(m.Messages) - 1; i >= 0; i-- {
+			if m.Messages[i].Role == "user" {
+				lastUserMsg = m.Messages[i].Content
+				break
+			}
+		}
+
+		// Handle special commands
+		if strings.HasPrefix(lastUserMsg, "/") {
+			return m.handleCommand(lastUserMsg)
+		}
+
+		// Regular LLM call using streaming interface
+		streamChan := make(chan string, 100)
+		go func() {
+			defer close(streamChan)
+			_, err := m.LlmClient.SendMessageStreamNoTools(m.Messages, streamChan, true)
+			if err != nil {
+				logger.Error("LLM call failed: %v", err)
+				streamChan <- "❌ Error: " + err.Error()
+			}
+		}()
+
+		// Collect streaming response
+		var fullResponse strings.Builder
+		for chunk := range streamChan {
+			fullResponse.WriteString(chunk)
+		}
+
+		return EnhancedLLMResponseMsg{Content: fullResponse.String()}
+	}
+}
+
+func (m *EnhancedChatModel) handleCommand(cmd string) tea.Msg {
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return EnhancedLLMResponseMsg{Content: "❌ Invalid command"}
+	}
+
+	command := parts[0]
+
+	switch command {
+	case "/spawn":
+		if len(parts) < 3 {
+			return EnhancedLLMResponseMsg{Content: "❌ Usage: /spawn <type> <task>\nTypes: code, research, test, review, document"}
+		}
+		agentType := parts[1]
+		task := strings.Join(parts[2:], " ")
+		return EnhancedLLMResponseMsg{Content: fmt.Sprintf("🚀 Spawning %s agent for: %s", agentType, task)}
+
+	case "/agents":
+		if len(parts) > 1 && parts[1] == "list" {
+			return EnhancedLLMResponseMsg{Content: "🤖 Active agents:\n- code-agent-abc (running)\n- test-agent-def (completed)"}
+		}
+		return EnhancedLLMResponseMsg{Content: "❌ Usage: /agents list"}
+
+	case "/dashboard":
+		return EnhancedLLMResponseMsg{Content: "📊 Opening agent dashboard..."}
+
+	default:
+		return EnhancedLLMResponseMsg{Content: "❌ Unknown command: " + command}
+	}
+}
+
+// Message types
+type LLMSendMsg string
+type EnhancedLLMResponseMsg struct{ Content string }
+type EnhancedStreamUpdateMsg string

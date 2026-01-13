@@ -21,16 +21,18 @@ type BenchmarkRun struct {
 }
 
 type BenchmarkResult struct {
-	ID            int
-	RunID         int
-	TestName      string
-	Query         string
-	Passed        bool
-	Iterations    int
-	TimeSeconds   float64
-	Response      string
-	FailureReason string
-	CodeExecuted  string
+	ID              int
+	RunID           int
+	TestName        string
+	Query           string
+	Passed          bool
+	Iterations      int
+	TimeSeconds     float64
+	Response        string
+	FailureReason   string
+	CodeExecuted    string
+	TokensGenerated int
+	TokensPerSecond float64
 }
 
 type QuickTest struct {
@@ -92,10 +94,11 @@ func (s *Store) SaveBenchmarkResult(result *BenchmarkResult) error {
 	_, err := s.db.Exec(`
 		INSERT INTO benchmark_results (
 			run_id, test_name, query, passed, iterations, time_seconds,
-			response, failure_reason, code_executed
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			response, failure_reason, code_executed, tokens_generated, tokens_per_second
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, result.RunID, result.TestName, result.Query, result.Passed, result.Iterations,
-		result.TimeSeconds, result.Response, result.FailureReason, result.CodeExecuted)
+		result.TimeSeconds, result.Response, result.FailureReason, result.CodeExecuted,
+		result.TokensGenerated, result.TokensPerSecond)
 
 	if err != nil {
 		return fmt.Errorf("failed to save benchmark result: %w", err)
@@ -197,7 +200,7 @@ func (s *Store) GetLastBenchmarkForModel(modelName string) (*BenchmarkRun, error
 func (s *Store) GetBenchmarkResults(runID int) ([]BenchmarkResult, error) {
 	rows, err := s.db.Query(`
 		SELECT id, run_id, test_name, query, passed, iterations, time_seconds,
-			response, failure_reason, code_executed
+			response, failure_reason, code_executed, tokens_generated, tokens_per_second
 		FROM benchmark_results
 		WHERE run_id = ?
 		ORDER BY id
@@ -213,7 +216,7 @@ func (s *Store) GetBenchmarkResults(runID int) ([]BenchmarkResult, error) {
 		var failureReason, codeExecuted sql.NullString
 		err := rows.Scan(&result.ID, &result.RunID, &result.TestName, &result.Query,
 			&result.Passed, &result.Iterations, &result.TimeSeconds, &result.Response,
-			&failureReason, &codeExecuted)
+			&failureReason, &codeExecuted, &result.TokensGenerated, &result.TokensPerSecond)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan benchmark result: %w", err)
 		}

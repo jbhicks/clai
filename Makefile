@@ -21,7 +21,7 @@ dev:
 	@tmux kill-session -t clai_dev 2>/dev/null || true
 	@sleep 0.5
 	@truncate -s 0 debug.log
-	@tmux new-session -d -P -s clai_dev -x 120 -y 40 'clear && TERM=xterm-256color bash -c "while true; do go run ./cmd/clai; echo '\''CLAI exited, restarting in 2 seconds...'\''; sleep 2; done"'
+	@tmux new-session -d -P -s clai_dev -x 120 -y 40 'clear && TERM=xterm-256color ./dev_watch.sh'
 	@echo "✓ tmux session 'clai_dev' started with auto-reload (120x40)"
 	@echo ""
 	@echo "Trying to attach to tmux session..."
@@ -34,7 +34,7 @@ dev:
 	@echo ""
 	@echo "Alternative: ./dev.sh       # Run directly (blocks terminal)"
 
-dev-clean:
+ dev-clean:
 	@echo "Cleaning up old development processes..."
 	@pkill -f "inotifywait.*clai" 2>/dev/null || echo "No inotifywait processes found"
 	@pkill -f "dev\.sh" 2>/dev/null || echo "No dev.sh processes found"

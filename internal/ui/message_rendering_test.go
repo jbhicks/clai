@@ -70,11 +70,13 @@ And more text after.`
 	t.Logf("\nRendered bubble:\n%s", bubble)
 
 	// Verify the bubble doesn't overflow the expected width
+	// Account for AssistantMessage padding (1 on each side)
+	maxLineWidth := maxBubbleWidth + themeStyles.AssistantMessage.GetHorizontalFrameSize() + 5
 	bubbleLines := strings.Split(bubble, "\n")
 	for i, line := range bubbleLines {
 		width := lipgloss.Width(line)
-		if width > maxBubbleWidth+5 { // Allow small margin for border chars
-			t.Errorf("Line %d exceeds max width: %d > %d", i, width, maxBubbleWidth)
+		if width > maxLineWidth {
+			t.Errorf("Line %d exceeds max width: %d > %d", i, width, maxLineWidth)
 		}
 	}
 

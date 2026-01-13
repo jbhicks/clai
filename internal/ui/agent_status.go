@@ -158,21 +158,13 @@ func (v *AgentStatusView) View() string {
 		Foreground(lipgloss.Color(v.Theme.Theme.Bright.Yellow)).
 		Background(bg)
 
-	valueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(v.Theme.Theme.Primary.Foreground)).
-		Background(bg)
-
-	dimStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(v.Theme.Theme.Primary.DimForeground)).
-		Background(bg)
-
 	var content strings.Builder
 
 	if !v.Status.Active {
 		header := themeStyles.ToolBadge.Render("🤖 Agent Idle")
 		content.WriteString(header)
 		content.WriteString("\n\n")
-		content.WriteString(dimStyle.Render("Waiting for task..."))
+		content.WriteString(themeStyles.LogDim.Render("Waiting for task..."))
 	} else {
 		header := fmt.Sprintf("🤖 Agent Active - Iteration %d", v.Status.CurrentIter)
 		content.WriteString(themeStyles.ToolBadge.Render(header))
@@ -185,7 +177,7 @@ func (v *AgentStatusView) View() string {
 				thought = thought[:maxLen-3] + "..."
 			}
 			content.WriteString(labelStyle.Render("Task: "))
-			content.WriteString(valueStyle.Render(thought))
+			content.WriteString(themeStyles.LogValue.Render(thought))
 			content.WriteString("\n")
 		}
 	}
@@ -205,7 +197,7 @@ func (v *AgentStatusView) View() string {
 	}
 
 	if len(v.Actions) == 0 {
-		content.WriteString(dimStyle.Render("  No actions yet"))
+		content.WriteString(themeStyles.LogDim.Render("  No actions yet"))
 		content.WriteString("\n")
 	} else {
 		displayStart := 0
@@ -221,22 +213,16 @@ func (v *AgentStatusView) View() string {
 			switch action.Status {
 			case "completed":
 				icon = "✓"
-				actionStyle = lipgloss.NewStyle().
-					Foreground(lipgloss.Color(v.Theme.Theme.Bright.Green)).
-					Background(bg)
+				actionStyle = themeStyles.ActionCompleted
 			case "failed":
 				icon = "✗"
-				actionStyle = lipgloss.NewStyle().
-					Foreground(lipgloss.Color(v.Theme.Theme.Bright.Red)).
-					Background(bg)
+				actionStyle = themeStyles.ActionFailed
 			case "in_progress":
 				icon = "⟳"
-				actionStyle = lipgloss.NewStyle().
-					Foreground(lipgloss.Color(v.Theme.Theme.Bright.Yellow)).
-					Background(bg)
+				actionStyle = themeStyles.ActionInProgress
 			default:
 				icon = "•"
-				actionStyle = dimStyle
+				actionStyle = themeStyles.LogDim
 			}
 
 			maxLen := v.Width - 8
@@ -262,7 +248,7 @@ func (v *AgentStatusView) View() string {
 	if len(v.History) > 0 && v.CurrentCode == nil {
 		content.WriteString("\n")
 		divider := strings.Repeat("━", v.Width-4)
-		content.WriteString(dimStyle.Render(divider))
+		content.WriteString(themeStyles.LogDim.Render(divider))
 		content.WriteString("\n")
 		content.WriteString(labelStyle.Render("Recent Completions:"))
 		content.WriteString("\n")
@@ -283,9 +269,9 @@ func (v *AgentStatusView) View() string {
 			}
 
 			line := fmt.Sprintf("▸ %s (%d) - %s",
-				dimStyle.Render(thought),
+				themeStyles.LogDim.Render(thought),
 				task.ActionCount,
-				dimStyle.Render(elapsed))
+				themeStyles.LogDim.Render(elapsed))
 			content.WriteString(line)
 			content.WriteString("\n")
 		}

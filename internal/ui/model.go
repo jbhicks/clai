@@ -118,6 +118,8 @@ type Model struct {
 	ErrorMessage  string
 	ShowError     bool
 	Theme         *glitter.UI
+	Layout        LayoutConfig
+	cachedStyles  *ThemeStyles
 	logChan       chan tea.Msg
 	logDone       chan struct{}
 	DB            interface{}
@@ -257,11 +259,13 @@ func getThemeName(currentTheme *glitter.UI) string {
 
 func (m *Model) Init() tea.Cmd {
 	m.statusChan = make(chan tea.Msg, 100)
+	m.Layout = DefaultLayoutConfig()
+	m.updateCachedStyles()
 	return tea.Batch(TailLogFileCmd(m), m.Chat.Init(), tea.WindowSize())
 }
 
 func (m *Model) updateDimensions() {
-	chatPaneWidth := int(float64(m.Width) * 0.8)
+	chatPaneWidth := int(float64(m.Width) * m.Layout.ChatPaneWidthRatio)
 	logPaneWidth := m.Width - chatPaneWidth
 
 	themeStyles := GetThemeStyles(m.Theme)
@@ -273,26 +277,30 @@ func (m *Model) updateDimensions() {
 		contentHeight -= m.ErrorBanner.GetHeight()
 	}
 
-	m.Chat.Width = max(chatPaneWidth-chatPaneStyle.GetHorizontalFrameSize(), 10)
+	m.Chat.Width = max(chatPaneWidth-chatPaneStyle.GetHorizontalFrameSize(), m.Layout.MinViewportWidth)
 
 	// Log pane contains both agent status and log viewport
-	logPaneInnerWidth := max(logPaneWidth-logPaneStyle.GetHorizontalFrameSize(), 10)
-	logPaneInnerHeight := max(contentHeight-logPaneStyle.GetVerticalFrameSize(), 3)
+	logPaneInnerWidth := max(logPaneWidth-logPaneStyle.GetHorizontalFrameSize(), m.Layout.MinPaneWidth)
+	logPaneInnerHeight := max(contentHeight-logPaneStyle.GetVerticalFrameSize(), m.Layout.MinViewportHeight)
 
-	// Agent status gets 8 rows, rest goes to log
-	agentStatusHeight := 8
+	agentStatusHeight := m.Layout.AgentStatusPaneHeight
 	m.AgentStatus.Width = logPaneInnerWidth
 	m.AgentStatus.Height = agentStatusHeight
 
 	m.Log.Width = logPaneInnerWidth
-	m.Log.Height = max(logPaneInnerHeight-agentStatusHeight, 3)
+	m.Log.Height = max(logPaneInnerHeight-agentStatusHeight, m.Layout.MinViewportHeight)
 
-	m.Chat.Height = max(contentHeight-chatPaneStyle.GetVerticalFrameSize(), 3)
+	m.Chat.Height = max(contentHeight-chatPaneStyle.GetVerticalFrameSize(), m.Layout.MinViewportHeight)
 
 	m.Chat.Viewport.Width = m.Chat.Width
 	// Note: Viewport.Height is set by chat.updateViewportHeight() in chat.Update()
 	// to account for input field, spinner, scroll indicator, etc.
-	m.Chat.TextInput.Width = m.Chat.Width - 8
+	m.Chat.TextInput.Width = m.Chat.Width - m.Layout.TextInputPadding
+}
+
+func (m *Model) updateCachedStyles() {
+	styles := GetThemeStyles(m.Theme)
+	m.cachedStyles = &styles
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -603,6 +611,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		m.Theme = availableThemes[nextIdx]
 		m.Chat.Theme = m.Theme
 		m.Chat.ContentDirty = true
+		m.updateCachedStyles()
 		m.Help.Styles.FullKey = lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Primary.Foreground))
 		m.Help.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Primary.DimForeground))
 		m.Help.Styles.FullSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Primary.DimForeground))
@@ -797,6 +806,25 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 			},
 		}
 
+	case "inspect_styles":
+		resp = DebugResponse{
+			Success: true,
+			Data: map[string]interface{}{
+				"width":           m.Width,
+				"height":          m.Height,
+				"chat_width":      m.Chat.Width,
+				"chat_height":     m.Chat.Height,
+				"message_count":   len(m.Chat.Messages),
+				"viewport_offset": m.Chat.Viewport.YOffset,
+				"viewport_height": m.Chat.Viewport.Height,
+				"total_lines":     m.Chat.Viewport.TotalLineCount(),
+				"active_pane":     m.ActivePane,
+				"theme":           "current",
+				"show_help":       m.ShowHelp,
+				"help_show_all":   m.Help.ShowAll,
+			},
+		}
+
 	case "get_history":
 		resp = DebugResponse{
 			Success: true,
@@ -904,12 +932,132 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 				return nil
 			}
 
-			m.Update(keyMsg)
+			m, cmd := m.Update(keyMsg)
+			logger.Info("[DEBUG] cmd is nil: %v", cmd == nil)
+			if cmd != nil {
+				logger.Info("[DEBUG] executing cmd")
+				msg := cmd()
+				logger.Info("[DEBUG] cmd executed, msg type: %T", msg)
+				if bm, ok := msg.([]tea.Msg); ok {
+					logger.Info("[DEBUG] batch msg with %d msgs", len(bm))
+					for _, subMsg := range bm {
+						logger.Info("[DEBUG] processing sub msg: %T", subMsg)
+						m, _ = m.Update(subMsg)
+					}
+				} else {
+					logger.Info("[DEBUG] single msg: %T", msg)
+					m, _ = m.Update(msg)
+				}
+			}
 
 			resp = DebugResponse{
 				Success: true,
 				Data: map[string]interface{}{
 					"key_sent": key,
+				},
+			}
+		}
+
+	case "send_window_size":
+		width, widthOk := msg.Cmd.Args["width"].(float64)
+		height, heightOk := msg.Cmd.Args["height"].(float64)
+		if !widthOk || !heightOk {
+			resp = DebugResponse{
+				Success: false,
+				Error:   "Missing required args: width and height (must be numbers)",
+			}
+		} else {
+			// Create and process a WindowSizeMsg
+			windowMsg := tea.WindowSizeMsg{
+				Width:  int(width),
+				Height: int(height),
+			}
+			m, cmd := m.Update(windowMsg)
+			logger.Info("[DEBUG] Processed window resize to %dx%d", int(width), int(height))
+			if cmd != nil {
+				logger.Info("[DEBUG] Window resize command executed")
+				msg := cmd()
+				m, _ = m.Update(msg)
+			}
+
+			resp = DebugResponse{
+				Success: true,
+				Data: map[string]interface{}{
+					"width":  int(width),
+					"height": int(height),
+				},
+			}
+		}
+
+	case "send_mouse":
+		x, xOk := msg.Cmd.Args["x"].(float64)
+		y, yOk := msg.Cmd.Args["y"].(float64)
+		button, buttonOk := msg.Cmd.Args["button"].(string)
+		action, actionOk := msg.Cmd.Args["action"].(string)
+		if !xOk || !yOk || !buttonOk || !actionOk {
+			resp = DebugResponse{
+				Success: false,
+				Error:   "Missing required args: x, y, button, action",
+			}
+		} else {
+			// Create mouse event based on button and action
+			var mouseMsg tea.MouseMsg
+			mouseMsg.X = int(x)
+			mouseMsg.Y = int(y)
+
+			switch button {
+			case "left":
+				mouseMsg.Button = tea.MouseButtonLeft
+			case "right":
+				mouseMsg.Button = tea.MouseButtonRight
+			case "middle":
+				mouseMsg.Button = tea.MouseButtonMiddle
+			case "wheel_up":
+				mouseMsg.Button = tea.MouseButtonWheelUp
+			case "wheel_down":
+				mouseMsg.Button = tea.MouseButtonWheelDown
+			default:
+				resp = DebugResponse{
+					Success: false,
+					Error:   fmt.Sprintf("Unknown button: %s", button),
+				}
+				SendDebugResponse(msg.Conn, resp)
+				msg.Conn.Close()
+				return nil
+			}
+
+			switch action {
+			case "press":
+				mouseMsg.Action = tea.MouseActionPress
+			case "release":
+				mouseMsg.Action = tea.MouseActionRelease
+			case "motion":
+				mouseMsg.Action = tea.MouseActionMotion
+			default:
+				resp = DebugResponse{
+					Success: false,
+					Error:   fmt.Sprintf("Unknown action: %s", action),
+				}
+				SendDebugResponse(msg.Conn, resp)
+				msg.Conn.Close()
+				return nil
+			}
+
+			m, cmd := m.Update(mouseMsg)
+			logger.Info("[DEBUG] Processed mouse event at (%d,%d) button=%s action=%s", int(x), int(y), button, action)
+			if cmd != nil {
+				logger.Info("[DEBUG] Mouse event command executed")
+				msg := cmd()
+				m, _ = m.Update(msg)
+			}
+
+			resp = DebugResponse{
+				Success: true,
+				Data: map[string]interface{}{
+					"x":      int(x),
+					"y":      int(y),
+					"button": button,
+					"action": action,
 				},
 			}
 		}
@@ -928,7 +1076,11 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 					Type:  tea.KeyRunes,
 					Runes: []rune{ch},
 				}
-				m.Update(keyMsg)
+				m, cmd := m.Update(keyMsg)
+				if cmd != nil {
+					msg := cmd()
+					m, _ = m.Update(msg)
+				}
 			}
 			resp = DebugResponse{
 				Success: true,
@@ -1082,15 +1234,9 @@ func (m *Model) View() string {
 	}
 
 	if m.ShowHelp {
-		chatPaneWidth := int(float64(m.Width) * 0.6)
-		helpBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			Padding(1, 2).
-			Background(lipgloss.Color(m.Theme.Theme.Primary.Background)).
-			Foreground(lipgloss.Color(m.Theme.Theme.Bright.White)).
-			Width(max(chatPaneWidth/2, 10)).
-			Align(lipgloss.Center).
-			Render(m.Help.View(m.Keys))
+		chatPaneWidth := int(float64(m.Width) * m.Layout.HelpPaneWidthRatio)
+		themeStyles := GetThemeStyles(m.Theme)
+		helpBox := themeStyles.HelpBox.Width(max(chatPaneWidth/2, 10)).Render(m.Help.View(m.Keys))
 		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, helpBox)
 	}
 	return layout

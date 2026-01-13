@@ -14,6 +14,7 @@ type AgentResponseMsg struct {
 
 func RunAgentCmd(agent *llm.Agent, query string, statusChan chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
+		logger.Info("[AGENT-CMD] Starting agent.Run")
 		logger.Info("[AGENT-CMD] Running agent with query: %s", query)
 
 		agent.SetStatusCallback(func(iteration int, thought string, executingCode bool, language string, code string) {
