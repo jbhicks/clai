@@ -198,6 +198,34 @@ c.updateViewportHeight()  // Actually called
 - **Test UI changes** - Use `clai debug inspect` to verify pane dimensions, viewport sizes, and overall layout after changes. Check for 0x0 dimensions or misaligned panes.
 - **Verify Bubble Tea calculations** - Frame sizes (GetHorizontalFrameSize/GetVerticalFrameSize) must be subtracted correctly from outer dimensions to get inner component sizes.
 
+## 🚨 CRITICAL: Lipgloss Border Background Transparency
+
+**ABSOLUTELY FORBIDDEN**: When using lipgloss borders, **ALWAYS** set `BorderBackground()` in addition to `BorderForeground()`.
+
+**WHY THIS MATTERS**: Border characters (┌┐└┘─│) do NOT automatically inherit background colors. Without `BorderBackground()`, borders appear with transparent backgrounds, creating ugly black gaps/bars in your UI.
+
+**CORRECT - Always include both:**
+```go
+style := lipgloss.NewStyle().
+    Background(lipgloss.Color("#282a36")).           // Content background
+    Border(lipgloss.RoundedBorder()).
+    BorderForeground(lipgloss.Color("#ffb86c")).     // Border color
+    BorderBackground(lipgloss.Color("#282a36"))      // ← CRITICAL: Border background
+```
+
+**INCORRECT - Causes black bars:**
+```go
+style := lipgloss.NewStyle().
+    Background(lipgloss.Color("#282a36")).
+    Border(lipgloss.RoundedBorder()).
+    BorderForeground(lipgloss.Color("#ffb86c"))
+    // Missing BorderBackground() - causes transparent gaps!
+```
+
+**VERIFICATION**: Use `clai debug inspect` to check for ANSI reset codes (`[0m`) in border areas. If you see resets without background codes following them, you have transparency gaps.
+
+**CONSEQUENCE**: UI corruption with black bars/gaps that ruin the visual experience. This wasted hours of debugging time in recent commits.
+
 ## UI Component Guidelines
 - Always use Charm Bubble components for all UI pieces.
 - Do not write custom UI components unless absolutely necessary (e.g., when no Bubble component exists for your use case).
@@ -206,6 +234,87 @@ c.updateViewportHeight()  // Actually called
 ### Bubble Tea Layout & Sizing Best Practices
 
 **Critical Rules for Proper Layout:**
+
+#### Guard width-derived arithmetic
+
+- Problem: Tests and very narrow terminals can set viewport widths (e.g., v.Width) smaller than the constants used in layout code (for example `v.Width - 4`). If these values are used without guarding they can produce negative values which cause runtime panics (negative counts for `strings.Repeat`, out-of-range slice indices) or corrupt rendering.
+
+- Rule: Always clamp any width-derived value to a non-negative integer before using it in `strings.Repeat`, slice bounds, or as arguments to lipgloss `Width()`/`Height()`.
+
+- Example (safe divider repeat):
+
+```go
+padCount := v.Width - 4
+if padCount < 0 {
+    padCount = 0
+}
+divider := strings.Repeat("━", padCount)
+```
+
+- Example (safe truncation with ellipsis):
+
+```go
+maxLen := v.Width - 20
+if maxLen < 0 {
+    maxLen = 0
+}
+// Prefer rune-aware truncation (see below) when dealing with user-visible text
+if len(s) > maxLen {
+    if maxLen > 3 {
+        s = s[:maxLen-3] + "..."
+    } else {
+        s = s[:maxLen]
+    }
+}
+```
+
+#### Rune-aware truncation (Unicode-safe)
+
+- Problem: Slicing strings by byte index (using `len` and `[:n]`) can break multi-byte UTF-8 characters and produce invalid output.
+
+- Rule: When truncating user-visible text, convert the string to `[]rune` first and slice by rune count.
+
+```go
+r := []rune(s)
+if len(r) > maxLen {
+    if maxLen > 3 {
+        s = string(r[:maxLen-3]) + "..."
+    } else {
+        s = string(r[:maxLen])
+    }
+}
+```
+
+#### Narrow-width unit tests
+
+- Add unit tests that exercise narrow terminal widths (0..12) for every view that uses arithmetic from `v.Width`. These tests catch panics and off-by-one errors quickly.
+
+Example test skeleton:
+
+```go
+func TestAgentStatusViewNarrowWidths(t *testing.T) {
+    theme := NewTestTheme()
+    for w := 0; w <= 12; w++ {
+        v := NewAgentStatusView(theme)
+        v.Width = w
+        v.Height = 10
+        v.Status = AgentStatus{Active: true, Thought: "short"}
+        _ = v.View() // must not panic
+    }
+}
+```
+
+#### Defensive helpers
+
+- Encourage creating and reusing helpers such as `safeWidth(vWidth, sub int) int` and `truncateForWidth(s string, w int) string` to centralize clamping/truncation behavior and keep code consistent.
+
+#### Testing checklist addition (UI changes)
+
+- After UI changes, include narrow-width test cases as part of the CI/dev checklist:
+  - Run clai-debug_inspect baseline -> implement -> wait for dev auto-reload -> clai-debug_inspect again
+  - Run unit tests including narrow-width tests: `go test ./internal/ui -run Narrow -v`
+  - Run integration tests that exercise Bubble Tea rendering (existing suites)
+
 
 1. **Height Calculation**: Use `lipgloss.Height()` for actual rendered heights, not `style.GetHeight()` (returns 0 for padded styles). Formula: `contentHeight = terminalHeight - statusBarRows - errorBannerRows`.
 
@@ -274,6 +383,78 @@ c.updateViewportHeight()  // Actually called
 - Creating wrappers without explicit backgrounds
 - Applying borders before joining
 - Debug logging in `View()` methods
+
+### Bubble Tea External Message Injection Patterns
+
+**CRITICAL**: When injecting messages from external goroutines or async operations into Bubble Tea programs, follow these patterns from the official examples:
+
+1. **Use `p.Send(msg)` for External Messages**:
+   ```go
+   // ✅ CORRECT - From send-msg example
+   go func() {
+       // ... async work ...
+       p.Send(resultMsg{data: "result"})
+   }()
+   ```
+
+2. **Commands Handle Async I/O**:
+   ```go
+   // ✅ CORRECT - Commands perform I/O and return messages
+   func checkServer() tea.Msg {
+       res, err := http.Get(url)
+       if err != nil {
+           return errMsg{err}
+       }
+       return statusMsg(res.StatusCode)
+   }
+   ```
+
+3. **Channel-based Communication**:
+   ```go
+   // ✅ CORRECT - From realtime example
+   type model struct {
+       sub chan struct{}  // channel for external events
+   }
+
+   func waitForActivity(sub chan struct{}) tea.Cmd {
+       return func() tea.Msg {
+           return responseMsg(<-sub)
+       }
+   }
+   ```
+
+4. **Avoid Direct UI State Manipulation**:
+   ```go
+   // ❌ WRONG - Direct manipulation from goroutines
+   go func() {
+       m.Chat.Streaming = true  // Never do this!
+   }()
+
+   // ✅ CORRECT - Send message to Update loop
+   go func() {
+       p.Send(startStreamingMsg{})
+   }()
+   ```
+
+**Why This Matters**:
+- All UI updates must happen in the `Update()` method in response to messages
+- External goroutines should never directly modify model state
+- Use `p.Send()` to inject messages into the Bubble Tea event loop
+- Commands provide the bridge between async I/O and the UI event loop
+
+**Streaming Implementation Pattern**:
+When implementing streaming responses (like AI text generation), use:
+```go
+// Agent callback sends chunks via p.Send()
+callback := func(chunk string) {
+    p.Send(streamChunkMsg{chunk: chunk})
+}
+
+// UI Update method handles streaming
+case streamChunkMsg:
+    m.Chat.Messages[lastIdx].Content += msg.chunk
+    m.Chat.ContentDirty = true
+```
 
 ## UI Component Research Guidelines
 
@@ -416,7 +597,7 @@ No Cursor or Copilot rules detected.
 - To verify your changes:
   1. Check `debug.log` for runtime logs: `tail -f debug.log` or `cat debug.log`
   2. Look for errors, warnings, or debug output related to your changes
-  3. If needed, ask the user to test specific functionality in the running app
+  3. **MANDATORY**: Use clai-debug MCP tools to verify UI/functionality changes
 - The dev watcher uses `air` to automatically rebuild and restart on `.go` file changes.
 - **Exception:** You may check if processes are running (`ps aux | grep`), check listening ports (`ss -tlnp`), or read log files to diagnose issues, but do not start/stop/kill processes.
 
@@ -472,9 +653,11 @@ tmux kill-session -t clai-test
   5. Compare before/after output
 - Other debug commands: `clai debug ping`, `clai debug switch_pane`, `clai debug get_history`
 
-## Mandatory Testing with clai-debug Tools
+## ⚠️ **MANDATORY TESTING REQUIREMENT - NO EXCEPTIONS** ⚠️
 
-**CRITICAL: Agents MUST use clai-debug MCP tools to verify ALL changes that affect user interaction, UI, or functionality**
+**🚨 CRITICAL: Agents MUST use clai-debug MCP tools to verify ALL changes that affect user interaction, UI, or functionality**
+
+**FAILURE TO TEST THROUGH CLAI-DEBUG TOOLS = AUTOMATIC FAILURE - NO CODE MAY BE COMMITTED WITHOUT VERIFICATION**
 
 This requirement applies to ANY changes that could impact how users see or interact with the application, including (but not limited to):
 - UI layout, rendering, or styling changes
@@ -487,6 +670,10 @@ This requirement applies to ANY changes that could impact how users see or inter
 
 **❌ FORBIDDEN**: Agents may NOT ask users to test changes or report UI issues. Agents MUST verify functionality themselves.
 
+### Development Environment Assumption
+
+**ASSUME DEV MODE IS ACTIVE**: All testing assumes `make dev` or equivalent hot-reload development environment is running. Changes to `.go` files trigger automatic rebuild and restart with proper build identifiers. After making changes, wait for the auto-restart before testing with clai-debug tools.
+
 ### Required Testing Workflow
 
 **BEFORE making ANY UI/affecting changes:**
@@ -495,16 +682,49 @@ This requirement applies to ANY changes that could impact how users see or inter
 3. Use `clai-debug_get_history` to verify conversation state if relevant
 
 **AFTER making changes:**
-1. Wait for automatic reload (assume `make dev` is running)
-2. Use `clai-debug_inspect` to verify the change is visible and correct
-3. Use `clai-debug_inspect_styles` to confirm layout/dimensions are proper
-4. Use `clai-debug_send_key` to test user interactions (e.g., keyboard navigation, inputs)
-5. Use `clai-debug_get_history` to verify conversation flow if affected
+1. **ASSUME DEV MODE IS RUNNING** - Changes to `.go` files trigger automatic rebuild and restart
+2. **VERIFY AUTO-RESTART**: Check that CLAI process restarted (new PID) and debug socket reconnected
+3. **WAIT FOR STABILIZATION**: Allow 2-3 seconds for UI to fully render after restart
+4. Use `clai-debug_inspect` to verify the change is visible and correct
+5. Use `clai-debug_inspect_styles` to confirm layout/dimensions are proper
+6. Use `clai-debug_send_key` to test user interactions (e.g., keyboard navigation, inputs)
+7. Use `clai-debug_get_history` to verify conversation flow if affected
+
+**DEV MODE VERIFICATION:**
+- Check `ps aux | grep "make run"` shows running process with recent start time
+- Confirm `/tmp/clai.sock` exists and is accessible
+- Use `clai-debug_ping` to verify debug server connectivity
+- **Check Build ID in status bar** changes after code edits (proves auto-restart)
+- Use `clai-debug_inspect` to see current Build ID (shows as 🔄 Build ID: ...)
+- **Build ID format**: `YYYYMMDD-HHMMSS-COMMIT-bCOUNT-RAND` (guaranteed unique per build)
+- If auto-restart fails, manually restart with `make dev` or `./clai`
 
 **For tool/functionality testing:**
 1. Use `clai-debug_send_key` to simulate user input that triggers the functionality
 2. Use `clai-debug_inspect` to verify tool execution status and results appear correctly
 3. Use `clai-debug_get_history` to confirm tool results are added to conversation
+
+### **WHEN TOOLS ARE INSUFFICIENT** 🚨
+
+**If clai-debug tools cannot properly test a change:**
+1. **IMMEDIATELY STOP** and document the limitation
+2. **INVESTIGATE** what additional debugging capabilities are needed
+3. **ADD NEW TOOLS** to the clai-debug MCP server to fill the gap
+4. **TEST AGAIN** with the new tools before proceeding
+
+**Examples of when new tools are needed:**
+- Visual rendering issues not captured by text inspection
+- Animation/timing problems
+- Color/styling verification beyond dimensions
+- Interactive behavior testing
+- Performance profiling
+
+**Process for adding new tools:**
+1. Identify the specific debugging need
+2. Implement new MCP tool in `scripts/mcp/clai-mcp-server.js`
+3. Add corresponding handler in CLAI's debug server
+4. Document the new tool in this section
+5. Test the implementation thoroughly
 
 ### Documentation Requirements
 
@@ -529,19 +749,33 @@ Agent: Making changes to message rendering in internal/ui/model.go
 **❌ WRONG**: "Can you test this and tell me if the UI looks right?"
 **✅ RIGHT**: Agent runs clai-debug_inspect themselves and reports findings
 
-Available tools (use via MCP skill_mcp tool with mcp_name="clai-debug"):
-- `clai-debug_inspect` - Get full UI inspection including viewport content, dimensions, and state
-- `clai-debug_inspect_styles` - Get structured viewport dimensions and state info (JSON format)
-- `clai-debug_get_history` - Get the conversation history/messages
-- `clai-debug_ping` - Test connectivity to the CLAI debug server
-- `clai-debug_send_key KEY` - Send a keystroke to the TUI (e.g., "enter", "ctrl+h", "up", "down")
-- `clai-debug_type_text TEXT` - Type text into the input field
+Available tools (accessed via MCP protocol to clai-debug server):
+- `inspect` - Get full UI inspection including viewport content, dimensions, and state
+- `inspect_styles` - Get structured viewport dimensions and state info (JSON format)
+- `get_history` - Get the conversation history/messages
+- `ping` - Test connectivity to the CLAI debug server
+- `send_key` - Send a keystroke to the TUI (e.g., "enter", "ctrl+h", "up", "down")
+- `type_text` - Type text into the input field
+- `send_message` - Inject a message into the conversation
+- `switch_pane` - Switch between chat and log panes
+
+**Important Distinction:**
+- **skill_mcp tool**: For MCP servers embedded within Oh My OpenCode skills
+- **clai-debug tools**: Standalone MCP server accessed via direct MCP protocol calls
+
+The clai-debug server is configured in `.mcp.json` but accessed directly via MCP protocol, not through the skill_mcp tool.
 
 **Workflow Enforcement:**
 - Agents MUST include clai-debug testing results in their responses
 - If clai-debug tools are unavailable or fail, agents MUST report this and cannot proceed with changes
 - All UI changes are considered incomplete until verified with clai-debug tools
 - This ensures agents are fully responsible for change validation, not users
+
+**Implementation Notes:**
+- Server runs as stdio transport MCP server located at `scripts/mcp/clai-mcp-server.js`
+- Communicates with CLAI via Unix socket at `/tmp/clai.sock`
+- Tools are invoked using MCP JSON-RPC protocol (not skill_mcp tool)
+- Example: `{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "inspect", "arguments": {}}}`
 
 ### Why This Is Mandatory
 
@@ -552,12 +786,15 @@ Without agent-driven testing:
 - Quality suffers from lack of immediate feedback
 
 With mandatory clai-debug testing:
-- Agents verify changes immediately and accurately
-- Issues are caught and fixed before user involvement
-- Development velocity increases through rapid iteration
+- Agents verify changes immediately and accurately via hot-reload dev environment
+- Issues are caught and fixed in real-time during development
+- Development velocity increases through rapid iteration with auto-restart
 - Users only see working, tested features
+- No manual testing cycles required - dev environment handles everything
 
 **VIOLATION**: Making UI changes without clai-debug verification = incomplete work that must be reverted.
+
+**🚨 ZERO TOLERANCE POLICY: ANY UI/AFFECTING CHANGE WITHOUT CLAI-DEBUG VERIFICATION WILL BE REJECTED AND MUST BE REVERTED IMMEDIATELY**
 
 ## Running Blocking Scripts
 - Do **not** run blocking scripts (such as `dev_run.sh` or `dev_watch.sh`) directly in the foreground, as this will block the thread and prevent further interaction.

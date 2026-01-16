@@ -247,7 +247,11 @@ func (v *AgentStatusView) View() string {
 
 	if len(v.History) > 0 && v.CurrentCode == nil {
 		content.WriteString("\n")
-		divider := strings.Repeat("━", v.Width-4)
+		padCount := v.Width - 4
+		if padCount < 0 {
+			padCount = 0
+		}
+		divider := strings.Repeat("━", padCount)
 		content.WriteString(themeStyles.LogDim.Render(divider))
 		content.WriteString("\n")
 		content.WriteString(labelStyle.Render("Recent Completions:"))
@@ -263,9 +267,16 @@ func (v *AgentStatusView) View() string {
 			elapsed := formatElapsed(time.Since(task.CompletedAt))
 
 			maxLen := v.Width - 20
+			if maxLen < 0 {
+				maxLen = 0
+			}
 			thought := task.Thought
 			if len(thought) > maxLen {
-				thought = thought[:maxLen-3] + "..."
+				if maxLen > 3 {
+					thought = thought[:maxLen-3] + "..."
+				} else {
+					thought = thought[:maxLen]
+				}
 			}
 
 			line := fmt.Sprintf("▸ %s (%d) - %s",
