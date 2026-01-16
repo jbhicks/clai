@@ -161,13 +161,13 @@ func (v *AgentStatusView) View() string {
 	var content strings.Builder
 
 	if !v.Status.Active {
-		header := themeStyles.ToolBadge.Render("🤖 Agent Idle")
+		header := themeStyles.AgentIdleBadge.Render("🤖 Agent Idle")
 		content.WriteString(header)
 		content.WriteString("\n\n")
 		content.WriteString(themeStyles.LogDim.Render("Waiting for task..."))
 	} else {
 		header := fmt.Sprintf("🤖 Agent Active - Iteration %d", v.Status.CurrentIter)
-		content.WriteString(themeStyles.ToolBadge.Render(header))
+		content.WriteString(themeStyles.AgentActiveBadge.Render(header))
 		content.WriteString("\n")
 
 		if v.Status.Thought != "" {
@@ -316,9 +316,14 @@ func (v *AgentStatusView) renderCodeBlock(maxHeight int) string {
 		Bold(true)
 	headerText := headerStyle.Render(fmt.Sprintf("%s Executing %s", statusIcon, v.CurrentCode.Language))
 
-	// Wrap header to full width with matching background
+	// Safe inner width for header and box (avoid negative values)
+	innerWidth := v.Width - 4
+	if innerWidth < 0 {
+		innerWidth = 0
+	}
+
 	headerWrapper := lipgloss.NewStyle().
-		Width(v.Width - 4).
+		Width(innerWidth).
 		Background(bg)
 	header := headerWrapper.Render(headerText)
 
@@ -337,8 +342,17 @@ func (v *AgentStatusView) renderCodeBlock(maxHeight int) string {
 
 	var codeContent strings.Builder
 	for _, line := range codeLines {
-		if len(line) > v.Width-10 {
-			line = line[:v.Width-13] + "..."
+		// Safe truncation based on available width
+		maxLineLen := v.Width - 13
+		if maxLineLen < 0 {
+			maxLineLen = 0
+		}
+		if len(line) > maxLineLen {
+			if maxLineLen > 3 {
+				line = line[:maxLineLen-3] + "..."
+			} else {
+				line = line[:maxLineLen]
+			}
 		}
 		codeContent.WriteString(codeStyle.Render(line))
 		codeContent.WriteString("\n")
@@ -353,11 +367,12 @@ func (v *AgentStatusView) renderCodeBlock(maxHeight int) string {
 	}
 
 	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
 		Background(bg).
+		BorderBackground(bg).
 		Padding(0, 1).
-		Width(v.Width - 4)
+		Width(innerWidth)
 
 	parts := []string{header, boxStyle.Render(codeContent.String())}
 
