@@ -103,7 +103,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "inspect",
-        description: "Get full UI inspection including viewport content, dimensions, and state",
+        description: "Get full UI inspection including viewport content, dimensions, pane sizes, scroll position, message count, and active pane",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      },
+      {
+        name: "get_ui_state",
+        description: "Get the current state of the running TUI - terminal dimensions, chat pane size, viewport scroll position, message count, active pane",
         inputSchema: {
           type: "object",
           properties: {},
@@ -113,6 +122,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "inspect_styles",
         description: "Get structured viewport dimensions and state info (JSON format, ideal for programmatic use)",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      },
+      {
+        name: "get_theme_colors",
+        description: "Get the current theme colors and styling (background, foreground, dim colors for each UI element including textarea, chat bubbles, status bar, etc.)",
         inputSchema: {
           type: "object",
           properties: {},
@@ -131,6 +149,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "get_history",
         description: "Get the conversation history/messages",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      },
+      {
+        name: "analyze_render",
+        description: "Comprehensive background coverage analysis - detects transparency gaps, compares expected vs actual colors, generates visual background maps (█ = has bg,░ = transparent)",
         inputSchema: {
           type: "object",
           properties: {},
@@ -251,11 +278,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         break;
 
       case "inspect":
-        response = await sendDebugCommand("inspect");
+      case "get_ui_state":
+        // Enable single component, offset, and limit args
+        const inspectArgs = {
+          ...(args || {}),
+        };
+        response = await sendDebugCommand("inspect", inspectArgs);
         break;
 
       case "inspect_styles":
         response = await sendDebugCommand("inspect_styles");
+        break;
+
+      case "get_theme_colors":
+        response = await sendDebugCommand("get_theme_colors");
         break;
 
       case "switch_pane":
@@ -264,6 +300,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "get_history":
         response = await sendDebugCommand("get_history");
+        break;
+
+      case "analyze_render":
+        response = await sendDebugCommand("analyze_render");
         break;
 
       case "send_message":
@@ -312,16 +352,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
     }
 
-    // Format response based on success
+      // Format response based on success
     if (response.success) {
       let textContent;
       if (response.data) {
         // For inspect_styles, output as formatted JSON
         if (name === "inspect_styles") {
           textContent = JSON.stringify(response.data, null, 2);
-        } else {
-          // For other commands, create a readable summary
+        } else if (name === "inspect") {
+          // For inspect command, create a readable summary
           textContent = formatInspectResponse(response.data, name);
+        } else if (name === "analyze_render" && response.data.analysis) {
+          // Format analyze_render response nicely
+          textContent = formatAnalyzeRenderResponse(response.data);
+        } else {
+          // For other commands, return data as JSON or simple message
+          if (typeof response.data === 'object') {
+            textContent = JSON.stringify(response.data, null, 2);
+          } else {
+            textContent = String(response.data || "Command executed successfully");
+          }
         }
       } else {
         textContent = response.message || "Command executed successfully";
@@ -362,6 +412,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 /**
  * Format inspect response for readable output
  */
+// Format compact summary and support component/offset/limit rendering for inspect
 function formatInspectResponse(data, command) {
   if (command === "get_history") {
     const messages = data.messages || [];
@@ -380,6 +431,7 @@ function formatInspectResponse(data, command) {
   // For inspect command, summarize key info
   const lines = [
     `=== CLAI UI State ===`,
+    `🔄 Build ID: ${data.build_id || 'dev'}`,
     `Terminal: ${data.width}x${data.height}`,
     `Chat Pane: ${data.chat_width}x${data.chat_height}`,
     `Viewport: ${data.viewport_height} lines, offset ${data.viewport_offset}`,
@@ -388,6 +440,54 @@ function formatInspectResponse(data, command) {
     `Active Pane: ${data.active_pane}`,
     `Show Help: ${data.show_help}`,
   ];
+
+  return lines.join("\n");
+}
+
+/**
+ * Format analyze_render response for readable output
+ */
+function formatAnalyzeRenderResponse(data) {
+  const analysis = data.analysis;
+  const lines = [
+    `=== RENDER ANALYSIS ===`,
+    ``,
+    `Theme Background: ${data.theme_background}`,
+    `Theme Foreground: ${data.theme_foreground}`,
+    ``,
+    `Overall Coverage: ${analysis.overallCoverage.toFixed(1)}%`,
+    `Total Transparency Gaps: ${analysis.totalTransparencyGaps}`,
+    ``,
+    `Summary: ${analysis.summary}`,
+    ``,
+    `--- Component Breakdown ---`,
+  ];
+
+  for (const comp of analysis.components) {
+    lines.push(``);
+    lines.push(`Component: ${comp.name}`);
+    lines.push(`  Background: ${comp.backgroundColor} (expected: ${comp.expectedColor})`);
+    lines.push(`  Color Match: ${comp.colorMatch ? '✓' : '✗ MISMATCH'}`);
+    lines.push(`  Coverage: ${comp.totalCoverage.toFixed(1)}%`);
+    lines.push(`  Lines with Issues: ${comp.linesWithIssues}/${comp.totalLines}`);
+    lines.push(`  Transparency Gaps: ${comp.transparencyCount}`);
+
+    // Show visual maps if available
+    if (comp.name === 'textarea' && data.textarea_maps) {
+      lines.push(``);
+      lines.push(`  Visual Background Map (█=has bg,░=transparent):`);
+      data.textarea_maps.forEach((map, i) => {
+        lines.push(`    Line ${i}: ${map}`);
+      });
+    }
+    if (comp.name === 'viewport' && data.viewport_maps) {
+      lines.push(``);
+      lines.push(`  Visual Background Map (█=has bg,░=transparent):`);
+      data.viewport_maps.forEach((map, i) => {
+        lines.push(`    Line ${i}: ${map}`);
+      });
+    }
+  }
 
   return lines.join("\n");
 }

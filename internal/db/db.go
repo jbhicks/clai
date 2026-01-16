@@ -162,6 +162,11 @@ func (s *Store) init() error {
 	);
 	CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status);
 	CREATE INDEX IF NOT EXISTS idx_downloads_started ON downloads(started_at DESC);
+	CREATE TABLE IF NOT EXISTS settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at DATETIME NOT NULL
+	);
 	`
 	_, err := s.db.Exec(schema)
 	if err != nil {
@@ -315,4 +320,41 @@ func (s *Store) SaveExecutionLog(conversationID int, language, code string, exit
 
 	logger.Info("[DB] Saved execution log for conversation %d", conversationID)
 	return nil
+}
+
+// SaveSetting saves a key-value setting to the database
+func (s *Store) SaveSetting(key, value string) error {
+	now := time.Now()
+	_, err := s.db.Exec(
+		"INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+		key, value, now,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save setting %s: %w", key, err)
+	}
+	logger.Debug("[DB] Saved setting: %s = %s", key, value)
+	return nil
+}
+
+// GetSetting retrieves a setting value from the database
+func (s *Store) GetSetting(key string) (string, error) {
+	var value string
+	err := s.db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to get setting %s: %w", key, err)
+	}
+	return value, nil
+}
+
+// SaveTheme saves the current theme name to the database
+func (s *Store) SaveTheme(themeName string) error {
+	return s.SaveSetting("theme", themeName)
+}
+
+// GetTheme retrieves the saved theme name from the database
+func (s *Store) GetTheme() (string, error) {
+	return s.GetSetting("theme")
 }

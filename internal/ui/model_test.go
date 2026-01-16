@@ -8,15 +8,18 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 func newTestModel() *Model {
-	chatInput := textinput.New()
-	chatInput.Prompt = "> "
+	chatInput := textarea.New()
+	chatInput.Placeholder = "Type a message..."
+	chatInput.CharLimit = 256
+	chatInput.SetWidth(50)
+	chatInput.SetHeight(3)
 	chatInput.Focus()
 
 	spin := spinner.New()
@@ -34,7 +37,7 @@ func newTestModel() *Model {
 	}
 
 	chat := ChatModel{
-		TextInput: chatInput,
+		Textarea:  chatInput,
 		Spinner:   spin,
 		Theme:     m.Theme,
 		Viewport:  viewport.New(DefaultViewportWidth, DefaultViewportHeight),

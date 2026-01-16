@@ -41,8 +41,9 @@ func TestTrailingSpaceIssue(t *testing.T) {
 	// Now wrap it in a border with background
 	ourBackground := lipgloss.Color("#282a36")
 	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		Background(ourBackground).
+		BorderBackground(ourBackground).
 		Padding(0, 1)
 
 	bubble := style.Render(strings.TrimSpace(rendered))

@@ -415,15 +415,15 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 
 	// Base style for all message bubbles - common properties shared across message types
 	baseMessageStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		Padding(0, 1)
 
 	return ThemeStyles{
 		MainPane: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color(ui.Theme.Primary.Foreground)).
 			Background(lipgloss.Color(ui.Theme.Primary.Background)).
-			Padding(1, 2),
+			BorderBackground(lipgloss.Color(ui.Theme.Primary.Background)),
 
 		StatusBar: lipgloss.NewStyle().
 			Background(lipgloss.Color(ui.Theme.Primary.Background)).
@@ -433,17 +433,20 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 		UserMessage: baseMessageStyle.
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Blue)).
 			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			BorderBackground(lipgloss.Color(ui.Theme.Primary.Background)).
 			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
 			Bold(true),
 
 		AssistantMessage: baseMessageStyle.
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Green)).
 			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			BorderBackground(lipgloss.Color(ui.Theme.Primary.Background)).
 			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)),
 
 		ToolMessage: baseMessageStyle.
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Blue)).
 			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			BorderBackground(lipgloss.Color(ui.Theme.Primary.Background)).
 			Foreground(lipgloss.Color(ui.Theme.Dim.White)).
 			Italic(true),
 
@@ -459,9 +462,10 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 			Bold(true),
 
 		CodeBlockContainer: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Magenta)).
 			Background(lipgloss.Color(ui.Theme.Dim.Black)).
+			BorderBackground(lipgloss.Color(ui.Theme.Dim.Black)).
 			Padding(0, 1).
 			MarginTop(1).
 			MarginBottom(1),
@@ -477,6 +481,7 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 			Background(lipgloss.Color(ui.Theme.Primary.Background)).
 			Border(lipgloss.NormalBorder(), true).
 			BorderForeground(lipgloss.Color(ui.Theme.Bright.Yellow)).
+			BorderBackground(lipgloss.Color(ui.Theme.Primary.Background)).
 			Padding(0, 1),
 
 		InputUnfocused: lipgloss.NewStyle().
@@ -504,9 +509,10 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 			Background(lipgloss.Color(ui.Theme.Primary.Background)),
 
 		HelpBox: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
+			Border(lipgloss.NormalBorder()).
 			Padding(1, 2).
 			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			BorderBackground(lipgloss.Color(ui.Theme.Primary.Background)).
 			Foreground(lipgloss.Color(ui.Theme.Bright.White)).
 			Align(lipgloss.Center),
 
@@ -515,8 +521,31 @@ func GetThemeStyles(ui *glitter.UI) ThemeStyles {
 			Background(lipgloss.Color(ui.Theme.Primary.Background)),
 
 		LogValue: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(ui.Theme.Primary.Foreground)).
+			Foreground(lipgloss.Color(ui.Theme.Bright.Cyan)).
 			Background(lipgloss.Color(ui.Theme.Primary.Background)),
+
+		ChatViewport: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Primary.Background)),
+
+		Separator: lipgloss.NewStyle().
+			Foreground(lipgloss.Color(ui.Theme.Dim.White)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)),
+
+		LogPane: lipgloss.NewStyle().
+			Border(lipgloss.DoubleBorder()).
+			BorderForeground(lipgloss.Color(ui.Theme.Bright.Magenta)).
+			Background(lipgloss.Color(ui.Theme.Primary.Background)).
+			BorderBackground(lipgloss.Color(ui.Theme.Primary.Background)),
+
+		AgentIdleBadge: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Dim.White)).
+			Foreground(lipgloss.Color(ui.Theme.Primary.Background)).
+			Padding(0, 2),
+
+		AgentActiveBadge: lipgloss.NewStyle().
+			Background(lipgloss.Color(ui.Theme.Bright.Green)).
+			Foreground(lipgloss.Color(ui.Theme.Primary.Background)).
+			Padding(0, 2),
 	}
 }
 
@@ -541,6 +570,11 @@ type ThemeStyles struct {
 	HelpBox            lipgloss.Style
 	LogDim             lipgloss.Style
 	LogValue           lipgloss.Style
+	ChatViewport       lipgloss.Style
+	Separator          lipgloss.Style
+	LogPane            lipgloss.Style
+	AgentIdleBadge     lipgloss.Style
+	AgentActiveBadge   lipgloss.Style
 }
 
 // test comment

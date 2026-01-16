@@ -366,12 +366,11 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 
 	var reqBody interface{}
 	if c.apiFormat == FormatOpenAI {
-		// OpenAI format: include tools in request
 		reqBody = OpenAIRequestWithTools{
 			Model:    c.model,
 			Messages: allMessages,
 			Tools:    tools,
-			Stream:   false,
+			Stream:   true,
 		}
 	} else {
 		// Ollama format: tools already injected into system prompt
@@ -388,7 +387,7 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 	}
 
 	prettyReq, _ := json.MarshalIndent(reqBody, "", "  ")
-	logger.Debug("[LLM-REQ-WITH-TOOLS] %s", string(prettyReq))
+	logger.Info("[LLM-REQ-WITH-TOOLS-STREAM] Request body: %s", string(prettyReq))
 
 	req, err := http.NewRequest("POST", c.getChatEndpoint(), bytes.NewBuffer(jsonBody))
 	if err != nil {
@@ -415,35 +414,52 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 		scanner.Buffer(make([]byte, 4096), bufio.MaxScanTokenSize)
 
 		if c.apiFormat == FormatOpenAI {
-			logger.Info("[LLM-OPENAI-STREAM] Starting OpenAI response reading (with tools)")
+			logger.Info("[LLM-OPENAI-STREAM] Starting OpenAI SSE response reading (with tools)")
 
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				logger.Info("[LLM-OPENAI-ERROR] Failed to read response body: %v", err)
-				return
-			}
+			for scanner.Scan() {
+				line := scanner.Text()
+				logger.Info("[LLM-OPENAI-STREAM] Read line: %q", line)
 
-			var openaiResp OpenAIResponse
-			if err := json.Unmarshal(body, &openaiResp); err != nil {
-				logger.Info("[LLM-OPENAI-ERROR] Failed to parse response: %v", err)
-				return
-			}
-
-			if len(openaiResp.Choices) > 0 {
-				content := openaiResp.Choices[0].Message.Content
-				if content != "" {
-					streamChan <- content
+				if !strings.HasPrefix(line, "data: ") {
+					continue
 				}
 
-				if len(openaiResp.Choices[0].Message.ToolCalls) > 0 {
-					for _, toolCall := range openaiResp.Choices[0].Message.ToolCalls {
-						toolCallJSON, _ := json.Marshal(toolCall)
-						streamChan <- string(toolCallJSON)
+				data := strings.TrimPrefix(line, "data: ")
+
+				if data == "[DONE]" {
+					logger.Info("[LLM-OPENAI-STREAM] Stream complete")
+					return
+				}
+
+				var chunk OpenAIStreamChunk
+				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+					logger.Debug("[LLM-OPENAI-STREAM-ERROR] Failed to parse chunk: %v, data: %q", err, data)
+					continue
+				}
+
+				if len(chunk.Choices) > 0 {
+					delta := chunk.Choices[0].Delta
+
+					if delta.Content != "" {
+						logger.Info("[LLM-OPENAI-STREAM] Sending content chunk: %q", delta.Content)
+						streamChan <- delta.Content
+					}
+
+					if len(delta.ToolCalls) > 0 {
+						for _, toolCall := range delta.ToolCalls {
+							toolCallJSON, _ := json.Marshal(toolCall)
+							logger.Info("[LLM-OPENAI-STREAM] Sending tool call chunk: %q", string(toolCallJSON))
+							streamChan <- string(toolCallJSON)
+						}
 					}
 				}
 			}
 
-			logger.Info("[LLM-OPENAI-STREAM] Response processed (non-stream)")
+			if err := scanner.Err(); err != nil {
+				logger.Error("[LLM-OPENAI-STREAM] Scanner error: %v", err)
+			} else {
+				logger.Info("[LLM-OPENAI-STREAM] Scanner finished without error (may indicate empty response or connection closed)")
+			}
 		} else {
 			// Ollama/Hermes-style streaming
 			for scanner.Scan() {

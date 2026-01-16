@@ -13,15 +13,39 @@ if ! command -v inotifywait >/dev/null 2>&1; then
 fi
 
 restart_app() {
-    # Kill any existing clai processes more comprehensively
+    # Kill existing processes gracefully first, then forcefully
+    echo "Stopping CLAI processes..."
+
+    # Try graceful shutdown first (SIGTERM)
+    pkill -TERM -f "go run ./cmd/clai" 2>/dev/null || true
+    pkill -TERM -f "make run" 2>/dev/null || true
+    for pid in $(ps aux | grep "/clai" | grep -v "grep" | awk '{print $2}'); do
+        kill -TERM $pid 2>/dev/null || true
+    done
+
+    # Wait for graceful shutdown
+    sleep 1
+
+    # Force kill any remaining processes (SIGKILL)
     pkill -9 -f "go run ./cmd/clai" 2>/dev/null || true
+    pkill -9 -f "make run" 2>/dev/null || true
     for pid in $(ps aux | grep "/clai" | grep -v "grep" | awk '{print $2}'); do
         kill -9 $pid 2>/dev/null || true
     done
-    sleep 0.2
-    
-    # Start clai in background (within the tmux session which has TTY)
-    TERM=xterm-256color go run ./cmd/clai &
+
+    # Clean up any stale sockets
+    rm -f /tmp/clai.sock 2>/dev/null || true
+
+    # Reset terminal state (just in case)
+    printf '\x1b[2J\x1b[H\x1b[?1049l' 2>/dev/null || true  # Clear screen, reset cursor, exit alt screen
+    tput reset 2>/dev/null || true
+    stty sane 2>/dev/null || true
+
+    sleep 0.5
+
+    # Start clai using make run (includes build ldflags)
+    echo "Starting CLAI..."
+    TERM=xterm-256color make run &
 }
 
 # Initial start
@@ -37,8 +61,8 @@ while true; do
         restart_app
     fi
     
-    # Check if go is still running
-    if ! pgrep -f "go run ./cmd/clai" > /dev/null 2>&1; then
+    # Check if make run is still running
+    if ! pgrep -f "make run" > /dev/null 2>&1 && ! pgrep -f "/clai" > /dev/null 2>&1; then
         restart_app
     fi
 done

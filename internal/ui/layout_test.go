@@ -4,7 +4,7 @@ import (
 	"clai/internal/llm"
 	"testing"
 
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -40,16 +40,18 @@ func TestJoinVerticalEmptyString(t *testing.T) {
 func TestChatModelLayoutDimensions(t *testing.T) {
 	theme := GetAvailableThemes()[0] // Use first available theme
 
-	ti := textinput.New()
+	ti := textarea.New()
+	ti.SetWidth(50)
+	ti.SetHeight(3)
 	ti.Focus()
 
 	chat := ChatModel{
-		Width:     80,
-		Height:    20,
-		Theme:     theme,
-		Messages:  []llm.Message{{Role: "assistant", Content: "test"}},
-		TextInput: ti,
-		Viewport:  viewport.New(DefaultViewportWidth, DefaultViewportHeight),
+		Width:    80,
+		Height:   20,
+		Theme:    theme,
+		Messages: []llm.Message{{Role: "assistant", Content: "test"}},
+		Textarea: ti,
+		Viewport: viewport.New(DefaultViewportWidth, DefaultViewportHeight),
 	}
 	_ = chat
 
@@ -74,7 +76,9 @@ func TestMainLayoutDimensions(t *testing.T) {
 
 	theme := GetAvailableThemes()[0] // Use first available theme
 
-	ti := textinput.New()
+	ti := textarea.New()
+	ti.SetWidth(50)
+	ti.SetHeight(3)
 	ti.Focus()
 
 	m := &Model{
@@ -97,7 +101,7 @@ func TestMainLayoutDimensions(t *testing.T) {
 	m.Chat.Width = chatInnerWidth
 	m.Chat.Height = componentHeight
 	m.Chat.Theme = theme
-	m.Chat.TextInput = ti
+	m.Chat.Textarea = ti
 	m.Chat.Viewport = viewport.New(chatInnerWidth, componentHeight)
 
 	m.Log = viewport.New(termWidth, componentHeight)

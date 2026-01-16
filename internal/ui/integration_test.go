@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -23,7 +23,9 @@ func TestChatIntegrationSimpleConversation(t *testing.T) {
 	mockLLM.Response = "This is a test response"
 	mockLLM.StreamChunks = []string{"This ", "is ", "a ", "test ", "response"}
 
-	ti := textinput.New()
+	ti := textarea.New()
+	ti.SetWidth(50)
+	ti.SetHeight(3)
 	ti.SetValue("test message")
 	ti.Focus()
 
@@ -37,12 +39,12 @@ func TestChatIntegrationSimpleConversation(t *testing.T) {
 			Height:    20,
 			LlmClient: mockLLM,
 			Messages:  []llm.Message{},
-			TextInput: ti,
+			Textarea:  ti,
 			Viewport:  viewport.New(DefaultViewportWidth, MediumViewportHeight),
 			Spinner:   spinner.New(),
-			Theme:     AvailableThemes[0],
+			Theme:     GetAvailableThemes()[0],
 		},
-		Theme: AvailableThemes[0],
+		Theme: GetAvailableThemes()[0],
 		Agent: llm.NewAgent(mockLLM),
 	}
 
@@ -104,7 +106,9 @@ func TestChatIntegrationCodeExecution(t *testing.T) {
 		},
 	}
 
-	ti := textinput.New()
+	ti := textarea.New()
+	ti.SetWidth(50)
+	ti.SetHeight(3)
 	ti.SetValue("run echo test")
 	ti.Focus()
 
@@ -116,12 +120,12 @@ func TestChatIntegrationCodeExecution(t *testing.T) {
 			Height:    20,
 			LlmClient: mockLLM,
 			Messages:  []llm.Message{},
-			TextInput: ti,
+			Textarea:  ti,
 			Viewport:  viewport.New(DefaultViewportWidth, MediumViewportHeight),
 			Spinner:   spinner.New(),
-			Theme:     AvailableThemes[0],
+			Theme:     GetAvailableThemes()[0],
 		},
-		Theme:       AvailableThemes[0],
+		Theme:       GetAvailableThemes()[0],
 		Agent:       llm.NewAgent(mockLLM),
 		AgentStatus: NewAgentStatusView(GetAvailableThemes()[0]),
 		Log:         viewport.New(DefaultViewportWidth, SmallViewportHeight),
@@ -175,6 +179,11 @@ func (s *statefulMockLLM) SendMessageStreamNoTools(messages []llm.Message, strea
 	return s.base.SendMessageStreamNoTools(messages, streamChan, includeSystemPrompt)
 }
 
+func (s *statefulMockLLM) SendMessageStreamWithTools(messages []llm.Message, tools []llm.Tool, streamChan chan<- string, includeSystemPrompt bool) (llm.Response, error) {
+	// For mock, just call the no-tools version
+	return s.SendMessageStreamNoTools(messages, streamChan, includeSystemPrompt)
+}
+
 func (s *statefulMockLLM) Model() string {
 	return s.base.Model()
 }
@@ -193,7 +202,9 @@ func TestChatIntegrationEmptyState(t *testing.T) {
 
 	mockLLM := uitesting.NewMockLLM()
 
-	ti := textinput.New()
+	ti := textarea.New()
+	ti.SetWidth(50)
+	ti.SetHeight(3)
 
 	m := &Model{
 		Width:       80,
@@ -205,12 +216,12 @@ func TestChatIntegrationEmptyState(t *testing.T) {
 			Height:    20,
 			LlmClient: mockLLM,
 			Messages:  []llm.Message{},
-			TextInput: ti,
+			Textarea:  ti,
 			Viewport:  viewport.New(DefaultViewportWidth, MediumViewportHeight),
 			Spinner:   spinner.New(),
-			Theme:     AvailableThemes[0],
+			Theme:     GetAvailableThemes()[0],
 		},
-		Theme: AvailableThemes[0],
+		Theme: GetAvailableThemes()[0],
 		Agent: llm.NewAgent(mockLLM),
 	}
 
@@ -256,7 +267,9 @@ func TestChatIntegrationMultipleMessages(t *testing.T) {
 	mockLLM.Response = "Response"
 	mockLLM.StreamChunks = []string{"Resp", "onse"}
 
-	ti := textinput.New()
+	ti := textarea.New()
+	ti.SetWidth(50)
+	ti.SetHeight(3)
 	ti.SetValue("first message")
 	ti.Focus()
 
@@ -268,12 +281,12 @@ func TestChatIntegrationMultipleMessages(t *testing.T) {
 			Height:    20,
 			LlmClient: mockLLM,
 			Messages:  []llm.Message{},
-			TextInput: ti,
+			Textarea:  ti,
 			Viewport:  viewport.New(DefaultViewportWidth, MediumViewportHeight),
 			Spinner:   spinner.New(),
-			Theme:     AvailableThemes[0],
+			Theme:     GetAvailableThemes()[0],
 		},
-		Theme:       AvailableThemes[0],
+		Theme:       GetAvailableThemes()[0],
 		Agent:       llm.NewAgent(mockLLM),
 		AgentStatus: NewAgentStatusView(GetAvailableThemes()[0]),
 		Log:         viewport.New(DefaultViewportWidth, SmallViewportHeight),
@@ -331,7 +344,9 @@ func TestChatIntegrationErrorHandling(t *testing.T) {
 	mockLLM.Error = errors.New("simulated LLM error")
 	mockLLM.Response = ""
 
-	ti := textinput.New()
+	ti := textarea.New()
+	ti.SetWidth(50)
+	ti.SetHeight(3)
 	ti.SetValue("test message")
 	ti.Focus()
 
@@ -345,12 +360,12 @@ func TestChatIntegrationErrorHandling(t *testing.T) {
 			Height:    20,
 			LlmClient: mockLLM,
 			Messages:  []llm.Message{},
-			TextInput: ti,
+			Textarea:  ti,
 			Viewport:  viewport.New(DefaultViewportWidth, MediumViewportHeight),
 			Spinner:   spinner.New(),
-			Theme:     AvailableThemes[0],
+			Theme:     GetAvailableThemes()[0],
 		},
-		Theme: AvailableThemes[0],
+		Theme: GetAvailableThemes()[0],
 		Agent: llm.NewAgent(mockLLM),
 	}
 

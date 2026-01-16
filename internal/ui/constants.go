@@ -25,7 +25,7 @@ type LayoutConfig struct {
 	MinPaneWidth          int
 	MinViewportWidth      int
 	MinViewportHeight     int
-	TextInputPadding      int
+	TextareaPadding       int
 }
 
 func DefaultLayoutConfig() LayoutConfig {
@@ -36,6 +36,6 @@ func DefaultLayoutConfig() LayoutConfig {
 		MinPaneWidth:          20,
 		MinViewportWidth:      10,
 		MinViewportHeight:     3,
-		TextInputPadding:      8,
+		TextareaPadding:       8,
 	}
 }

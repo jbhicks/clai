@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"net"
 	"os"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 const SocketPath = "/tmp/clai.sock"
@@ -29,7 +27,7 @@ type DebugServerMsg struct {
 	Cmd  DebugCommand
 }
 
-func StartDebugServer(p *tea.Program) error {
+func StartDebugServer(debugChan chan DebugServerMsg) error {
 	os.Remove(SocketPath)
 
 	listener, err := net.Listen("unix", SocketPath)
@@ -51,7 +49,7 @@ func StartDebugServer(p *tea.Program) error {
 			}
 			logger.Info("[DEBUG] Accepted connection from client")
 
-			go handleConnection(conn, p)
+			go handleConnection(conn, debugChan)
 		}
 	}()
 
@@ -65,7 +63,7 @@ func StopDebugServer() {
 	}
 }
 
-func handleConnection(conn net.Conn, p *tea.Program) {
+func handleConnection(conn net.Conn, debugChan chan DebugServerMsg) {
 	logger.Info("[DEBUG] Handling new connection")
 	decoder := json.NewDecoder(conn)
 	var cmd DebugCommand
@@ -82,10 +80,10 @@ func handleConnection(conn net.Conn, p *tea.Program) {
 
 	logger.Info("[DEBUG] Received command: %s", cmd.Command)
 
-	p.Send(DebugServerMsg{
+	debugChan <- DebugServerMsg{
 		Conn: conn,
 		Cmd:  cmd,
-	})
+	}
 }
 
 func sendResponse(conn net.Conn, resp DebugResponse) {
@@ -96,5 +94,6 @@ func sendResponse(conn net.Conn, resp DebugResponse) {
 }
 
 func SendDebugResponse(conn net.Conn, resp DebugResponse) {
+	logger.Info("[DEBUG] Sending response: success=%v, error=%s", resp.Success, resp.Error)
 	sendResponse(conn, resp)
 }

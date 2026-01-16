@@ -218,6 +218,27 @@ func StripTextBasedFunctionCalls(content string) string {
 	return functionCallRegex.ReplaceAllString(content, "")
 }
 
+// stripBackgroundColors removes ANSI background color codes from text to prevent
+// conflicts with lipgloss background styling. Glamour sets its own background
+// codes that can bleed and cause inconsistent backgrounds in bubbles.
+func stripBackgroundColors(text string) string {
+	// Match ANSI background color codes: [48;...m (truecolor) and [4...m (basic/256)
+	backgroundRegex := regexp.MustCompile(`\x1b\[(?:48;[0-9;]*m|4[0-9]*m)`)
+	return backgroundRegex.ReplaceAllString(text, "")
+}
+
+// stripAllAnsi removes all ANSI escape codes from text
+func stripAllAnsi(text string) string {
+	ansiRegex := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	return ansiRegex.ReplaceAllString(text, "")
+}
+
+// applyConsistentStyling reapplies basic foreground color with proper background
+func applyConsistentStyling(text string) string {
+	// Apply consistent styling: default foreground with background
+	return fmt.Sprintf("\x1b[38;2;248;248;242;48;2;40;42;54m%s\x1b[0m", text)
+}
+
 func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, codeBlockContainer lipgloss.Style) string {
 	blocks := ParseCodeBlocks(content)
 
@@ -247,8 +268,9 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 		markdown := fmt.Sprintf("```%s\n%s\n```", language, strings.Join(wrappedLines, "\n"))
 
 		// Render with glamour for syntax highlighting (wrapping already done)
+		// Use notty style which has minimal background colors
 		renderer, err := glamour.NewTermRenderer(
-			glamour.WithStylePath("dark"),
+			glamour.WithStylePath("notty"),
 			glamour.WithWordWrap(codeContainerWidth),
 		)
 		if err != nil {
@@ -262,8 +284,10 @@ func RenderWithSyntaxHighlighting(content string, maxWidth int, codeBlockBadge, 
 			return markdown
 		}
 
-		// Keep glamour's background colors - bubble containers apply their own backgrounds
-		// which will work with the ANSI codes properly
+		// Strip all ANSI codes from Glamour output and reapply consistent styling
+		// Glamour's ANSI codes can cause background conflicts and transparency
+		plainText := stripAllAnsi(rendered)
+		rendered = applyConsistentStyling(plainText)
 
 		lines := strings.Split(rendered, "\n")
 		var cleanLines []string

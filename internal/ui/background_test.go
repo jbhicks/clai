@@ -67,9 +67,10 @@ And some text after the code.`
 
 	// Step 2: Try to wrap it with our background (what chat.go does)
 	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(lipgloss.Color("#50fa7b")).
 		Background(ourBackground).
+		BorderBackground(ourBackground).
 		Foreground(lipgloss.Color("#f8f8f2")).
 		Padding(0, 1)
 

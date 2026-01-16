@@ -8,7 +8,14 @@ dev:
 		echo "Install with: sudo apt-get install inotify-tools"; \
 		exit 1; \
 	fi
-	@echo "Cleaning up any existing CLAI processes..."
+	@echo "Checking for existing CLAI session..."
+	@if tmux has-session -t clai_dev 2>/dev/null; then \
+		echo "✓ Session 'clai_dev' already running - attaching..."; \
+		tmux attach -t clai_dev 2>/dev/null || echo "Could not attach (not in interactive terminal)"; \
+		echo "To restart: tmux kill-session -t clai_dev && make dev"; \
+		exit 0; \
+	fi
+	@echo "No existing session found. Starting new dev environment..."
 	@for pid in $$(ps aux | grep "[g]o run ./cmd/clai" | awk '{print $$2}'); do \
 		kill -9 $$pid 2>/dev/null || true; \
 	done
@@ -65,10 +72,18 @@ BINARY_UNIX=$(BINARY_NAME)
 all: test lint build
 
 build:
-	$(GOBUILD) -o $(BINARY_NAME) ./cmd/clai
+	$(eval BUILD_TIME := $(shell date -u +"%Y%m%d-%H%M%S"))
+	$(eval BUILD_RAND := $(shell echo $$RANDOM))
+	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown"))
+	$(eval BUILD_COUNT := $(shell git rev-list --count HEAD 2>/dev/null || echo "0"))
+	$(GOBUILD) -ldflags "-X 'main.buildTime=$(BUILD_TIME)' -X 'main.gitCommit=$(GIT_COMMIT)' -X 'main.buildCount=$(BUILD_COUNT)' -X 'main.buildRand=$(BUILD_RAND)'" -o $(BINARY_NAME) ./cmd/clai
 
 run:
-	$(GORUN) ./cmd/clai
+	$(eval BUILD_TIME := $(shell date -u +"%Y%m%d-%H%M%S"))
+	$(eval BUILD_RAND := $(shell echo $$RANDOM))
+	$(eval GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown"))
+	$(eval BUILD_COUNT := $(shell git rev-list --count HEAD 2>/dev/null || echo "0"))
+	$(GORUN) -ldflags "-X 'main.buildTime=$(BUILD_TIME)' -X 'main.gitCommit=$(GIT_COMMIT)' -X 'main.buildCount=$(BUILD_COUNT)' -X 'main.buildRand=$(BUILD_RAND)'" ./cmd/clai
 
 test:
 	$(GOTEST) ./cmd/... ./internal/...

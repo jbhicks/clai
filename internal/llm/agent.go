@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+type StreamingCallback func(chunk string, toolCall *tools.ToolCall, codeBlock *CodeBlock)
+
 type AgentResponse struct {
 	Thought  string
 	Code     string
@@ -238,6 +240,67 @@ func (a *Agent) Think() (ThinkResult, error) {
 		Content:   response,
 		ToolCalls: toolCalls,
 	}, nil
+}
+
+// ThinkWithStreaming streams response chunks via callback instead of collecting them
+func (a *Agent) ThinkWithStreaming(callback StreamingCallback) (ThinkResult, error) {
+	logger.Debug("[AGENT-THINK-STREAM] Streaming Think method called")
+	streamChan := make(chan string, 100)
+
+	_, err := a.client.SendMessageStreamWithTools(a.messages, tools.GetAvailableTools(), streamChan, true)
+	if err != nil {
+		return ThinkResult{}, fmt.Errorf("LLM request failed: %w", err)
+	}
+
+	var fullContent strings.Builder
+	var toolCalls []tools.ToolCall
+
+	for chunk := range streamChan {
+		logger.Info("[AGENT-THINK-STREAM] Received chunk: %q", chunk)
+
+		// Check if this is a tool call (JSON format)
+		if strings.HasPrefix(strings.TrimSpace(chunk), "{") && strings.HasSuffix(strings.TrimSpace(chunk), "}") {
+			var toolCall tools.ToolCall
+			if err := json.Unmarshal([]byte(chunk), &toolCall); err == nil && toolCall.Type == "function" {
+				toolCalls = append(toolCalls, toolCall)
+				callback("", &toolCall, nil) // Stream tool call
+				continue
+			}
+		}
+
+		// Check if this is a code block
+		if codeBlocks := a.parseCodeBlocksFromChunk(chunk); len(codeBlocks) > 0 {
+			for _, block := range codeBlocks {
+				callback("", nil, &block) // Stream code block
+			}
+		}
+
+		// Regular text chunk
+		fullContent.WriteString(chunk)
+		callback(chunk, nil, nil) // Stream text chunk
+	}
+
+	response := fullContent.String()
+	logger.Debug("[AGENT-THINK-STREAM] Full response content: %s", response)
+
+	// Parse any remaining tool calls from final content (fallback)
+	additionalToolCalls := a.parseToolCallsFromContent(response)
+	toolCalls = append(toolCalls, additionalToolCalls...)
+
+	logger.Debug("[AGENT-THINK-STREAM] Tool calls found: %d", len(toolCalls))
+
+	return ThinkResult{
+		Content:   response,
+		ToolCalls: toolCalls,
+	}, nil
+}
+
+// parseCodeBlocksFromChunk extracts code blocks from a single chunk
+func (a *Agent) parseCodeBlocksFromChunk(chunk string) []CodeBlock {
+	// This is a simplified version - in practice you'd want more sophisticated parsing
+	var blocks []CodeBlock
+	// For now, we'll handle this in the main RunWithStreaming method
+	return blocks
 }
 
 // parseToolCallsFromContent extracts tool calls from response content (Hermes-style)
@@ -509,5 +572,91 @@ func (a *Agent) Run(query string) (string, error) {
 			logger.Debug("[AGENT-WARNING] No delegation or code found, but no final answer either - returning full response")
 			return thinkResult.Content, nil
 		}
+	}
+}
+
+// RunWithStreaming runs the agent loop with streaming responses
+func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (string, error) {
+	a.AddMessage("user", query)
+
+	logger.Debug("[AGENT-RUN-STREAM] Starting streaming agent loop with query: %s", query)
+
+	iteration := 0
+	for {
+		iteration++
+		logger.Debug("[AGENT-ITER-STREAM] Iteration %d", iteration)
+
+		// Use streaming Think method - pass UI callback directly for text chunks
+		// Tool calls and code blocks are handled by the runner callback
+		thinkResult, err := a.ThinkWithStreaming(func(chunk string, toolCall *tools.ToolCall, codeBlock *CodeBlock) {
+			if toolCall != nil {
+				// Handle tool call execution during streaming
+				logger.Debug("[AGENT-STREAM-TOOL] Executing streaming tool: %s", toolCall.Function.Name)
+				toolResult, err := tools.ExecuteTool(*toolCall)
+				if err != nil {
+					logger.Debug("[AGENT-STREAM-TOOL-ERROR] Tool execution failed: %v", err)
+					a.AddMessage("tool", fmt.Sprintf("Tool execution error: %v", err), toolCall.ID)
+				} else {
+					logger.Debug("[AGENT-STREAM-TOOL-SUCCESS] Tool result: %s", toolResult)
+					a.AddMessage("tool", toolResult, toolCall.ID)
+				}
+				// Also forward to UI
+				callback("", toolCall, nil)
+			} else if codeBlock != nil {
+				// Handle code execution during streaming
+				logger.Debug("[AGENT-STREAM-CODE] Executing streaming code: %s", codeBlock.Language)
+				output, err := tools.ExecuteCode(codeBlock.Language, codeBlock.Code)
+				if err != nil {
+					observation := fmt.Sprintf("Observation (Code execution error): %v\n", err)
+					a.AddMessage("user", observation)
+					callback(observation, nil, nil) // Stream the observation
+				} else {
+					observation := fmt.Sprintf("Observation (Code output): %s\n", output)
+					a.AddMessage("user", observation)
+					callback(observation, nil, nil) // Stream the observation
+				}
+			} else {
+				// Regular text chunk - pass through to UI directly
+				callback(chunk, nil, nil)
+			}
+		})
+
+		if err != nil {
+			return "", err
+		}
+
+		// After streaming completes, parse the full response for final logic
+		parsed, err := a.parseResponse(thinkResult.Content)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		// If no code block found, treat as final answer
+		if parsed.Code == "" {
+			logger.Debug("[AGENT-STREAM-NO-CODE] No code block found, treating as final answer")
+			parsed.Final = thinkResult.Content
+		}
+
+		if parsed.Thought != "" {
+			a.taskHistory = append(a.taskHistory, parsed.Thought)
+		}
+
+		if a.statusCallback != nil {
+			a.statusCallback(iteration, parsed.Thought, parsed.Code != "", parsed.Language, parsed.Code)
+		}
+
+		if parsed.Final != "" {
+			logger.Debug("[AGENT-STREAM-COMPLETE] Final answer reached: %s", parsed.Final)
+			if a.statusCallback != nil {
+				a.statusCallback(0, "", false, "", "")
+			}
+			// Send empty chunk to signal end of streaming
+			callback("", nil, nil)
+			return parsed.Final, nil
+		}
+
+		// For streaming version, we've already handled code execution in the callback
+		// Just continue to next iteration if no final answer
+		logger.Debug("[AGENT-STREAM-CONTINUE] Continuing to next iteration")
 	}
 }

@@ -8,14 +8,17 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
 )
 
 func newTestChatModel() ChatModel {
-	chatInput := textinput.New()
-	chatInput.Prompt = "> "
+	chatInput := textarea.New()
+	chatInput.Placeholder = "Type a message..."
+	chatInput.CharLimit = 256
+	chatInput.SetWidth(50)
+	chatInput.SetHeight(3)
 	chatInput.Focus()
 
 	spin := spinner.New()
@@ -23,7 +26,7 @@ func newTestChatModel() ChatModel {
 	theme := GetAvailableThemes()[0] // Use first available theme
 
 	return ChatModel{
-		TextInput:    chatInput,
+		Textarea:     chatInput,
 		Spinner:      spin,
 		Theme:        theme,
 		Viewport:     viewport.New(DefaultViewportWidth, DefaultViewportHeight),
@@ -44,8 +47,8 @@ func TestChatModelViewEmpty(t *testing.T) {
 	}
 
 	viewClean := uitesting.StripANSI(view)
-	if !strings.Contains(viewClean, ">") {
-		t.Error("expected prompt in view")
+	if !strings.Contains(viewClean, "Type a message...") {
+		t.Error("expected placeholder in view")
 	}
 }
 
@@ -129,7 +132,7 @@ func TestChatModelViewDirtyFlagTriggersRebuild(t *testing.T) {
 
 func TestChatModelViewInputFocusedStyle(t *testing.T) {
 	c := newTestChatModel()
-	c.TextInput.Focus()
+	c.Textarea.Focus()
 
 	view := c.View()
 
@@ -140,7 +143,7 @@ func TestChatModelViewInputFocusedStyle(t *testing.T) {
 
 func TestChatModelViewInputUnfocusedTooltip(t *testing.T) {
 	c := newTestChatModel()
-	c.TextInput.Blur()
+	c.Textarea.Blur()
 
 	view := c.View()
 	viewClean := uitesting.StripANSI(view)

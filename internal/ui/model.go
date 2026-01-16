@@ -8,6 +8,7 @@ import (
 	"clai/internal/tools"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/brittonhayes/glitter/glitter"
@@ -295,7 +296,7 @@ func (m *Model) updateDimensions() {
 	m.Chat.Viewport.Width = m.Chat.Width
 	// Note: Viewport.Height is set by chat.updateViewportHeight() in chat.Update()
 	// to account for input field, spinner, scroll indicator, etc.
-	m.Chat.TextInput.Width = m.Chat.Width - m.Layout.TextInputPadding
+	m.Chat.Textarea.SetWidth(m.Chat.Width - m.Layout.TextareaPadding)
 }
 
 func (m *Model) updateCachedStyles() {
@@ -532,15 +533,15 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		}
 		return tea.Quit
 	case "enter":
-		if m.Chat.TextInput.Focused() {
-			userMsg := m.Chat.TextInput.Value()
+		if m.Chat.Textarea.Focused() {
+			userMsg := m.Chat.Textarea.Value()
 			if userMsg != "" {
 				m.Chat.Messages = append(m.Chat.Messages, llm.Message{Role: "user", Content: userMsg})
 				m.Chat.ContentDirty = true
 				m.Chat.AutoScroll = true
 				m.Chat.UserScrolled = false
 				m.Chat.Viewport.GotoBottom()
-				m.Chat.TextInput.SetValue("")
+				m.Chat.Textarea.SetValue("")
 				m.Chat.Streaming = true
 				m.Chat.QueryHistory = append(m.Chat.QueryHistory, userMsg)
 				m.Chat.HistoryIndex = 0
@@ -653,7 +654,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		m.Chat.QueryHistory = []string{}
 		m.Chat.HistoryIndex = 0
 		m.Chat.ContentDirty = true
-		m.Chat.TextInput.SetValue("")
+		m.Chat.Textarea.SetValue("")
 		m.Chat.Viewport.GotoTop()
 		m.Chat.UserScrolled = false
 		m.Chat.AutoScroll = true
@@ -664,11 +665,11 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 
 		return nil
 	case "up":
-		if m.Chat.TextInput.Focused() {
+		if m.Chat.Textarea.Focused() {
 			if len(m.Chat.QueryHistory) > 0 && m.Chat.HistoryIndex < len(m.Chat.QueryHistory) {
 				m.Chat.HistoryIndex++
-				m.Chat.TextInput.SetValue(m.Chat.QueryHistory[len(m.Chat.QueryHistory)-m.Chat.HistoryIndex])
-				m.Chat.TextInput.CursorEnd()
+				m.Chat.Textarea.SetValue(m.Chat.QueryHistory[len(m.Chat.QueryHistory)-m.Chat.HistoryIndex])
+				m.Chat.Textarea.CursorEnd()
 			}
 		} else {
 			m.Chat.SmoothScrollTarget = max(m.Chat.Viewport.YOffset-1, 0)
@@ -678,14 +679,14 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			return smoothScrollCmd()
 		}
 	case "down":
-		if m.Chat.TextInput.Focused() {
+		if m.Chat.Textarea.Focused() {
 			if m.Chat.HistoryIndex > 1 {
 				m.Chat.HistoryIndex--
-				m.Chat.TextInput.SetValue(m.Chat.QueryHistory[len(m.Chat.QueryHistory)-m.Chat.HistoryIndex])
-				m.Chat.TextInput.CursorEnd()
+				m.Chat.Textarea.SetValue(m.Chat.QueryHistory[len(m.Chat.QueryHistory)-m.Chat.HistoryIndex])
+				m.Chat.Textarea.CursorEnd()
 			} else if m.Chat.HistoryIndex == 1 {
 				m.Chat.HistoryIndex--
-				m.Chat.TextInput.SetValue("")
+				m.Chat.Textarea.SetValue("")
 			}
 		} else {
 			maxOffset := max(m.Chat.Viewport.TotalLineCount()-m.Chat.Viewport.Height, 0)
@@ -698,7 +699,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			return smoothScrollCmd()
 		}
 	case "k":
-		if !m.Chat.TextInput.Focused() {
+		if !m.Chat.Textarea.Focused() {
 			m.Chat.SmoothScrollTarget = max(m.Chat.Viewport.YOffset-1, 0)
 			m.Chat.SmoothScrollActive = true
 			m.Chat.UserScrolled = true
@@ -706,7 +707,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			return smoothScrollCmd()
 		}
 	case "j":
-		if !m.Chat.TextInput.Focused() {
+		if !m.Chat.Textarea.Focused() {
 			maxOffset := max(m.Chat.Viewport.TotalLineCount()-m.Chat.Viewport.Height, 0)
 			m.Chat.SmoothScrollTarget = max(0, min(m.Chat.Viewport.YOffset+1, maxOffset))
 			m.Chat.SmoothScrollActive = true
@@ -717,7 +718,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			return smoothScrollCmd()
 		}
 	case "pgup":
-		if !m.Chat.TextInput.Focused() {
+		if !m.Chat.Textarea.Focused() {
 			m.Chat.SmoothScrollTarget = max(m.Chat.Viewport.YOffset-m.Chat.Viewport.Height, 0)
 			m.Chat.SmoothScrollActive = true
 			m.Chat.UserScrolled = true
@@ -725,7 +726,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			return smoothScrollCmd()
 		}
 	case "pgdown":
-		if !m.Chat.TextInput.Focused() {
+		if !m.Chat.Textarea.Focused() {
 			maxOffset := max(m.Chat.Viewport.TotalLineCount()-m.Chat.Viewport.Height, 0)
 			m.Chat.SmoothScrollTarget = max(0, min(m.Chat.Viewport.YOffset+m.Chat.Viewport.Height, maxOffset))
 			m.Chat.SmoothScrollActive = true
@@ -736,7 +737,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			return smoothScrollCmd()
 		}
 	case "home", "g":
-		if !m.Chat.TextInput.Focused() {
+		if !m.Chat.Textarea.Focused() {
 			m.Chat.SmoothScrollTarget = 0
 			m.Chat.SmoothScrollActive = true
 			m.Chat.UserScrolled = true
@@ -744,7 +745,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			return smoothScrollCmd()
 		}
 	case "end", "G":
-		if !m.Chat.TextInput.Focused() {
+		if !m.Chat.Textarea.Focused() {
 			maxOffset := max(m.Chat.Viewport.TotalLineCount()-m.Chat.Viewport.Height, 0)
 			m.Chat.SmoothScrollTarget = maxOffset
 			m.Chat.SmoothScrollActive = true
@@ -1176,7 +1177,7 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 	m.Chat.Viewport.Width = m.Chat.Width
 	// Note: Viewport.Height is set by chat.updateViewportHeight() in chat.Update()
 	// to account for input field, spinner, scroll indicator, etc.
-	m.Chat.TextInput.Width = m.Chat.Width - 8
+	m.Chat.Textarea.SetWidth(m.Chat.Width - 8)
 
 	// Mark content dirty so it re-renders, and flag for initial scroll
 	m.Chat.ContentDirty = true
@@ -1213,11 +1214,19 @@ func (m *Model) View() string {
 
 	// Render log pane (bottom-right, separate border)
 	logContent := m.Log.View()
-	logWrapper := lipgloss.NewStyle().
-		Width(m.Log.Width).
-		Height(m.Log.Height).
-		Background(lipgloss.Color(m.Theme.Theme.Primary.Background))
-	logContentFilled := logWrapper.Render(logContent)
+	// Render each line via BackgroundWrapper to guarantee a full-width background on every line.
+	lines := strings.Split(logContent, "\n")
+	var renderedLines []string
+	for _, line := range lines {
+		renderedLines = append(renderedLines, themeStyles.BackgroundWrapper.Width(m.Log.Width).Render(line))
+	}
+	// Pad with empty background lines up to the viewport height to avoid transparent rows
+	if m.Log.Height > 0 {
+		for len(renderedLines) < m.Log.Height {
+			renderedLines = append(renderedLines, themeStyles.BackgroundWrapper.Width(m.Log.Width).Render(""))
+		}
+	}
+	logContentFilled := strings.Join(renderedLines, "\n")
 	logPane := logPaneStyle.Render(logContentFilled)
 
 	// Stack agent status and log panes vertically

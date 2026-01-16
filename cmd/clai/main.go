@@ -13,18 +13,55 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
 )
 
+// Build information - set at build time with -ldflags
+var (
+	buildTime  string
+	gitCommit  string
+	buildCount string
+	buildRand  string
+)
+
 func getStackTrace() string {
 	return string(debug.Stack())
+}
+
+func getBuildIdentifier() string {
+	// Build identifier for restart verification
+	parts := []string{}
+
+	if buildTime != "" {
+		parts = append(parts, buildTime)
+	}
+	if gitCommit != "" {
+		// Truncate commit hash to first 7 characters for display
+		if len(gitCommit) > 7 {
+			parts = append(parts, gitCommit[:7])
+		} else {
+			parts = append(parts, gitCommit)
+		}
+	}
+	if buildCount != "" {
+		parts = append(parts, "b"+buildCount)
+	}
+	if buildRand != "" {
+		parts = append(parts, buildRand)
+	}
+
+	if len(parts) == 0 {
+		return "dev"
+	}
+
+	return strings.Join(parts, "-")
 }
 
 func main() {
@@ -79,15 +116,19 @@ func main() {
 	}
 	logger.Init(logFile)
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	// Handle SIGINT for clean shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-c
-		logger.Info("Received SIGINT (Ctrl+C), exiting immediately.")
+		<-sigChan
+		logger.Info("Received signal, shutting down gracefully...")
 		ui.StopDebugServer()
 		logFile.Close()
+		// Reset terminal state before exit
+		fmt.Print("\x1b[2J\x1b[H\x1b[?1049l") // Clear screen, reset cursor, exit alt screen
 		os.Exit(0)
 	}()
+
 	_ = godotenv.Load()
 	modelName := os.Getenv("OLLAMA_MODEL")
 	if modelName == "" {
@@ -138,16 +179,28 @@ func main() {
 	availableThemes := ui.GetAvailableThemes()
 	theme := availableThemes[0]
 
-	chatInput := textinput.New()
-	chatInput.Prompt = "> "
+	chatInput := textarea.New()
 	chatInput.Placeholder = "Type your message..."
 	chatInput.CharLimit = 256
-	chatInput.Width = 40
+	chatInput.SetWidth(40)
+	chatInput.SetHeight(3) // Multi-line input
+	chatInput.ShowLineNumbers = false
+
 	bgColor := lipgloss.Color(theme.Theme.Primary.Background)
+	// Set comprehensive background styling for textarea
+	chatInput.FocusedStyle.Base = lipgloss.NewStyle().Background(bgColor)
+	chatInput.BlurredStyle.Base = lipgloss.NewStyle().Background(bgColor)
+	chatInput.FocusedStyle.CursorLine = lipgloss.NewStyle().Background(bgColor)
+	chatInput.FocusedStyle.CursorLineNumber = lipgloss.NewStyle().Background(bgColor)
+	chatInput.FocusedStyle.EndOfBuffer = lipgloss.NewStyle().Background(bgColor)
+	chatInput.FocusedStyle.LineNumber = lipgloss.NewStyle().Background(bgColor)
+	chatInput.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground)).Background(bgColor)
+	chatInput.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground)).Background(bgColor)
+	chatInput.FocusedStyle.Text = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.Foreground)).Background(bgColor)
+	chatInput.BlurredStyle.Text = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.Foreground)).Background(bgColor)
+	chatInput.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Bright.Yellow)).Background(bgColor)
+	chatInput.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Bright.Yellow)).Background(bgColor)
 	chatInput.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFAA")).Bold(true).Underline(true).Background(bgColor)
-	chatInput.TextStyle = lipgloss.NewStyle().Background(bgColor)
-	chatInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground)).Background(bgColor)
-	chatInput.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Bright.Yellow)).Background(bgColor)
 	chatInput.Focus()
 
 	spin := spinner.New()
@@ -157,9 +210,25 @@ func main() {
 	helpModel.Styles.FullKey = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.Foreground))
 	helpModel.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground))
 	helpModel.Styles.FullSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground))
+	debugChan := make(chan ui.DebugServerMsg, 10) // buffered channel for debug commands
+
+	// Calculate UI layout dimensions using constants from ui package
+	chatWidth := int(float64(terminalWidth) * ui.ChatPaneWidthRatio)
+	if chatWidth < ui.MinPaneWidth {
+		chatWidth = ui.MinPaneWidth
+	}
+	statusWidth := terminalWidth - chatWidth
+	if statusWidth < ui.MinPaneWidth {
+		statusWidth = ui.MinPaneWidth
+	}
+	contentHeight := terminalHeight - ui.StatusBarHeight
+
+	statusHeight := contentHeight / 2
+	logHeight := contentHeight - statusHeight
+
 	m := &ui.Model{
-		Log:           viewport.New(0, 0),
-		AgentStatus:   ui.NewAgentStatusView(theme),
+		Log:           ui.SetupLogComponent(statusWidth, logHeight),
+		AgentStatus:   ui.SetupAgentStatusComponent(theme),
 		Help:          helpModel,
 		Keys:          ui.DefaultKeyMap,
 		StatusBarText: "",
@@ -168,6 +237,22 @@ func main() {
 		Theme:         theme,
 		DB:            store,
 	}
+
+	// Re-setup textarea styling with the (potentially loaded) theme
+	bgColor = lipgloss.Color(theme.Theme.Primary.Background)
+	chatInput.FocusedStyle.Base = lipgloss.NewStyle().Background(bgColor)
+	chatInput.BlurredStyle.Base = lipgloss.NewStyle().Background(bgColor)
+	chatInput.FocusedStyle.CursorLine = lipgloss.NewStyle().Background(bgColor)
+	chatInput.FocusedStyle.CursorLineNumber = lipgloss.NewStyle().Background(bgColor)
+	chatInput.FocusedStyle.EndOfBuffer = lipgloss.NewStyle().Background(bgColor)
+	chatInput.FocusedStyle.LineNumber = lipgloss.NewStyle().Background(bgColor)
+	chatInput.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground)).Background(bgColor)
+	chatInput.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.DimForeground)).Background(bgColor)
+	chatInput.FocusedStyle.Text = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.Foreground)).Background(bgColor)
+	chatInput.BlurredStyle.Text = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Primary.Foreground)).Background(bgColor)
+	chatInput.FocusedStyle.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Bright.Yellow)).Background(bgColor)
+	chatInput.BlurredStyle.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color(theme.Theme.Bright.Yellow)).Background(bgColor)
+	chatInput.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#00FFAA")).Bold(true).Underline(true).Background(bgColor)
 
 	m.Agent = llm.NewAgent(llmClient)
 	logger.Info("Agent mode enabled")
@@ -187,24 +272,14 @@ func main() {
 	}
 	m.Conversation = conv
 
-	chat := ui.ChatModel{
-		TextInput:    chatInput,
-		LlmClient:    llmClient,
-		Spinner:      spin,
-		Theme:        m.Theme,
-		AutoScroll:   true,
-		UserScrolled: false,
-	}
+	// Use the simplified UI setup functions
+	chatHeight := terminalHeight - ui.StatusBarHeight
+
+	chat := ui.SetupChatComponent(chatWidth, chatHeight, theme, llmClient)
 	chat.AssistantName = "assistant"
 	chat.Messages = conv.Messages
 	chat.ContentDirty = true
 	chat.NeedsInitialScroll = true
-	chatPaneWidth := int(float64(terminalWidth) * 0.7)
-	chat.Width = chatPaneWidth - 4
-	chat.Height = terminalHeight - 4
-	chat.Viewport = viewport.New(chat.Width, chat.Height)
-	chat.Viewport.MouseWheelEnabled = true
-	chat.Viewport.MouseWheelDelta = 3
 
 	for _, msg := range conv.Messages {
 		if msg.Role == "user" {
@@ -217,11 +292,19 @@ func main() {
 	logger.Info("Starting app, Bubble Tea will detect terminal size...")
 
 	p := tea.NewProgram(m,
-		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
 
-	if err := ui.StartDebugServer(p); err != nil {
+	// Start goroutine to bridge debug channel to tea program
+	go func() {
+		for msg := range debugChan {
+			logger.Info("[DEBUG] Sending DebugServerMsg to Bubble Tea")
+			p.Send(msg)
+			logger.Info("[DEBUG] DebugServerMsg sent to Bubble Tea")
+		}
+	}()
+
+	if err := ui.StartDebugServer(debugChan); err != nil {
 		logger.Warn("Failed to start debug server: %v", err)
 	}
 

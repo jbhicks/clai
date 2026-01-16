@@ -51,6 +51,11 @@ func (m *MockLLM) SendMessageStreamNoTools(messages []llm.Message, streamChan ch
 	}, nil
 }
 
+func (m *MockLLM) SendMessageStreamWithTools(messages []llm.Message, tools []llm.Tool, streamChan chan<- string, includeSystemPrompt bool) (llm.Response, error) {
+	// For mock, just call the no-tools version
+	return m.SendMessageStreamNoTools(messages, streamChan, includeSystemPrompt)
+}
+
 func (m *MockLLM) Model() string {
 	return "mock-model"
 }

@@ -14,6 +14,8 @@ func runDebugCommand(args []string) {
 		fmt.Fprintln(os.Stderr, "\nAvailable commands:")
 		fmt.Fprintln(os.Stderr, "  ping                    - Test server connectivity")
 		fmt.Fprintln(os.Stderr, "  inspect                 - Show viewport state and content")
+		fmt.Fprintln(os.Stderr, "  inspect_styles          - Get UI layout dimensions")
+		fmt.Fprintln(os.Stderr, "  get_theme_colors        - Get theme colors including textarea background")
 		fmt.Fprintln(os.Stderr, "  switch_pane             - Switch between chat and log panes")
 		fmt.Fprintln(os.Stderr, "  get_history             - Get conversation history")
 		fmt.Fprintln(os.Stderr, "  send_message ROLE TEXT  - Send test message (role: user|assistant)")
@@ -29,6 +31,10 @@ func runDebugCommand(args []string) {
 		runPing()
 	case "inspect":
 		runInspect()
+	case "inspect_styles":
+		runInspectStyles()
+	case "get_theme_colors":
+		runGetThemeColors()
 	case "switch_pane":
 		runSwitchPane()
 	case "get_history":
@@ -70,6 +76,52 @@ func runPing() {
 	}
 
 	fmt.Println("pong")
+}
+
+func runInspectStyles() {
+	resp, err := debug.SendCommand("inspect_styles", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !resp.Success {
+		fmt.Fprintf(os.Stderr, "Command failed: %s\n", resp.Error)
+		os.Exit(1)
+	}
+
+	data := resp.Data
+	fmt.Printf("Terminal: %vx%v\n", data["width"], data["height"])
+	fmt.Printf("Chat Pane: %vx%v\n", data["chat_width"], data["chat_height"])
+	fmt.Printf("Viewport: %v lines (offset %v)\n", data["viewport_height"], data["viewport_offset"])
+	fmt.Printf("Messages: %v\n", data["message_count"])
+	fmt.Printf("Active Pane: %v\n", data["active_pane"])
+}
+
+func runGetThemeColors() {
+	resp, err := debug.SendCommand("get_theme_colors", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !resp.Success {
+		fmt.Fprintf(os.Stderr, "Command failed: %s\n", resp.Error)
+		os.Exit(1)
+	}
+
+	data := resp.Data
+	fmt.Println("=== Theme Colors ===")
+	fmt.Printf("Textarea Background: %v\n", data["textarea_background"])
+	fmt.Printf("Textarea Foreground: %v\n", data["textarea_foreground"])
+	fmt.Printf("Primary Background: %v\n", data["primary_background"])
+	fmt.Printf("Primary Foreground: %v\n", data["primary_foreground"])
+	fmt.Println("=== All Colors ===")
+	for k, v := range data {
+		if k != "textarea_background" && k != "textarea_foreground" && k != "primary_background" && k != "primary_foreground" {
+			fmt.Printf("%s: %v\n", k, v)
+		}
+	}
 }
 
 func runInspect() {
