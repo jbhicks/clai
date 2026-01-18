@@ -6,7 +6,7 @@ dev:
 		echo "Install with: sudo apt install entr (Debian/Ubuntu) or brew install entr (macOS)"; \
 		exit 1; \
 	fi
-	@./dev.sh
+	@./scripts/dev.sh
 
 .PHONY: dev-tmux
 # Alternative: tmux-based development (old method)
@@ -54,6 +54,7 @@ all: test build
 
 build:
 	$(GOBUILD) -o $(BINARY_NAME) ./cmd/clai
+	$(GOBUILD) -o clai-mcp-server ./cmd/clai-mcp-server
 
 run:
 	$(GORUN) ./cmd/clai
@@ -64,5 +65,6 @@ test:
 clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_NAME)
+	rm -f clai-mcp-server
 
 

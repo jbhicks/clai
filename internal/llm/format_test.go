@@ -21,7 +21,7 @@ func TestDetectAPIFormat_Ollama(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "test-model", "")
-	
+
 	if client.apiFormat != FormatOllama {
 		t.Errorf("Expected FormatOllama, got %v", client.apiFormat)
 	}
@@ -49,7 +49,7 @@ func TestDetectAPIFormat_OpenAI(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(server.URL, "test-model", "")
-	
+
 	if client.apiFormat != FormatOpenAI {
 		t.Errorf("Expected FormatOpenAI, got %v", client.apiFormat)
 	}

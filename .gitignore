@@ -33,3 +33,6 @@ go.work.sum
 
 # Reference documentation (not part of codebase)
 reference-docs/
+
+# Node modules
+**/node_modules/

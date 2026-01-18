@@ -3,9 +3,9 @@ package llm
 import (
 	"bufio"
 	"bytes"
-	"clai/internal/tools"
 	"encoding/json"
 	"fmt"
+	"github.com/jbhicks/clai/internal/tools"
 	"io"
 	"log"
 	"net/http"
@@ -611,7 +611,14 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, streamChan chan<
 								tc.Name = tcDelta.Function.Name
 							}
 							if tcDelta.Function.Arguments != "" {
-								tc.Parameters = append(tc.Parameters, []byte(tcDelta.Function.Arguments)...)
+								existing := string(tc.Parameters)
+								if len(existing) == 0 {
+									tc.Parameters = json.RawMessage(tcDelta.Function.Arguments)
+								} else if strings.HasSuffix(existing, "}") {
+									tc.Parameters = json.RawMessage(existing[:len(existing)-1] + "," + tcDelta.Function.Arguments + "}")
+								} else {
+									tc.Parameters = json.RawMessage(existing + tcDelta.Function.Arguments)
+								}
 							}
 						}
 						log.Printf("[LLM-OPENAI-STREAM] Accumulated tool call %d: name=%s, args=%s", tcDelta.Index, tc.Name, string(tc.Parameters))

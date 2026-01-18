@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "clai-debug": {
+      "command": "/home/josh/clai/bin/clai-mcp-server",
+      "args": ["-socket", "/tmp/clai.sock"],
+      "disabled": false
+    }
+  }
+}

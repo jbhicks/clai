@@ -6,6 +6,7 @@ An AI interface, built for local AI, by AI. AlrAIght?
 - **Local AI Integration**: Built for Ollama and OpenAI-compatible local LLM endpoints
 - **Interactive TUI**: Modern terminal user interface built with Bubble Tea
 - **Tool System**: Extensible tool calling system for LLM function execution
+- **MCP Server**: Built-in Model Context Protocol server for external tool integration
 - **Conversation Management**: Persistent conversation history with SQLite
 - **Smart Chat Viewport**:
   - Auto-scroll with manual override
@@ -36,67 +37,50 @@ An AI interface, built for local AI, by AI. AlrAIght?
 - `Ctrl+N`: Focus input (from log pane)
 - `↑`/`↓`: Navigate command history
 
-# CLAI Implementation Plan
+## MCP Server
 
-[...unchanged content above...]
+CLAI includes a built-in Model Context Protocol (MCP) server that allows external tools to inspect and interact with the running application. This enables integration with MCP-compatible clients and tools.
 
-## Live Reload for Bubble Tea TUI
+### Available Commands
 
-[...unchanged content above...]
+- `clai debug ping` - Test connectivity to the debug server
+- `clai debug inspect` - Capture current UI state and viewport content  
+- `clai debug inspect_styles` - Get structured UI layout dimensions
+- `clai debug get_history` - Retrieve conversation history
+- `clai debug switch_pane` - Switch between chat and log panes
 
-This workflow ensures instant reloads and a robust TUI experience.
+### Usage
 
----
+The MCP server runs automatically when CLAI starts and listens on Unix socket `/tmp/clai.sock`. It's designed for debugging UI issues and understanding application state in real-time.
 
-### Recommended: tmux-based Live Reload for Bubble Tea TUI
+See [docs/DEBUG_SERVER.md](docs/DEBUG_SERVER.md) for detailed documentation.
 
-Bubble Tea TUIs require a real TTY for proper rendering and hot-reload. The best workflow is to use tmux with two panes:
+## Development Viewport
 
-- **Pane 0:** Runs the TUI app
-- **Pane 1:** Runs a watcher that rebuilds and restarts the app on code changes
+CLAI is developed with a live-reload workflow. See **[AGENTS.md](AGENTS.md)** for the primary developer guidelines.
 
-To start this workflow, run:
+### Live Reload with make dev
+
+The recommended workflow uses `make dev` which handles rebuilding and restarting the TUI automatically.
 
 ```sh
 make dev
 ```
 
-This will:
-- Check for tmux installation
-- Start a tmux session named `clai_dev` with two panes
-- Pane 0 runs the TUI
-- Pane 1 watches for code changes and restarts the TUI automatically
+This uses `scripts/dev.sh` to watch for changes and restart the application in your terminal. Ensure you have `entr` or `inotify-tools` installed depending on your OS.
 
-To attach to the session:
+### tmux-based Development (Pane Layout)
+
+Alternatively, you can run a tmux session with the app in one pane and logs in another:
+
 ```sh
-tmux attach -t clai_dev
+make dev-tmux
 ```
+
+### Logs & Debugging
+
+Logs are generally written to the internal log pane (toggle with `Ctrl+T`). Advanced debugging can be done via the built-in MCP server.
 
 ---
 
-### One-liner Live Reload with entr (legacy)
-
-For a single-terminal live reload workflow using [entr](https://eradman.com/entrproject/), run this command from your project root:
-
-```sh
-find . -type f -name '*.go' | grep -v '/_build/' | grep -v '/vendor/' | entr -r ./dev_entr.sh
-```
-
-- This will rebuild and restart the app automatically whenever any Go source file changes.
-- The TUI will remain visible in your terminal.
-- All logs will be written to `debug.log` (overwritten on each run).
-
----
-
-**Alternative (for simple projects):**
-
-If you want to watch only the Go files in your current directory, you can use:
-
-```sh
-ls *.go | entr ./dev_entr.sh
-```
-
-> **Note:**  
-> Always run these commands in a real terminal window (not in the background or via a tool that captures output), so the TUI appears as expected.
-
----
+For more details on implementation patterns, layout rules, and testing, see the **[Technical Guidelines Index](AGENTS.md#technical-guidelines-index)**.

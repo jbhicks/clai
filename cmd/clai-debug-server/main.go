@@ -3,48 +3,94 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/jbhicks/clai/internal/debug"
+	"net"
 	"os"
 	"strings"
 )
 
-func runDebugCommand(args []string) {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: clai debug COMMAND [ARGS...]")
-		fmt.Fprintln(os.Stderr, "\nAvailable commands:")
-		fmt.Fprintln(os.Stderr, "  ping                    - Test server connectivity")
-		fmt.Fprintln(os.Stderr, "  inspect                 - Show viewport state and content")
-		fmt.Fprintln(os.Stderr, "  switch_pane             - Switch between chat and log panes")
-		fmt.Fprintln(os.Stderr, "  get_history             - Get conversation history")
-		fmt.Fprintln(os.Stderr, "  send_message ROLE TEXT  - Send test message (role: user|assistant)")
+const SocketPath = "/tmp/clai.sock"
+
+type Response struct {
+	Success bool                   `json:"success"`
+	Data    map[string]interface{} `json:"data,omitempty"`
+	Error   string                 `json:"error,omitempty"`
+}
+
+func SendCommand(command string, args map[string]interface{}) (*Response, error) {
+	conn, err := net.Dial("unix", SocketPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to %s: %w", SocketPath, err)
+	}
+	defer conn.Close()
+
+	cmd := map[string]interface{}{
+		"command": command,
+	}
+	if args != nil {
+		cmd["args"] = args
+	}
+
+	cmdJSON, err := json.Marshal(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal command: %w", err)
+	}
+
+	cmdJSON = append(cmdJSON, '\n')
+	if _, err := conn.Write(cmdJSON); err != nil {
+		return nil, fmt.Errorf("failed to send command: %w", err)
+	}
+
+	buf := make([]byte, 1024*1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var resp Response
+	if err := json.Unmarshal(buf[:n], &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <command> [args...]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\nAvailable commands:\n")
+		fmt.Fprintf(os.Stderr, "  ping                    - Test server connectivity\n")
+		fmt.Fprintf(os.Stderr, "  inspect                 - Show viewport state and content\n")
+		fmt.Fprintf(os.Stderr, "  get_history             - Get conversation history\n")
+		fmt.Fprintf(os.Stderr, "  switch_pane             - Switch between chat and log panes\n")
+		fmt.Fprintf(os.Stderr, "  send_message ROLE TEXT  - Send test message (role: user|assistant)\n")
 		os.Exit(1)
 	}
 
-	command := args[0]
+	command := os.Args[1]
 
 	switch command {
 	case "ping":
 		runPing()
 	case "inspect":
 		runInspect()
-	case "switch_pane":
-		runSwitchPane()
 	case "get_history":
 		runGetHistory()
+	case "switch_pane":
+		runSwitchPane()
 	case "send_message":
-		if len(args) < 3 {
-			fmt.Fprintln(os.Stderr, "Usage: clai debug send_message ROLE TEXT")
+		if len(os.Args) < 4 {
+			fmt.Fprintf(os.Stderr, "Usage: %s send_message ROLE TEXT\n", os.Args[0])
 			os.Exit(1)
 		}
-		runSendMessage(args[1], strings.Join(args[2:], " "))
+		runSendMessage(os.Args[2], os.Args[3])
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown debug command: %s\n", command)
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 		os.Exit(1)
 	}
 }
 
 func runPing() {
-	resp, err := debug.SendCommand("ping", nil)
+	resp, err := SendCommand("ping", nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -59,7 +105,7 @@ func runPing() {
 }
 
 func runInspect() {
-	resp, err := debug.SendCommand("inspect", nil)
+	resp, err := SendCommand("inspect", nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -89,7 +135,7 @@ func runInspect() {
 }
 
 func runSwitchPane() {
-	resp, err := debug.SendCommand("switch_pane", nil)
+	resp, err := SendCommand("switch_pane", nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -104,7 +150,7 @@ func runSwitchPane() {
 }
 
 func runGetHistory() {
-	resp, err := debug.SendCommand("get_history", nil)
+	resp, err := SendCommand("get_history", nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -130,7 +176,7 @@ func runSendMessage(role, content string) {
 		"content": content,
 	}
 
-	resp, err := debug.SendCommand("send_message", args)
+	resp, err := SendCommand("send_message", args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
