@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
 	"github.com/jbhicks/clai/internal/debug"
+	"github.com/jbhicks/clai/internal/llm"
 	"github.com/jbhicks/clai/internal/ralph"
 )
 
@@ -27,6 +28,7 @@ const (
 type prdLoadedMsg *ralph.PRD
 type prdErrorMsg error
 type prdFileChangedMsg struct{}
+type healthMsg bool
 
 type logMsg struct {
 	storyID string
@@ -50,12 +52,14 @@ type Model struct {
 	cursor        int
 	llmHost       string
 	llmModel      string
+	llmHealth     bool
 }
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.loadPRDCmd(),
 		m.watchPRDCmd(),
+		m.checkHealthCmd(),
 	)
 }
 
@@ -102,11 +106,22 @@ func (m Model) watchPRDCmd() tea.Cmd {
 	}
 }
 
+func (m Model) checkHealthCmd() tea.Cmd {
+	return func() tea.Msg {
+		client := llm.NewClient(m.llmHost, m.llmModel, "")
+		err := client.HealthCheck()
+		return healthMsg(err == nil)
+	}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.debugServer != nil {
 		m.debugServer.SetModel(&m)
 	}
 	switch msg := msg.(type) {
+	case healthMsg:
+		m.llmHealth = bool(msg)
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -404,9 +419,34 @@ func (m Model) View() string {
 }
 
 func Run() error {
+	// Manual .env loading if it exists
+	envVars := make(map[string]string)
+	if data, err := os.ReadFile(".env"); err == nil {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				k := strings.TrimSpace(parts[0])
+				v := strings.TrimSpace(parts[1])
+				envVars[k] = v
+			}
+		}
+	}
+
 	m := Model{
-		llmHost:  os.Getenv("OLLAMA_HOST"),
-		llmModel: os.Getenv("OLLAMA_MODEL"),
+		llmHost:  envVars["OLLAMA_HOST"],
+		llmModel: envVars["OLLAMA_MODEL"],
+	}
+
+	if m.llmHost == "" {
+		m.llmHost = os.Getenv("OLLAMA_HOST")
+	}
+	if m.llmModel == "" {
+		m.llmModel = os.Getenv("OLLAMA_MODEL")
 	}
 	if m.llmHost == "" {
 		m.llmHost = "http://localhost:11434"

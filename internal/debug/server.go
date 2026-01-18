@@ -168,23 +168,7 @@ func (s *Server) handleInspect(args map[string]interface{}) *ServerResponse {
 		"server_version": "1.0.0",
 	}
 
-	if uiModel, ok := model.(struct {
-		getWidth() int
-		getHeight() int
-		getLogs() []string
-		getViewportContent() string
-	}); ok {
-		data["width"] = uiModel.getWidth()
-		data["height"] = uiModel.getHeight()
-		logs := uiModel.getLogs()
-		data["logs"] = logs
-		data["logs_count"] = len(logs)
-		data["viewport_content"] = uiModel.getViewportContent()
-	} else {
-		data["viewport_content"] = "Debug server connected and ready"
-		data["type_assertion_failed"] = true
-		data["model_type"] = fmt.Sprintf("%T", model)
-	}
+	modelValue := reflect.ValueOf(model)
 
 	if method := modelValue.MethodByName("getWidth"); method.IsValid() {
 		if result := method.Call(nil); len(result) > 0 {
@@ -214,6 +198,8 @@ func (s *Server) handleInspect(args map[string]interface{}) *ServerResponse {
 		}
 	} else {
 		data["viewport_content"] = "Debug server connected and ready"
+		data["type_assertion_failed"] = true
+		data["model_type"] = fmt.Sprintf("%T", model)
 	}
 
 	return &ServerResponse{
@@ -332,8 +318,13 @@ func (s *Server) handleSwitchPane(args map[string]interface{}) *ServerResponse {
 
 func (s *Server) getModelHeight() int {
 	model := s.GetModel()
-	if m, ok := model.(interface{ getHeight() int }); ok {
-		return m.getHeight()
+	modelValue := reflect.ValueOf(model)
+	if method := modelValue.MethodByName("getHeight"); method.IsValid() {
+		if result := method.Call(nil); len(result) > 0 {
+			if height, ok := result[0].Interface().(int); ok {
+				return height
+			}
+		}
 	}
 	return 24
 }
