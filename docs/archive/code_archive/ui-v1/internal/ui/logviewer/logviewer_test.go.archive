@@ -1,0 +1,48 @@
+package logviewer
+
+import (
+	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/jbhicks/clai/internal/log"
+	ui "github.com/jbhicks/clai/internal/ui"
+)
+
+func makeSampleEntries() []log.LogEntry {
+	return []log.LogEntry{
+		{Msg: "short msg", Body: "detailed body", Level: "info", Ts: time.Now()},
+	}
+}
+
+func TestLogModelNarrowWidths(t *testing.T) {
+	styles := ui.GetThemeStyles(ui.AvailableThemes[0])
+	entries := []log.LogEntry{
+		{Msg: "m1", Body: "body1", Level: "info", Ts: time.Now()},
+		{Msg: "m2", Body: "body2", Level: "warn", Ts: time.Now()},
+	}
+	m := NewLogModel(entries, styles)
+	// set viewport to narrow widths
+	for w := 0; w <= 12; w++ {
+		m.Update(tea.WindowSizeMsg{Width: w, Height: 10})
+		v := m.View()
+		_ = v // ensure no panic
+	}
+}
+
+func TestGlamourRenderIfNeeded(t *testing.T) {
+	md := "# Hello\n\nThis is *markdown*"
+	out := glamorRenderIfNeeded(md, "markdown", 40)
+	if out == "" {
+		t.Fatalf("expected glamour output, got empty")
+	}
+}
+
+func TestPadLineWithBackgroundVariousWidths(t *testing.T) {
+	style := lipgloss.NewStyle().Background(lipgloss.Color("#000000"))
+	for w := 0; w <= 12; w++ {
+		_ = padLineWithBackground("x", w, style)
+	}
+}

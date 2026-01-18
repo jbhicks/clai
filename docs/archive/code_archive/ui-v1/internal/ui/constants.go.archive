@@ -1,0 +1,11 @@
+package ui
+
+import "github.com/brittonhayes/glitter/glitter"
+
+const LogViewportWidth = 80
+
+const DefaultViewportHeight = 20
+
+func GetAvailableThemes() []*glitter.UI {
+	return []*glitter.UI{}
+}

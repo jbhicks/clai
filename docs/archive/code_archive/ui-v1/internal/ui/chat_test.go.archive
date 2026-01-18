@@ -1,0 +1,95 @@
+package ui
+
+import (
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/brittonhayes/glitter/glitter"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/jbhicks/clai/internal/llm"
+)
+
+func TestChatBubbleBackgrounds(t *testing.T) {
+	theme := &glitter.UI{}
+	theme.Theme.Primary.Background = "#282a36"
+	theme.Theme.Primary.Foreground = "#f8f8f2"
+
+	m := Model{
+		Width:  120,
+		Height: 40,
+		Theme:  theme,
+	}
+	m.Chat = ChatModel{
+		Theme: theme,
+		Messages: []llm.Message{
+			{Role: "user", Content: "test message with multiple lines to verify background padding"},
+		},
+	}
+	m.updateDimensions()
+	chatView := m.Chat.View()
+	if chatView == "" {
+		t.Fatal("expected non-empty chat view")
+	}
+
+	lines := strings.Split(chatView, "\n")
+	for i, line := range lines {
+		plain := stripANSI(line)
+		lastNonSpace := -1
+		for j := len([]rune(plain)) - 1; j >= 0; j-- {
+			if []rune(plain)[j] != ' ' {
+				lastNonSpace = j
+				break
+			}
+		}
+		if lastNonSpace != -1 && lastNonSpace < len([]rune(plain))-1 {
+			t.Errorf("line %d has trailing spaces without background: %q (plain=%q)", i, line, plain)
+		}
+	}
+}
+
+func stripANSI(s string) string {
+	re := regexp.MustCompile(`\x1b\[[0-9;]*[mK]`)
+	return re.ReplaceAllString(s, "")
+}
+
+func TestChatBubbleWidths(t *testing.T) {
+	// Set up a dummy theme
+	theme := &glitter.UI{}
+	theme.Theme.Primary.Background = "#282a36"
+	theme.Theme.Primary.Foreground = "#f8f8f2"
+
+	m := Model{
+		Width:  120,
+		Height: 40,
+		Theme:  theme,
+	}
+	m.Chat = ChatModel{
+		Theme: theme,
+		Messages: []llm.Message{
+			{Role: "assistant", Content: strings.Repeat("Assistant content ", 10)},
+			{Role: "user", Content: strings.Repeat("User content ", 10)},
+		},
+	}
+
+	// Compute dimensions (this sets m.Chat.Width)
+	m.updateDimensions()
+
+	// Render the chat view only
+	chatView := m.Chat.View()
+	if chatView == "" {
+		t.Fatal("expected non-empty chat view")
+	}
+
+	// Get chat pane width
+	chatPaneWidth, _ := ComputePaneWidths(m.Width, DefaultChatPaneRatio)
+
+	// Verify no line in the chat output exceeds the chatInnerWidth (allow small tolerance)
+	lines := strings.Split(chatView, "\n")
+	for i, line := range lines {
+		w := lipgloss.Width(line)
+		if w > chatPaneWidth+2 { // allow +2 tolerance for borders/frame
+			t.Fatalf("line %d exceeds expected chat pane width: %d cols (line width=%d)", i, chatPaneWidth, w)
+		}
+	}
+}

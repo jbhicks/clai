@@ -1,0 +1,126 @@
+package ui
+
+import (
+	"github.com/jbhicks/clai/internal/llm"
+	"testing"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// TestJoinVerticalEmptyString verifies that we don't pass empty strings to
+// lipgloss.JoinVertical since they count as 1 row and cause layout overflow.
+func TestJoinVerticalEmptyString(t *testing.T) {
+	// This is the bug we fixed: empty strings in JoinVertical count as 1 row
+	a := "line1"
+	b := ""
+	c := "line2"
+
+	joined := lipgloss.JoinVertical(lipgloss.Left, a, b, c)
+	height := lipgloss.Height(joined)
+
+	// Empty string counts as 1 row, so height is 3 not 2
+	if height != 3 {
+		t.Errorf("Expected height 3 with empty string, got %d", height)
+	}
+
+	// Correct approach: only join non-empty strings
+	joinedCorrect := lipgloss.JoinVertical(lipgloss.Left, a, c)
+	heightCorrect := lipgloss.Height(joinedCorrect)
+
+	if heightCorrect != 2 {
+		t.Errorf("Expected height 2 without empty string, got %d", heightCorrect)
+	}
+}
+
+// TestChatModelLayoutDimensions verifies that ChatModel.View() respects height constraints.
+func TestChatModelLayoutDimensions(t *testing.T) {
+	theme := AvailableThemes[0] // Use Gruvbox theme
+
+	ti := textinput.New()
+	ti.Focus()
+
+	chat := ChatModel{
+		Width:     80,
+		Height:    20,
+		Theme:     theme,
+		Messages:  []llm.Message{{Role: "assistant", Content: "test"}},
+		TextInput: ti,
+		Viewport:  viewport.New(80, 20),
+	}
+
+	view := chat.View()
+	actualHeight := lipgloss.Height(view)
+
+	// The view should not exceed the allocated height
+	if actualHeight > chat.Height {
+		t.Errorf("ChatModel.View() exceeded height constraint: got %d, max %d", actualHeight, chat.Height)
+	}
+}
+
+// TestMainLayoutDimensions verifies that the main View() doesn't exceed terminal size.
+func TestMainLayoutDimensions(t *testing.T) {
+	termWidth := 100
+	termHeight := 40
+
+	theme := AvailableThemes[0] // Use Gruvbox theme
+
+	ti := textinput.New()
+	ti.Focus()
+
+	m := &Model{
+		Width:  termWidth,
+		Height: termHeight,
+		Theme:  theme,
+	}
+
+	// Simulate what handleWindowSizeMsg does:
+	// contentHeight = termHeight - statusBar(1)
+	// Component.Height = contentHeight - MainPane frame size
+	themeStyles := GetThemeStyles(theme)
+	contentHeight := termHeight - 1
+	componentHeight := contentHeight - themeStyles.MainPane.GetVerticalFrameSize()
+
+	chatPaneWidth, _ := ComputePaneWidths(termWidth, DefaultChatPaneRatio)
+	chatInnerWidth := ComputeInnerWidth(chatPaneWidth, themeStyles.MainPane)
+
+	m.Chat.Width = chatInnerWidth
+	m.Chat.Height = componentHeight
+	m.Chat.Theme = theme
+	m.Chat.TextInput = ti
+	m.Chat.Viewport = viewport.New(chatInnerWidth, componentHeight)
+
+	// Assign AgentStatus to ensure View composes right column
+	m.AgentStatus = NewAgentStatusView(theme)
+	m.Log = viewport.New(termWidth, componentHeight)
+
+	// Call handleWindowSizeMsg to populate derived dimensions
+	m.handleWindowSizeMsg(tea.WindowSizeMsg{Width: termWidth, Height: termHeight})
+
+	view := m.View()
+	actualHeight := lipgloss.Height(view)
+
+	// The final layout should not exceed terminal height
+	if actualHeight > termHeight {
+		t.Errorf("Model.View() exceeded terminal height: got %d, max %d", actualHeight, termHeight)
+	}
+
+	// New assertions: agent and log should share the right column width
+	rightColumnWidth := termWidth - int(float64(termWidth)*DefaultChatPaneRatio)
+	if m.AgentStatus.Width <= 0 {
+		t.Errorf("AgentStatus.Width should be set and > 0; got %d", m.AgentStatus.Width)
+	}
+	if m.Log.Width <= 0 {
+		t.Errorf("Log.Width should be set and > 0; got %d", m.Log.Width)
+	}
+	// Agent and Log widths should match the right column's inner width (consider frame)
+	expectedRightInner := rightColumnWidth - themeStyles.MainPane.GetHorizontalFrameSize()
+	if m.AgentStatus.Width != expectedRightInner {
+		t.Errorf("AgentStatus.Width mismatch: got %d expected %d", m.AgentStatus.Width, expectedRightInner)
+	}
+	if m.Log.Width != expectedRightInner {
+		t.Errorf("Log.Width mismatch: got %d expected %d", m.Log.Width, expectedRightInner)
+	}
+}

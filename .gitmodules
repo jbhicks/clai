@@ -1,9 +1,12 @@
-[submodule "reference-docs/bubbletea-repo"]
-	path = reference-docs/bubbletea-repo
+[submodule "docs/reference/library_reference/bubbletea"]
+	path = docs/reference/library_reference/bubbletea
 	url = https://github.com/charmbracelet/bubbletea.git
-[submodule "reference-docs/bubbles-repo"]
-	path = reference-docs/bubbles-repo
+[submodule "docs/reference/library_reference/bubbles"]
+	path = docs/reference/library_reference/bubbles
 	url = https://github.com/charmbracelet/bubbles.git
-[submodule "reference-docs/vscode-copilot-chat"]
-	path = reference-docs/vscode-copilot-chat
-	url = https://github.com/microsoft/vscode-copilot-chat
+[submodule "docs/reference/library_reference/lipgloss"]
+	path = docs/reference/library_reference/lipgloss
+	url = https://github.com/charmbracelet/lipgloss.git
+[submodule "docs/reference/library_reference/ralph"]
+	path = docs/reference/library_reference/ralph
+	url = https://github.com/jbhicks/ralph.git

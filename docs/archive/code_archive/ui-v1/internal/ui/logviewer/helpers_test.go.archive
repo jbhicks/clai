@@ -1,0 +1,27 @@
+package logviewer
+
+import (
+	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+	ui "github.com/jbhicks/clai/internal/ui"
+)
+
+func TestTruncateRunes(t *testing.T) {
+	s := "hello world"
+	if ui.TruncateWithEllipsis(s, 5) != "he..." {
+		t.Fatalf("unexpected truncate result: %s", ui.TruncateWithEllipsis(s, 5))
+	}
+}
+
+func TestPadLineWithBackgroundNarrow(t *testing.T) {
+	style := lipgloss.NewStyle().Background(lipgloss.Color("#000000"))
+	_ = ui.PadLineWithStyle("hi", 2, style)
+}
+
+func TestPadLineWithBackgroundWidths(t *testing.T) {
+	style := lipgloss.NewStyle()
+	for w := 0; w <= 12; w++ {
+		_ = ui.PadLineWithStyle("x", w, style)
+	}
+}

@@ -1,0 +1,43 @@
+package ui
+
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/brittonhayes/glitter/glitter"
+)
+
+func TestAgentStatusNarrowWidths(t *testing.T) {
+	// Use first available theme for rendering
+	var theme *glitter.UI
+	if len(AvailableThemes) > 0 {
+		theme = AvailableThemes[0]
+	} else {
+		theme = glitter.NewUI(DraculaTheme)
+	}
+
+	for w := 0; w <= 12; w++ {
+		t.Run(fmt.Sprintf("width_%d", w), func(t *testing.T) {
+			v := NewAgentStatusView(theme)
+			v.Width = w
+			v.Height = 12
+			// populate with some data
+			v.Status = AgentStatus{Active: true, CurrentIter: 1, Thought: "This is a sample thought that may be long"}
+			v.Actions = []AgentAction{
+				{Description: "First action with a fairly long description to test truncation", Status: "in_progress", Iteration: 1},
+				{Description: "Second action", Status: "completed", Iteration: 2},
+			}
+			v.CurrentTask = &CompletedTask{Thought: "recently completed task", Actions: []AgentAction{{Description: "done", Status: "completed"}}, CompletedAt: nowUTC(), ActionCount: 1}
+			v.CurrentCode = &CodeExecution{Language: "go", Code: "package main\nfunc main() {\nprintln(\"hello\")\n}", Status: "running"}
+
+			// Call View() to ensure no panics and rendering completes
+			_ = v.View()
+		})
+	}
+}
+
+// nowUTC is a tiny helper to avoid importing time in tests repeatedly
+func nowUTC() (t time.Time) {
+	return time.Now().UTC()
+}

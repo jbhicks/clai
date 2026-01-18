@@ -1,2 +1,0 @@
-This is a sample file with several words.
-We will count these words using Python.

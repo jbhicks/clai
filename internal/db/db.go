@@ -11,7 +11,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"clai/internal/llm"
+	"github.com/jbhicks/clai/internal/llm"
 )
 
 type Store struct {

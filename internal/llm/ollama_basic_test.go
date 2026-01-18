@@ -2,8 +2,8 @@ package llm_test
 
 import (
 	"bytes"
-	"clai/internal/llm"
 	"encoding/json"
+	"github.com/jbhicks/clai/internal/llm"
 	"net/http"
 	"os"
 	"strings"

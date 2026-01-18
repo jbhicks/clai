@@ -6,18 +6,18 @@ import (
 	"net"
 )
 
-const SocketPath = "/tmp/clai.sock"
+const ClientSocketPath = "/tmp/clai.sock"
 
-type Response struct {
+type ClientResponse struct {
 	Success bool                   `json:"success"`
 	Data    map[string]interface{} `json:"data,omitempty"`
 	Error   string                 `json:"error,omitempty"`
 }
 
-func SendCommand(command string, args map[string]interface{}) (*Response, error) {
-	conn, err := net.Dial("unix", SocketPath)
+func SendCommand(command string, args map[string]interface{}) (*ClientResponse, error) {
+	conn, err := net.Dial("unix", "/tmp/clai.sock")
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to %s: %w", SocketPath, err)
+		return nil, fmt.Errorf("failed to connect to %s: %w", "/tmp/clai.sock", err)
 	}
 	defer conn.Close()
 
@@ -44,7 +44,7 @@ func SendCommand(command string, args map[string]interface{}) (*Response, error)
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	var resp Response
+	var resp ClientResponse
 	if err := json.Unmarshal(buf[:n], &resp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
