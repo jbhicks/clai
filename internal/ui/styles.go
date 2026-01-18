@@ -58,4 +58,14 @@ var (
 	PassStyle = lipgloss.NewStyle().
 			Foreground(TNComment).
 			Strikethrough(true)
+
+	BriefingHeaderStyle = lipgloss.NewStyle().
+				Foreground(TNCyan).
+				Bold(true).
+				Underline(true).
+				MarginBottom(1)
+
+	BriefingLabelStyle = lipgloss.NewStyle().
+				Foreground(TNYellow).
+				Bold(true)
 )
