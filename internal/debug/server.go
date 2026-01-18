@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"reflect"
 	"sync"
 	"time"
 
@@ -167,19 +168,50 @@ func (s *Server) handleInspect(args map[string]interface{}) *ServerResponse {
 		"server_version": "1.0.0",
 	}
 
-	if m, ok := model.(interface{ getWidth() int }); ok {
-		data["width"] = m.getWidth()
-	}
-	if m, ok := model.(interface{ getHeight() int }); ok {
-		data["height"] = m.getHeight()
+	if uiModel, ok := model.(struct {
+		getWidth() int
+		getHeight() int
+		getLogs() []string
+		getViewportContent() string
+	}); ok {
+		data["width"] = uiModel.getWidth()
+		data["height"] = uiModel.getHeight()
+		logs := uiModel.getLogs()
+		data["logs"] = logs
+		data["logs_count"] = len(logs)
+		data["viewport_content"] = uiModel.getViewportContent()
+	} else {
+		data["viewport_content"] = "Debug server connected and ready"
+		data["type_assertion_failed"] = true
+		data["model_type"] = fmt.Sprintf("%T", model)
 	}
 
-	// Try to get actual viewport content and logs from the model
-	if m, ok := model.(interface{ getLogs() []string }); ok {
-		data["logs"] = m.getLogs()
+	if method := modelValue.MethodByName("getWidth"); method.IsValid() {
+		if result := method.Call(nil); len(result) > 0 {
+			data["width"] = result[0].Interface()
+		}
 	}
-	if m, ok := model.(interface{ getViewportContent() string }); ok {
-		data["viewport_content"] = m.getViewportContent()
+
+	if method := modelValue.MethodByName("getHeight"); method.IsValid() {
+		if result := method.Call(nil); len(result) > 0 {
+			data["height"] = result[0].Interface()
+		}
+	}
+
+	if method := modelValue.MethodByName("getLogs"); method.IsValid() {
+		if result := method.Call(nil); len(result) > 0 {
+			logs := result[0].Interface()
+			data["logs"] = logs
+			if logsSlice, ok := logs.([]string); ok {
+				data["logs_count"] = len(logsSlice)
+			}
+		}
+	}
+
+	if method := modelValue.MethodByName("getViewportContent"); method.IsValid() {
+		if result := method.Call(nil); len(result) > 0 {
+			data["viewport_content"] = result[0].Interface()
+		}
 	} else {
 		data["viewport_content"] = "Debug server connected and ready"
 	}

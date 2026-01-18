@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -46,6 +48,8 @@ type Model struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	cursor        int
+	llmHost       string
+	llmModel      string
 }
 
 func (m Model) Init() tea.Cmd {
@@ -214,6 +218,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.prd != nil && m.cursor < len(m.prd.UserStories)-1 {
 				m.cursor++
 			}
+		case "e":
+			if m.prd != nil && m.cursor < len(m.prd.UserStories) {
+				story := m.prd.UserStories[m.cursor]
+				lineNumber := ralph.FindLineNumber(".clai/prd.json", story.ID)
+
+				editor := os.Getenv("EDITOR")
+				if editor == "" {
+					editor = "nvim"
+				}
+
+				c := exec.Command(editor, fmt.Sprintf("+%d", lineNumber), ".clai/prd.json")
+				return m, tea.ExecProcess(c, func(err error) tea.Msg {
+					return nil // We rely on FSWatcher to reload
+				})
+			}
 		}
 	}
 
@@ -270,10 +289,16 @@ func (m Model) View() string {
 	}
 
 	// 1. Render Header
-	header := HeaderStyle.Width(m.width).Render(" CLAI MISSION CONTROL | THE RALPH METHOD")
+	leftHeader := " CLAI MISSION CONTROL | THE RALPH METHOD"
+	rightHeader := fmt.Sprintf("HOST: %s | MODEL: %s ", m.llmHost, m.llmModel)
+	gap := m.width - lipgloss.Width(leftHeader) - lipgloss.Width(rightHeader) - 2
+	if gap < 0 {
+		gap = 0
+	}
+	header := HeaderStyle.Width(m.width).Render(leftHeader + strings.Repeat(" ", gap) + rightHeader)
 
 	// 2. Render Footer
-	footer := FooterStyle.Width(m.width).Render(" [Q]uit | [A]dd Story | [R]un Loop | [S]top")
+	footer := FooterStyle.Width(m.width).Render(" [Q]uit | [E]dit Story | [R]un Loop | [S]top")
 
 	// 3. Main Content Area Sizing
 	occupiedHeight := lipgloss.Height(header) + lipgloss.Height(footer)
@@ -325,15 +350,41 @@ func (m Model) View() string {
 		BorderRight(true).
 		Render(missionContent)
 
-	// Right Pane: Work (Sub-agent logs/thought stream)
-	m.viewport.Width = workWidth - 4
-	m.viewport.Height = contentHeight - 2
-	m.viewport.Style = lipgloss.NewStyle().Background(TNBackground)
-	m.viewport.SetContent(strings.Join(m.logs, "\n"))
+	// Right Pane: Briefing Room (Idle) or Work Stream (Active)
+	var rightPaneContent string
+	if m.stage == StageIdle && m.prd != nil && m.cursor < len(m.prd.UserStories) {
+		story := m.prd.UserStories[m.cursor]
+
+		briefing := BriefingHeaderStyle.Render(fmt.Sprintf("BRIEFING: %s", story.ID)) + "\n"
+		briefing += BriefingLabelStyle.Render("Title: ") + story.Title + "\n"
+		briefing += BriefingLabelStyle.Render("Priority: ") + fmt.Sprintf("%d", story.Priority) + "\n\n"
+		briefing += BriefingLabelStyle.Render("Description:") + "\n" + story.Description + "\n\n"
+
+		if len(story.AcceptanceCriteria) > 0 {
+			briefing += BriefingLabelStyle.Render("Acceptance Criteria:") + "\n"
+			for _, ac := range story.AcceptanceCriteria {
+				briefing += fmt.Sprintf("  • %s\n", ac)
+			}
+			briefing += "\n"
+		}
+
+		if story.Notes != "" {
+			briefing += BriefingLabelStyle.Render("Notes:") + "\n" + story.Notes + "\n"
+		}
+
+		rightPaneContent = briefing
+	} else {
+		m.viewport.Width = workWidth - 4
+		m.viewport.Height = contentHeight - 2
+		m.viewport.Style = lipgloss.NewStyle().Background(TNBackground)
+		m.viewport.SetContent(strings.Join(m.logs, "\n"))
+		rightPaneContent = m.viewport.View()
+	}
+
 	work := BodyStyle.
 		Width(workWidth).
 		Height(contentHeight).
-		Render(m.viewport.View())
+		Render(rightPaneContent)
 
 	// 5. Join panes horizontally
 	content := lipgloss.JoinHorizontal(lipgloss.Top, mission, work)
@@ -353,7 +404,17 @@ func (m Model) View() string {
 }
 
 func Run() error {
-	m := Model{}
+	m := Model{
+		llmHost:  os.Getenv("OLLAMA_HOST"),
+		llmModel: os.Getenv("OLLAMA_MODEL"),
+	}
+	if m.llmHost == "" {
+		m.llmHost = "http://localhost:11434"
+	}
+	if m.llmModel == "" {
+		m.llmModel = "clai"
+	}
+
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	m.debugServer = debug.NewServer(p)

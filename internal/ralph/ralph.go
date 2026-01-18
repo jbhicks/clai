@@ -45,10 +45,15 @@ func LoadPRD(path string) (*PRD, error) {
 		return nil, fmt.Errorf("PRD missing 'branchName' field")
 	}
 
+	ids := make(map[string]bool)
 	for i, story := range prd.UserStories {
 		if story.ID == "" {
 			return nil, fmt.Errorf("story at index %d missing 'id'", i)
 		}
+		if ids[story.ID] {
+			return nil, fmt.Errorf("duplicate story ID: %s", story.ID)
+		}
+		ids[story.ID] = true
 		if story.Title == "" {
 			return nil, fmt.Errorf("story %s missing 'title'", story.ID)
 		}
@@ -115,4 +120,46 @@ func SavePRD(path string, prd *PRD) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0644)
+}
+
+// FindLineNumber returns the 1-indexed line number where a story ID is defined.
+func FindLineNumber(path, storyID string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 1
+	}
+
+	lines := splitLines(string(data))
+	searchStr := fmt.Sprintf("\"id\": \"%s\"", storyID)
+
+	for i, line := range lines {
+		if contains(line, searchStr) {
+			return i + 1
+		}
+	}
+	return 1
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	var start int
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			lines = append(lines, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		lines = append(lines, s[start:])
+	}
+	return lines
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

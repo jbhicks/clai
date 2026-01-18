@@ -36,3 +36,11 @@ reference-docs/
 
 # Node modules
 **/node_modules/
+
+# CLAI Binaries and logs
+/clai
+/clai-mcp-server
+/bin/
+*.log
+/tmp/
+.clai/progress.txt
