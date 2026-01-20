@@ -389,8 +389,8 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 		var commandParts []string
 		for _, match := range matches {
 			part := match[1]
-			// Skip JSON structure parts like "{\"", "command", "\":\"", "\"}"
-			if part != "{\\\\" && part != "command" && part != "\":\"" && part != "\"}" && part != "" {
+			// Skip JSON structure parts like "{", "command", ":", "\"", "}", "id", "type", "function", "name", "arguments"
+			if part != "{" && part != "command" && part != ":" && part != "\"" && part != "}" && part != "id" && part != "type" && part != "function" && part != "name" && part != "arguments" && part != "" {
 				commandParts = append(commandParts, part)
 			}
 		}
