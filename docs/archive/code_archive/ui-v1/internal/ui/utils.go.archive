@@ -1,0 +1,100 @@
+package ui
+
+import (
+	"github.com/charmbracelet/lipgloss"
+)
+
+// SafeTextWidth returns a safe width calculation for text display
+// Ensures the result is never negative
+func SafeTextWidth(totalWidth, margin int) int {
+	result := totalWidth - margin
+	if result < 0 {
+		return 0
+	}
+	return result
+}
+
+// TruncateWithEllipsis truncates text to maxWidth, adding "..." if truncated
+// Uses rune-aware truncation and lipgloss.Width to measure printable width
+func TruncateWithEllipsis(text string, maxWidth int) string {
+	if maxWidth < 0 {
+		maxWidth = 0
+	}
+	if maxWidth == 0 {
+		return ""
+	}
+
+	// Fast path: if printed width already fits, return original
+	if lipgloss.Width(text) <= maxWidth {
+		return text
+	}
+
+	// Rune-aware truncation but respect printable width (lipgloss.Width)
+	runes := []rune(text)
+	if len(runes) == 0 {
+		return ""
+	}
+
+	ellipsis := "..."
+	if maxWidth <= 3 {
+		// No room for ellipsis: truncate by runes to maxWidth
+		if len(runes) <= maxWidth {
+			return text
+		}
+		return string(runes[:maxWidth])
+	}
+
+	// Target width for content before adding ellipsis
+	target := maxWidth - len(ellipsis)
+	var b []rune
+	for _, r := range runes {
+		b = append(b, r)
+		w := lipgloss.Width(string(b))
+		if w > target {
+			// remove last rune and stop
+			b = b[:len(b)-1]
+			break
+		}
+	}
+	return string(b) + ellipsis
+}
+
+// PadLineToWidth pads a single line to targetWidth using background color
+// Returns the line unchanged if it's already at or beyond targetWidth
+func PadLineToWidth(line string, targetWidth int, bgColor lipgloss.Color) string {
+	lineWidth := lipgloss.Width(line)
+	if lineWidth < targetWidth {
+		return lipgloss.NewStyle().
+			Width(targetWidth).
+			Background(bgColor).
+			Align(lipgloss.Left).
+			Render(line)
+	}
+	return line
+}
+
+// PadLineWithStyle pads a rendered line to targetWidth using the provided style for both
+// rendering and padding. This avoids transparent spaces by rendering padding with the same
+// style as the content.
+func PadLineWithStyle(line string, targetWidth int, style lipgloss.Style) string {
+	if targetWidth <= 0 {
+		return style.Render(line)
+	}
+	out := style.Render(line)
+	w := lipgloss.Width(out)
+	if w >= targetWidth {
+		return out
+	}
+	pad := targetWidth - w
+	padding := style.Width(pad).Render(" ")
+	return out + padding
+}
+
+// SafeContentHeight calculates available content height after subtracting used lines
+func SafeContentHeight(totalHeight, usedLines, padding int) int {
+	result := totalHeight - usedLines - padding
+	if result < 0 {
+		return 0
+	}
+	return result
+}

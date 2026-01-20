@@ -1,0 +1,16 @@
+{
+  "clai-debug": {
+    "command": "/home/josh/clai/clai-mcp-server",
+    "args": ["-socket", "/tmp/clai.sock"],
+    "includeTools": [
+      "ping",
+      "inspect",
+      "inspect_styles",
+      "get_history",
+      "send_key",
+      "type_text",
+      "send_message",
+      "switch_pane"
+    ]
+  }
+}

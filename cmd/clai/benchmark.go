@@ -1,13 +1,13 @@
 package main
 
 import (
+	"context"
+	"flag"
+	"fmt"
 	"clai/internal/benchmark"
 	"clai/internal/db"
 	"clai/internal/llm"
 	"clai/internal/logger"
-	"context"
-	"flag"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"

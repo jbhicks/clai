@@ -1,0 +1,36 @@
+package ui
+
+import (
+	"os"
+	"strings"
+	"testing"
+)
+
+// TestBorderBackgroundPresence scans internal/ui/styles.go and fails if any
+// lipgloss style calls Border(...) or BorderForeground(...) without a nearby
+// BorderBackground(...) call. This is a text-level safety check to prevent
+// accidental transparent borders which cause visual corruption.
+func TestBorderBackgroundPresence(t *testing.T) {
+	b, err := os.ReadFile("styles.go")
+	if err != nil {
+		t.Fatalf("failed to read styles.go: %v", err)
+	}
+	lines := strings.Split(string(b), "\n")
+
+	for i, line := range lines {
+		if strings.Contains(line, ".Border(") || strings.Contains(line, ".BorderForeground(") {
+			// Check the next few lines for BorderBackground(
+			found := false
+			for j := i; j <= i+6 && j < len(lines); j++ {
+				if strings.Contains(lines[j], "BorderBackground(") {
+					found = true
+					break
+				}
+			}
+			if !found {
+				// Report the line number (1-based) and the offending line
+				t.Fatalf("Border without BorderBackground found near line %d: %s", i+1, strings.TrimSpace(line))
+			}
+		}
+	}
+}

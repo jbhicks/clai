@@ -3,9 +3,12 @@ package ui
 import (
 	"bufio"
 	"clai/internal/db"
+	"clai/internal/debug"
 	"clai/internal/llm"
 	"clai/internal/logger"
+	"clai/internal/ralph"
 	"clai/internal/tools"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -21,8 +24,18 @@ import (
 type ActivePane int
 
 const (
-	ChatPane ActivePane = iota
+	BriefingRoom ActivePane = iota
+	ChatPane
 	LogPane
+)
+
+type Stage int
+
+const (
+	StageIdle Stage = iota
+	StageThinking
+	StageExecuting
+	StageVerifying
 )
 
 func max(a, b int) int {
@@ -127,6 +140,20 @@ type Model struct {
 	Conversation  interface{}
 	Agent         *llm.Agent
 	statusChan    chan tea.Msg
+
+	// Ralph orchestrator fields
+	stage         Stage
+	prd           *ralph.PRD
+	logs          []string
+	debugServer   *debug.Server
+	activeStoryID string
+	viewport      viewport.Model
+	ctx           context.Context
+	cancel        context.CancelFunc
+	cursor        int
+	llmHost       string
+	llmModel      string
+	llmHealth     bool
 }
 
 type (
@@ -144,6 +171,16 @@ type (
 		Status AgentStatus
 		Code   string
 	}
+	prdLoadedMsg      *ralph.PRD
+	prdErrorMsg       error
+	prdFileChangedMsg struct{}
+	healthMsg         bool
+	logMsg            struct {
+		storyID string
+		content string
+		gitHash string
+	}
+	patternMsg string
 )
 
 func executeCodeBlocksCmd(blocks []llm.CodeBlock) tea.Cmd {
@@ -262,7 +299,43 @@ func (m *Model) Init() tea.Cmd {
 	m.statusChan = make(chan tea.Msg, 100)
 	m.Layout = DefaultLayoutConfig()
 	m.updateCachedStyles()
-	return tea.Batch(TailLogFileCmd(m), m.Chat.Init(), tea.WindowSize())
+	return tea.Batch(
+		TailLogFileCmd(m),
+		m.Chat.Init(),
+		tea.WindowSize(),
+		m.loadStoriesCmd(),
+		m.watchStoriesCmd(),
+		m.checkHealthCmd(),
+	)
+}
+
+func (m *Model) loadStoriesCmd() tea.Cmd {
+	return func() tea.Msg {
+		stories, err := ralph.LoadStories(".clai/stories.json")
+		if err != nil {
+			return prdErrorMsg(err)
+		}
+		return prdLoadedMsg(&ralph.PRD{
+			Project:     "CLAI",
+			BranchName:  "main",
+			Description: "CLAI Development Tasks",
+			UserStories: stories.Stories,
+		})
+	}
+}
+
+func (m *Model) watchStoriesCmd() tea.Cmd {
+	return func() tea.Msg {
+		// TODO: Implement file watching for stories.json
+		return nil
+	}
+}
+
+func (m *Model) checkHealthCmd() tea.Cmd {
+	return func() tea.Msg {
+		// TODO: Implement LLM health check
+		return healthMsg(true)
+	}
 }
 
 func (m *Model) updateDimensions() {
@@ -504,6 +577,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.AgentStatus.SetExecutingCode(msg.Status.CodeLanguage, msg.Code)
 		}
 		return m, readStatusChanCmd(m.statusChan)
+	case prdLoadedMsg:
+		m.prd = msg
+		logger.Info("Loaded PRD with %d stories", len(msg.UserStories))
 	default:
 		var cmd tea.Cmd
 		updatedChat, cmd := m.Chat.Update(msg)
@@ -593,10 +669,17 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		m.Help.ShowAll = true
 		return nil
 	case "ctrl+t":
-		if m.ActivePane == ChatPane {
-			m.ActivePane = LogPane
-		} else {
+		if m.ActivePane == BriefingRoom {
 			m.ActivePane = ChatPane
+		} else if m.ActivePane == ChatPane {
+			m.ActivePane = BriefingRoom
+		}
+		return nil
+	case "ctrl+l":
+		if m.ActivePane == LogPane {
+			m.ActivePane = BriefingRoom // Go back to main view
+		} else {
+			m.ActivePane = LogPane // Open log viewer
 		}
 		return nil
 	case "ctrl+d":
@@ -1193,47 +1276,84 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 	return nil
 }
 
+func (m *Model) renderBriefingRoom() string {
+	if m.prd == nil {
+		return "Loading stories..."
+	}
+
+	var lines []string
+	completed := 0
+	total := len(m.prd.UserStories)
+	for _, story := range m.prd.UserStories {
+		if story.Passes {
+			completed++
+		}
+	}
+	lines = append(lines, fmt.Sprintf("📋 CLAI Development Tasks (%d/%d completed)", completed, total))
+	lines = append(lines, "")
+
+	for _, story := range m.prd.UserStories {
+		status := "❌"
+		if story.Passes {
+			status = "✅"
+		}
+		lines = append(lines, fmt.Sprintf("%s %s: %s", status, story.ID, story.Title))
+		if len(story.Description) > 0 {
+			// Truncate description
+			desc := story.Description
+			if len(desc) > 50 {
+				desc = desc[:47] + "..."
+			}
+			lines = append(lines, fmt.Sprintf("   %s", desc))
+		}
+		lines = append(lines, "")
+	}
+
+	return strings.Join(lines, "\n")
+}
+
 func (m *Model) View() string {
 	// Active pane styling
 	themeStyles := GetThemeStyles(m.Theme)
+	briefingPaneStyle := themeStyles.MainPane
 	chatPaneStyle := themeStyles.MainPane
-	agentStatusPaneStyle := themeStyles.MainPane
 	logPaneStyle := themeStyles.MainPane
 
-	if m.ActivePane == ChatPane {
+	if m.ActivePane == BriefingRoom {
+		briefingPaneStyle = briefingPaneStyle.Copy().BorderForeground(lipgloss.Color(m.Theme.Theme.Bright.Yellow))
+	} else if m.ActivePane == ChatPane {
 		chatPaneStyle = chatPaneStyle.Copy().BorderForeground(lipgloss.Color(m.Theme.Theme.Bright.Yellow))
 	}
 
-	// Render chat pane (left, full height)
+	// Render briefing room pane (left, full height)
+	briefingViewInner := m.renderBriefingRoom()
+	briefingView := briefingPaneStyle.Render(briefingViewInner)
+
+	// Render chat pane (right, full height)
 	chatViewInner := m.Chat.View()
 	chatView := chatPaneStyle.Render(chatViewInner)
 
-	// Render agent status pane (top-right, separate border)
-	agentStatusView := m.AgentStatus.View()
-	agentStatusPane := agentStatusPaneStyle.Render(agentStatusView)
+	// For now, combine briefing and chat horizontally
+	mainView := lipgloss.JoinHorizontal(lipgloss.Top, briefingView, chatView)
 
-	// Render log pane (bottom-right, separate border)
-	logContent := m.Log.View()
-	// Render each line via BackgroundWrapper to guarantee a full-width background on every line.
-	lines := strings.Split(logContent, "\n")
-	var renderedLines []string
-	for _, line := range lines {
-		renderedLines = append(renderedLines, themeStyles.BackgroundWrapper.Width(m.Log.Width).Render(line))
-	}
-	// Pad with empty background lines up to the viewport height to avoid transparent rows
-	if m.Log.Height > 0 {
-		for len(renderedLines) < m.Log.Height {
-			renderedLines = append(renderedLines, themeStyles.BackgroundWrapper.Width(m.Log.Width).Render(""))
+	// If log viewer is active (ctrl-l pressed), show it instead
+	if m.ActivePane == LogPane {
+		// Render log pane (full width, full height)
+		logContent := m.Log.View()
+		lines := strings.Split(logContent, "\n")
+		var renderedLines []string
+		for _, line := range lines {
+			renderedLines = append(renderedLines, themeStyles.BackgroundWrapper.Width(m.Width).Render(line))
 		}
+		if m.Height > 0 {
+			for len(renderedLines) < m.Height-1 { // -1 for status bar
+				renderedLines = append(renderedLines, themeStyles.BackgroundWrapper.Width(m.Width).Render(""))
+			}
+		}
+		logContentFilled := strings.Join(renderedLines, "\n")
+		logPane := logPaneStyle.Copy().BorderForeground(lipgloss.Color(m.Theme.Theme.Bright.Yellow)).Render(logContentFilled)
+		mainView = logPane
 	}
-	logContentFilled := strings.Join(renderedLines, "\n")
-	logPane := logPaneStyle.Render(logContentFilled)
-
-	// Stack agent status and log panes vertically
-	rightColumn := lipgloss.JoinVertical(lipgloss.Left, agentStatusPane, logPane)
-
-	// Combine chat and right column horizontally
-	mainView := lipgloss.JoinHorizontal(lipgloss.Top, chatView, rightColumn)
 
 	statusBarRendered := themeStyles.StatusBar.Width(m.Width).Render(m.StatusBarText)
 	layout := lipgloss.JoinVertical(lipgloss.Left, mainView, statusBarRendered)

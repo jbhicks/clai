@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "clai-debug": {
-      "command": "node",
-      "args": ["scripts/mcp/clai-mcp-server.js"],
+      "command": "/home/josh/clai/clai-mcp-server",
+      "args": ["-socket", "/tmp/clai.sock"],
       "disabled": false
     }
   }

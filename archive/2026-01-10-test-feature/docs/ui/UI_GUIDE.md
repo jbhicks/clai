@@ -45,9 +45,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // In your View:
 func (m model) View() string {
-    // Use m.width and m.height to size components
-    content := lipgloss.NewStyle().Width(m.width).Height(m.height).Render("Hello, world!")
-    return content
+    if m.width == 0 || m.height == 0 {
+        return "Initializing..."
+    }
+
+    // Pattern: Sectional Layout (Header-Body-Footer)
+    // Avoid a single global box that hits the absolute edges (m.width, m.height).
+    // Instead, join sections vertically and always leave 1 row at the bottom.
+    header := lipgloss.NewStyle().Width(m.width).Render("Header")
+    footer := lipgloss.NewStyle().Width(m.width).Render("Footer")
+    
+    // The -1 to height is CRITICAL to prevent terminal scrolling
+    bodyHeight := m.height - lipgloss.Height(header) - lipgloss.Height(footer) - 1
+    body := lipgloss.NewStyle().Width(m.width).Height(bodyHeight).Render("Content")
+    
+    return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 }
 ```
 
@@ -136,11 +148,15 @@ func (m model) View() string {
 - Use `MaxWidth`, `MaxHeight`, and Lip Gloss’s measuring functions to constrain or adapt layouts.
 - For complex UIs, break your layout into smaller components and size each from the model’s terminal size.
 
-### Still Having Issues?
-- Double-check that every component's width/height is set from the model's stored terminal size.
-- Make sure you are running the TUI in a real terminal (see the recommended tmux workflow in the README).
-- Review the official [Bubble Tea Examples](https://github.com/charmbracelet/bubbletea/tree/main/examples) for working patterns.
-- See [Lip Gloss README](https://github.com/charmbracelet/lipgloss) for layout utilities.
+### The "Scrolling UI" Mystery
+- **Problem**: Your UI seems to shift up by one line, and the top border disappears.
+- **Cause**: Bubble Tea always appends a mandatory `\n` to your `View()` output. If your output is exactly `m.height` lines tall, it becomes `m.height + 1`, forcing the terminal to scroll.
+- **Fix**: Always subtract 1 from your total calculated height: `totalHeight := m.height - 1`.
+
+### The "Stuttering Dimensions" bug
+- **Problem**: In Lipgloss, `Width()` and `Height()` set the *total* area including borders/padding.
+- **Trap**: Manual subtraction of frame sizes (e.g. `m.width - 2`) often leads to double-subtraction or off-screen drawing.
+- **Rule**: Use a sectional layout (Header/Body/Footer) instead of one big outer BoxStyle. Sectional layouts are more stable across different terminal emulators.
 
 ---
 

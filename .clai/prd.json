@@ -1,0 +1,82 @@
+{
+    "project": "CLAI Ralph Orchestrator",
+    "branchName": "ralph/core-implementation",
+    "description": "Implementation of the Ralph Method orchestrator in the CLAI Go/Bubble Tea TUI.",
+    "userStories": [
+        {
+            "id": "CORE-001",
+            "title": "PRD Management Engine (internal/ralph)",
+            "description": "Build the core I/O engine for reading/writing/watching the PRD.",
+            "acceptanceCriteria": [
+                "Implement internal/ralph package with PRD and UserStory structs.",
+                "Add strict schema validation: Fail on start with descriptive error if .clai/prd.json is invalid.",
+                "Implement async loading in UI: Init() returns a cmd that loads the PRD.",
+                "Implement FSWatcher: TUI mission pane hot-reloads when prd.json is modified externally.",
+                "Ensure story list is sorted primarily by priority (ascending) and secondarily by array order."
+            ],
+            "priority": 1,
+            "passes": true,
+            "notes": "Ralph owns the data logic; UI model just renders it."
+        },
+        {
+            "id": "CORE-002",
+            "title": "Multi-file Markdown Persistent Memory",
+            "description": "Implement the split-file logging system in .clai/ directory.",
+            "acceptanceCriteria": [
+                "Create logic to manage .clai/progress.txt (log stream) and .clai/patterns.md (reusable patterns).",
+                "Implement single-writer queue in Model: All sub-agent logs go through a central channel to prevent race conditions.",
+                "Timestamped entries: format must be '## [TIMESTAMP] | Story: [ID]'.",
+                "Include git hash in progress log body for audit trails.",
+                "Implement context truncation: If log grows too large, logic is ready to reference sub-documents."
+            ],
+            "priority": 2,
+            "passes": false,
+            "notes": "Patterns.md should be treated as the 'System Prompt Addendum' for all future iterations."
+        },
+        {
+            "id": "CORE-003",
+            "title": "The Ralph Main Loop & State Machine",
+            "description": "Implement the core orchestration logic and UI indicators.",
+            "acceptanceCriteria": [
+                "Guard state: 'R' key only starts the loop if m.Stage == StageIdle.",
+                "Active Story Styling: Use Lipgloss to highlight the current 'Thinking' story (different from Pending/Passed).",
+                "Context Gathering: Pre-flight stage that reads patterns, history, and workspace files relevant to the active story.",
+                "Completion Banner: If all stories pass, display 'Nothing to do' centered/visible message.",
+                "Interruption: 'ESC' or 'S' key triggers context cancellation to halt loop safely."
+            ],
+            "priority": 3,
+            "passes": false,
+            "notes": "Bubble Tea Update functionality becomes the 'Brain' that picks the next story."
+        },
+        {
+            "id": "CONC-001",
+            "title": "Concurrent Work Stream & Viewport",
+            "description": "Implement background worker goroutines and the Work Stream UI.",
+            "acceptanceCriteria": [
+                "Structured Messaging: Use Go channels for SubagentAction, SubagentThinking, and SubagentError messages.",
+                "Context Cancellation: Sub-agent goroutine is tied to a context.Context that dies when the program quits or stops.",
+                "Work Stream Viewport: Right pane supports manual scrolling to review logs while agent is active.",
+                "Auto-scroll: Viewport sticks to bottom during active output unless manually scrolled up.",
+                "Concurrency Safety: Ensure no blocking calls in the main UI thread during heavy LLM/Build operations."
+            ],
+            "priority": 4,
+            "passes": false,
+            "notes": "Use p.Send() for thread-safe UI updates from sub-agent goroutines."
+        },
+        {
+            "id": "VER-001",
+            "title": "Verification Gates & Git Automation",
+            "description": "Implement the quality-check and self-healing loop.",
+            "acceptanceCriteria": [
+                "Verification: Sub-agent runs 'go test ./...' and 'go build' before completion.",
+                "Self-Heal Loop: Configurable max attempts (default 3) to fix errors before marking story 'Blocked'.",
+                "Atomic Git: Automated commit 'feat: [ID] - [Title]' only on verification success; commits per-story.",
+                "Branch Guard: Orchestrator verifies current branch matches prd.json 'branchName' and auto-checks it out if not.",
+                "Audit Trail: Commit body includes a brief summary of the sub-agent's work and link to progress log timestamp."
+            ],
+            "priority": 5,
+            "passes": false,
+            "notes": "Autonomous by default; no human intervention needed for 'VER' stage."
+        }
+    ]
+}

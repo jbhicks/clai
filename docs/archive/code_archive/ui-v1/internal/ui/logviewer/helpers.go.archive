@@ -1,0 +1,34 @@
+package logviewer
+
+import (
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
+	ui "github.com/jbhicks/clai/internal/ui"
+)
+
+func safeClamp(width, sub int) int {
+	return ui.SafeTextWidth(width, sub)
+}
+
+func padLineWithBackground(s string, width int, style lipgloss.Style) string {
+	return ui.PadLineWithStyle(s, width, style)
+}
+
+func truncateRunes(s string, max int) string {
+	return ui.TruncateWithEllipsis(s, max)
+}
+
+func glamorRenderIfNeeded(body string, bodyFormat string, wordWrapWidth int) string {
+	if body == "" || bodyFormat != "markdown" {
+		return body
+	}
+	r, _ := glamour.NewTermRenderer(
+		glamour.WithWordWrap(wordWrapWidth),
+		glamour.WithAutoStyle(),
+	)
+	out, err := r.Render(body)
+	if err != nil {
+		return body
+	}
+	return out
+}

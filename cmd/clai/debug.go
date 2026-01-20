@@ -1,9 +1,9 @@
 package main
 
 import (
-	"clai/internal/debug"
 	"encoding/json"
 	"fmt"
+	"clai/internal/debug"
 	"os"
 	"strings"
 )

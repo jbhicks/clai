@@ -1,0 +1,38 @@
+package ui
+
+import "github.com/charmbracelet/lipgloss"
+
+// Centralized UI sizing helpers and constants
+const (
+	DefaultChatPaneRatio = 0.8
+	MinPaneInnerWidth    = 10
+	MinPaneInnerHeight   = 3
+)
+
+// ComputePaneWidths returns the outer widths for chat and right column
+func ComputePaneWidths(totalWidth int, ratio float64) (chatPaneWidth int, rightColumnWidth int) {
+	chatPaneWidth = int(float64(totalWidth) * ratio)
+	rightColumnWidth = totalWidth - chatPaneWidth
+	return
+}
+
+// ComputeInnerWidth returns the inner content width when rendering inside an outer style
+// It subtracts the horizontal frame size (border + padding) from outerWidth.
+func ComputeInnerWidth(outerWidth int, style lipgloss.Style) int {
+	h := style.GetHorizontalFrameSize()
+	inner := outerWidth - h
+	if inner < MinPaneInnerWidth {
+		inner = MinPaneInnerWidth
+	}
+	return inner
+}
+
+// ComputeInnerHeight returns the inner content height accounting for vertical frame size
+func ComputeInnerHeight(outerHeight int, style lipgloss.Style) int {
+	v := style.GetVerticalFrameSize()
+	height := outerHeight - v
+	if height < MinPaneInnerHeight {
+		height = MinPaneInnerHeight
+	}
+	return height
+}

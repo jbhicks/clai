@@ -1,0 +1,74 @@
+package ui
+
+import (
+	"testing"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+func TestPaneWidthAlignment(t *testing.T) {
+	termW, termH := 120, 40
+	m := &Model{
+		Width:  termW,
+		Height: termH,
+		Theme:  AvailableThemes[0],
+	}
+
+	// Initialize chat components to avoid nil panics
+	m.Chat = ChatModel{}
+	m.Chat.Viewport = viewport.New(10, 3)
+	m.Chat.TextInput = textinput.New()
+	m.Chat.Theme = m.Theme
+	m.Chat.Viewport.SetContent("")
+
+	// Ensure AgentStatus and Log exist so right-column path is taken
+	m.AgentStatus = NewAgentStatusView(m.Theme)
+	m.Log = viewport.New(10, 3)
+
+	// Recompute dimensions
+	m.handleWindowSizeMsg(tea.WindowSizeMsg{Width: termW, Height: termH})
+
+	chatPaneWidth, _ := ComputePaneWidths(m.Width, DefaultChatPaneRatio)
+	themeStyles := GetThemeStyles(m.Theme)
+	chatPaneStyle := themeStyles.MainPane
+
+	// Render and assert widths
+	chatViewInner := m.Chat.View()
+	chatView := chatPaneStyle.Width(chatPaneWidth).Render(chatViewInner)
+	if got := lipgloss.Width(chatView); got != chatPaneWidth {
+		// Allow small delta of 2 which can arise from lipgloss border/padding calculations
+		if got < chatPaneWidth-2 || got > chatPaneWidth+2 {
+			t.Fatalf("chat outer width mismatch: got %d want %d (allowed delta 2)", got, chatPaneWidth)
+		}
+	}
+
+	rightColumnWidth := m.Width - chatPaneWidth
+	var agentView string
+	if m.AgentStatus != nil {
+		agentView = m.AgentStatus.View()
+	}
+	logView := themeStyles.MainPane.Render(m.Log.View())
+
+	var rightInner string
+	if agentView == "" {
+		rightInner = logView
+	} else {
+		rightInner = lipgloss.JoinVertical(lipgloss.Top, agentView, logView)
+	}
+
+	rightView := lipgloss.NewStyle().Width(rightColumnWidth).Render(rightInner)
+	if got := lipgloss.Width(rightView); got != rightColumnWidth {
+		t.Fatalf("right column width mismatch: got %d want %d", got, rightColumnWidth)
+	}
+
+	mainView := lipgloss.JoinHorizontal(lipgloss.Top, chatView, rightView)
+	if got := lipgloss.Width(mainView); got != termW {
+		// Allow small delta of 2 due to lipgloss composition differences across versions
+		if got < termW-2 || got > termW+2 {
+			t.Fatalf("combined main width mismatch: got %d want %d (allowed delta 2)", got, termW)
+		}
+	}
+}
