@@ -67,17 +67,6 @@ func NewClient(host, model, systemPrompt string) *Client {
 		systemPrompt = defaultSystemPrompt
 	}
 
-	// For Qwen models, append tool schemas to system prompt
-	if strings.Contains(strings.ToLower(model), "qwen") {
-		tools := tools.GetAvailableTools()
-		if len(tools) > 0 {
-			toolsJSON, err := json.Marshal(tools)
-			if err == nil {
-				systemPrompt = systemPrompt + "\n\nYou have access to tools. When you need to use a tool, respond with a JSON object in this exact format:\n\n{\"tool_calls\": [{\"id\": \"call_id\", \"type\": \"function\", \"function\": {\"name\": \"tool_name\", \"arguments\": \"{\\\"param\\\": \\\"value\\\"}\" }}]}\n\nAvailable tools:\n" + string(toolsJSON)
-			}
-		}
-	}
-
 	c := &Client{
 		host:         host,
 		model:        model,
@@ -351,8 +340,7 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 	// Prepare system prompt with tools for Hermes-style (Qwen) or include tools in request for OpenAI-style
 	systemPrompt := c.systemPrompt
 	if includeSystemPrompt && c.systemPrompt != "" {
-		if len(tools) > 0 && c.apiFormat == FormatOllama {
-			// For Ollama/Hermes-style (Qwen): inject tools as JSON in system prompt
+		if len(tools) > 0 && c.apiFormat == FormatOllama && !strings.Contains(strings.ToLower(c.model), "qwen") {
 			toolsJSON, err := json.Marshal(tools)
 			if err != nil {
 				return Response{}, fmt.Errorf("failed to marshal tools: %w", err)
@@ -360,16 +348,21 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 			systemPrompt = c.systemPrompt + "\n\nAvailable tools:\n" + string(toolsJSON)
 		}
 		allMessages = append([]Message{{Role: "system", Content: systemPrompt}}, messages...)
+		logger.Debug("[LLM-TOOLS] Final system prompt for model %s: %s", c.model, systemPrompt)
 	} else {
 		allMessages = messages
 	}
 
 	var reqBody interface{}
 	if c.apiFormat == FormatOpenAI {
+		var requestTools []Tool
+		if !strings.Contains(strings.ToLower(c.model), "qwen") {
+			requestTools = tools
+		}
 		reqBody = OpenAIRequestWithTools{
 			Model:    c.model,
 			Messages: allMessages,
-			Tools:    tools,
+			Tools:    requestTools,
 			Stream:   true,
 		}
 	} else {
