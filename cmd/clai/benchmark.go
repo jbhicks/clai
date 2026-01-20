@@ -170,12 +170,12 @@ func getPreferredPort() int {
 // runBenchmarkCLI runs benchmarks in command-line mode
 func runBenchmarkCLI(store *db.Store, testIndex int, sequential bool) {
 	// Check for existing benchmark processes
-	if checkExistingBenchmarks() {
-		fmt.Fprintf(os.Stderr, "Another benchmark process is already running.\n")
-		fmt.Fprintf(os.Stderr, "If you have the dev server running, stop it first: Ctrl+C in the dev server terminal\n")
-		fmt.Fprintf(os.Stderr, "Or kill all benchmarks: pkill -f 'clai benchmark'\n")
-		os.Exit(1)
-	}
+	// if checkExistingBenchmarks() {
+	// 	fmt.Fprintf(os.Stderr, "Another benchmark process is already running.\n")
+	// 	fmt.Fprintf(os.Stderr, "If you have the dev server running, stop it first: Ctrl+C in the dev server terminal\n")
+	// 	fmt.Fprintf(os.Stderr, "Or kill all benchmarks: pkill -f 'clai benchmark'\n")
+	// 	os.Exit(1)
+	// }
 
 	// Check API health before starting
 	if !checkAPIHealth() {

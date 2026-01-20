@@ -34,7 +34,7 @@ type ModelBenchmarkResult struct {
 var ModelBenchmarkSuite = []ModelBenchmarkTest{
 	{
 		Name:             "Extract Specific Value from File",
-		Query:            "What is the TOTAL_COUNT value in sample.txt?",
+		Query:            "What is the TOTAL_COUNT value in internal/llm/sample.txt?",
 		ExpectedBehavior: "code",
 		ShouldContain:    []string{"42"},                                   // The actual value
 		ShouldNotContain: []string{"I don't have access", "I cannot read"}, // Failure indicators

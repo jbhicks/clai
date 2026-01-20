@@ -112,29 +112,40 @@ func (r *Runner) runSingleTest(test llm.ModelBenchmarkTest) llm.ModelBenchmarkRe
 		CodeExecuted: []string{},
 	}
 
+	// Print test info
+	fmt.Printf("\n🧪 Running: %s\n", test.Name)
+	fmt.Printf("   Query: %s\n", test.Query)
+	fmt.Printf("   Streaming response...\n")
+
 	agent := llm.NewAgent(r.llmClient)
 
-	// Add system prompt
-	systemPrompt := `You are a free agent AI with full code execution capabilities. You can execute bash, python, and javascript code directly on the system.
+	// Note: System prompt is already configured in the LLM client
+	// Do not override it here
 
-**Critical rules:**
-1. When you need to read files, execute commands, or perform system operations, use code execution by wrapping code in XML tags:
-   <code language="bash">cat /path/to/file</code>
-   <code language="python">print("Hello")</code>
-   <code language="javascript">console.log("Hello")</code>
+	// Collect the full response for evaluation
+	var fullResponse strings.Builder
+	var inToolCall bool
 
-2. DO NOT use echo/print/console.log to narrate your thinking. Only use them for actual task output.
-3. You have filesystem access. Read files directly instead of asking the user.
-4. Execute commands as needed to complete tasks.
-5. Keep code blocks focused and purposeful.
-
-Answer questions clearly and execute code when needed to provide accurate information.`
-
-	agent.AddMessage("system", systemPrompt)
-
-	// Run the test
+	// Run the test with streaming
 	start := time.Now()
-	response, err := agent.Run(test.Query)
+	response, err := agent.RunWithStreaming(test.Query, func(chunk string, toolCall *llm.ToolCall, codeBlock *llm.CodeBlock) {
+		if toolCall != nil {
+			// Print tool call info and suppress text chunks until tool completes
+			fmt.Printf("\n[Tool Call: %s]\n", toolCall.Function.Name)
+			fmt.Printf("[Tool Args: %s]\n", toolCall.Function.Arguments)
+			inToolCall = true
+		} else if codeBlock != nil {
+			// Print code execution info
+			fmt.Printf("\n[Executing %s code]\n", codeBlock.Language)
+		} else if chunk != "" && !inToolCall {
+			// Only print text chunks when not in a tool call
+			fmt.Print(chunk)
+			fullResponse.WriteString(chunk)
+		} else if chunk != "" {
+			// Still collect all chunks for evaluation, even during tool calls
+			fullResponse.WriteString(chunk)
+		}
+	})
 	result.TimeElapsed = time.Since(start)
 	result.Response = response
 	result.Error = err

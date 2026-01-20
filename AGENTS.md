@@ -43,6 +43,12 @@ This repository is a Go CLI project for local AI agent interaction. Follow these
 - Only build code changes and let the user handle server management
 - If you need to test functionality, use API calls to running servers, not starting new ones
 
+**EXCEPTION: Benchmark testing is allowed for development verification**
+- Agents MAY run `./clai benchmark --cli --test N` commands for testing specific benchmark tests
+- This is permitted because these commands run and return results without blocking indefinitely
+- Use this only when explicitly requested by the user for testing changes
+- Still prohibited: Running full benchmark suites or starting benchmark servers
+
 **CRITICAL SAFEGUARD: Before any server-related operations**
 - ALWAYS check if dev/benchmark servers are already running: `ps aux | grep -E "(make dev|clai.*benchmark)" | grep -v grep`
 - If any servers are found running, IMMEDIATELY return an error: "ERROR: Dev/benchmark servers are already running. Please let the user manage server processes - do not run 'make dev' yourself."

@@ -100,4 +100,9 @@ clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_NAME)
 
+benchmark:
+	$(eval TEST ?= 0)
+	make build
+	./clai benchmark --cli --test $(TEST)
+
 

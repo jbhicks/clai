@@ -73,7 +73,7 @@ func NewClient(host, model, systemPrompt string) *Client {
 		if len(tools) > 0 {
 			toolsJSON, err := json.Marshal(tools)
 			if err == nil {
-				systemPrompt = systemPrompt + "\n\nAvailable tools:\n" + string(toolsJSON)
+				systemPrompt = systemPrompt + "\n\nYou have access to tools. When you need to use a tool, respond with a JSON object in this exact format:\n\n{\"tool_calls\": [{\"id\": \"call_id\", \"type\": \"function\", \"function\": {\"name\": \"tool_name\", \"arguments\": \"{\\\"param\\\": \\\"value\\\"}\" }}]}\n\nAvailable tools:\n" + string(toolsJSON)
 			}
 		}
 	}

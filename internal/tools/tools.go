@@ -97,7 +97,7 @@ func ExecuteTool(toolCall ToolCall) (string, error) {
 	case "execute_bash":
 		var args map[string]interface{}
 		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to parse tool arguments as JSON: %w", err)
 		}
 		command, ok := args["command"].(string)
 		if !ok {
@@ -108,7 +108,7 @@ func ExecuteTool(toolCall ToolCall) (string, error) {
 	case "execute_python":
 		var args map[string]interface{}
 		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to parse tool arguments as JSON: %w", err)
 		}
 		code, ok := args["code"].(string)
 		if !ok {
@@ -119,7 +119,7 @@ func ExecuteTool(toolCall ToolCall) (string, error) {
 	case "execute_javascript":
 		var args map[string]interface{}
 		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to parse tool arguments as JSON: %w", err)
 		}
 		code, ok := args["code"].(string)
 		if !ok {
