@@ -19,6 +19,7 @@ restart_app() {
     # Try graceful shutdown first (SIGTERM)
     pkill -TERM -f "go run ./cmd/clai" 2>/dev/null || true
     pkill -TERM -f "make run" 2>/dev/null || true
+    pkill -TERM -f "./clai benchmark" 2>/dev/null || true
     for pid in $(ps aux | grep "/clai" | grep -v "grep" | awk '{print $2}'); do
         kill -TERM $pid 2>/dev/null || true
     done
@@ -29,6 +30,7 @@ restart_app() {
     # Force kill any remaining processes (SIGKILL)
     pkill -9 -f "go run ./cmd/clai" 2>/dev/null || true
     pkill -9 -f "make run" 2>/dev/null || true
+    pkill -9 -f "./clai benchmark" 2>/dev/null || true
     for pid in $(ps aux | grep "/clai" | grep -v "grep" | awk '{print $2}'); do
         kill -9 $pid 2>/dev/null || true
     done
@@ -43,18 +45,21 @@ restart_app() {
 
     sleep 0.5
 
-    # Start clai using make run (includes build ldflags)
-    echo "Starting CLAI..."
-    TERM=xterm-256color make run &
+    # Truncate log files for clean start
+    truncate -s 0 debug.log
+    truncate -s 0 benchmark.log
+
+    # CLAI TUI now auto-starts benchmark server, so no need to start manually
+    # Start clai TUI using the built binary (includes build ldflags) - run in foreground for tmux
+    echo "Starting CLAI TUI (benchmark server will start automatically)..."
+    TERM=xterm-256color CLAI_DEV=1 make run
 }
 
-# Initial start
-restart_app
-
-# Main loop - check for file changes
+# Start inotifywait in background
+(
 while true; do
     inotifywait -t 2 -e modify,create,delete,move \
-        --exclude '(\.git|tmp|_build|vendor|node_modules|\.opencode|\.clai|model_test_results|archive|debug\.log)' \
+        --exclude '(\.git|tmp|_build|vendor|node_modules|\.opencode|\.clai|model_test_results|archive|debug\.log|benchmark\.log)' \
         -r . >/dev/null 2>&1
     
     if [ $? -eq 0 ]; then
@@ -66,3 +71,7 @@ while true; do
         restart_app
     fi
 done
+) &
+
+# Initial start
+restart_app

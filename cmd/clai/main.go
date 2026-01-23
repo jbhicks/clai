@@ -1,6 +1,7 @@
 package main
 
 import (
+	"clai/internal/benchmark"
 	"clai/internal/db"
 	"clai/internal/llm"
 	"clai/internal/logger"
@@ -14,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -65,6 +67,13 @@ func getBuildIdentifier() string {
 }
 
 func main() {
+	startTime := time.Now()
+	logger.Info("CLAI startup beginning")
+
+	// Clear screen immediately on startup to remove any previous output (especially in tmux)
+	fmt.Print("\x1b[2J\x1b[H")
+	logger.Info("Screen cleared in %v", time.Since(startTime))
+
 	if len(os.Args) >= 2 && os.Args[1] == "debug" {
 		runDebugCommand(os.Args[2:])
 		return
@@ -90,12 +99,16 @@ func main() {
 		}
 	}()
 	// Check for TTY (interactive terminal) by trying to open /dev/tty
-	ttyCheck, err := os.Open("/dev/tty")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Error: This program requires an interactive terminal (TTY). Exiting.")
-		os.Exit(1)
+	// Skip TTY check in development environments if CLAI_DEV is set
+	if os.Getenv("CLAI_DEV") != "1" {
+		ttyCheck, err := os.Open("/dev/tty")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error: This program requires an interactive terminal (TTY). Exiting.")
+			os.Exit(1)
+		}
+		ttyCheck.Close()
 	}
-	ttyCheck.Close()
+	logger.Info("TTY check completed in %v", time.Since(startTime))
 
 	// Detect terminal size for TUI (works in tmux/screen)
 	terminalWidth, terminalHeight := 80, 24
@@ -108,6 +121,7 @@ func main() {
 			}
 		}
 	}
+	logger.Info("Terminal size detection completed in %v (size: %dx%d)", time.Since(startTime), terminalWidth, terminalHeight)
 	// Log to debug.log, overwrite each run
 	logFile, err := os.Create("debug.log")
 	if err != nil {
@@ -115,6 +129,7 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Init(logFile)
+	logger.Info("Logger initialization completed in %v", time.Since(startTime))
 
 	// Handle SIGINT for clean shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -142,6 +157,7 @@ func main() {
 
 	flag.Parse()
 	llmClient := llm.NewClient(host, modelName, systemPrompt)
+	logger.Info("LLM client creation completed in %v", time.Since(startTime))
 
 	store, err := db.New()
 	if err != nil {
@@ -150,6 +166,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
+	logger.Info("Database initialization completed in %v", time.Since(startTime))
 
 	modelInfo, err := llmClient.GetModelInfo()
 	var assistantIntro string
@@ -175,6 +192,7 @@ func main() {
 			assistantIntro += fmt.Sprintf("\nContext Length: %.0f", contextLen)
 		}
 	}
+	logger.Info("Model info fetching completed in %v", time.Since(startTime))
 
 	availableThemes := ui.GetAvailableThemes()
 	theme := availableThemes[0]
@@ -227,6 +245,8 @@ func main() {
 	logHeight := contentHeight - statusHeight
 
 	m := &ui.Model{
+		Width:         terminalWidth,
+		Height:        terminalHeight,
 		Log:           ui.SetupLogComponent(statusWidth, logHeight),
 		AgentStatus:   ui.SetupAgentStatusComponent(theme),
 		Help:          helpModel,
@@ -236,6 +256,8 @@ func main() {
 		ErrorBanner:   lipgloss.NewStyle().Background(lipgloss.Color("9")).Foreground(lipgloss.Color("15")).Padding(0, 1),
 		Theme:         theme,
 		DB:            store,
+		Layout:        ui.DefaultLayoutConfig(),
+		LayoutManager: ui.NewLayoutManager(ui.DefaultLayoutConfig(), theme),
 	}
 
 	// Re-setup textarea styling with the (potentially loaded) theme
@@ -271,6 +293,7 @@ func main() {
 		logger.Info("Loaded conversation %d with %d messages", conv.ID, len(conv.Messages))
 	}
 	m.Conversation = conv
+	logger.Info("Conversation loading completed in %v", time.Since(startTime))
 
 	// Use the simplified UI setup functions
 	chatHeight := terminalHeight - ui.StatusBarHeight
@@ -291,9 +314,30 @@ func main() {
 	// Let Bubble Tea detect terminal size automatically via WindowSizeMsg
 	logger.Info("Starting app, Bubble Tea will detect terminal size...")
 
-	p := tea.NewProgram(m,
-		tea.WithMouseCellMotion(),
-	)
+	// Start benchmark server in background
+	logger.Info("Starting benchmark server in background...")
+	logger.Info("DEBUG: ActivePane initialized to: %d", ui.ChatPane)
+	benchmarkServer := benchmark.NewServer(store)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("BENCHMARK SERVER PANIC: %v", r)
+				logger.Error("BENCHMARK STACK TRACE:\n%s", getStackTrace())
+				fmt.Fprintf(os.Stderr, "BENCHMARK SERVER PANIC: %v\n", r)
+				fmt.Fprintf(os.Stderr, "BENCHMARK STACK TRACE:\n%s", getStackTrace())
+			}
+		}()
+		if err := benchmarkServer.Start(); err != nil {
+			logger.Error("Failed to start benchmark server: %v", err)
+		}
+	}()
+
+	// Create Bubble Tea program - skip alternate screen in tmux for better pane clearing
+	var opts []tea.ProgramOption
+	if os.Getenv("TMUX") == "" {
+		opts = append(opts, tea.WithAltScreen())
+	}
+	p := tea.NewProgram(m, opts...)
 
 	// Start goroutine to bridge debug channel to tea program
 	go func() {
@@ -308,6 +352,10 @@ func main() {
 		logger.Warn("Failed to start debug server: %v", err)
 	}
 
+	// Clear screen immediately before starting TUI
+	fmt.Print("\x1b[2J\x1b[H")
+	logger.Info("All initialization completed in %v, starting TUI", time.Since(startTime))
+
 	if _, err := p.Run(); err != nil {
 		logger.Error("Fatal error: %v", err)
 		ui.StopDebugServer()
@@ -318,3 +366,5 @@ func main() {
 	ui.StopDebugServer()
 	logFile.Close()
 }
+
+// Trigger rebuild
