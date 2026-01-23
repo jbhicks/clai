@@ -6,48 +6,46 @@ This document explains the different development workflows available for clai.
 
 | Command | Description | Best For |
 |---------|-------------|----------|
-| `make dev` | Custom inotifywait script | **Main TUI app development** (handles TTY properly) |
+| `make dev` | entr auto-reload (simple) | **Main TUI app development** (no tmux required) |
 | `make dev-benchmark` | Air auto-restart with benchmark server | **Benchmark web interface development** |
 | `make dev-air` | Alias for dev-benchmark | Same as above |
 | `make dev-tmux` | Tmux split with air + logs | Multi-pane terminal workflow |
 
 ---
 
-## `make dev` (Main TUI App)
+## `make dev` (Main TUI Auto-Reload)
 
 **Best for:** Main clai TUI application development
 
-⚠️ **Important:** The TUI (terminal user interface) has special TTY requirements. The custom `dev.sh` script handles these properly, unlike generic tools like air.
+This is the primary development command that uses `entr` (event notify test runner) to provide auto-reload functionality. When you save any Go file, CLAI automatically rebuilds and restarts.
 
-Uses a custom bash script (`dev.sh`) with `inotifywait`.
+### Features
+- ✅ **Simple setup**: No tmux required, works in any terminal
+- ✅ **Proper TTY handling**: Unlike air, entr correctly forwards terminal dimensions to Bubble Tea
+- ✅ **Fast restarts**: Uses `entr` for reliable file watching and process management
+- ✅ **Automatic cleanup**: Properly terminates old processes before starting new ones
 
-### Features:
-- ✅ Proper TTY handling for Bubble Tea TUI
-- ✅ Sets `AGENT_MODE=true` and `LOG_LEVEL=DEBUG`
-- ✅ Redirects I/O to `/dev/tty` correctly
-- ✅ Fast rebuild on file changes
-- ✅ Graceful process cleanup
-
-### Usage:
+### Usage
 ```bash
 make dev
 ```
 
-### What it does:
-1. Watches for `.go` and `.env` file changes using `inotifywait`
-2. On change: rebuilds `./clai`
-3. Restarts with proper TTY connections: `./clai < /dev/tty > /dev/tty 2>&1`
-4. Tracks PID for clean shutdown
-5. Outputs to your current terminal
+### What it does
+1. Finds all `.go` files in the project (excluding vendor/)
+2. Uses `entr` to watch for file changes
+3. When a Go file changes, runs `dev_restart.sh` which:
+   - Kills any existing CLAI processes
+   - Cleans up stale sockets and logs
+   - Rebuilds and starts CLAI in the background
+4. `entr` waits for the next file change
 
-### Why not air for TUI?
-The main clai app is a full-screen TUI built with Bubble Tea. It requires:
-- Direct TTY access for keyboard input
-- Proper terminal control for rendering
-- Alt-screen buffer management
-- Signal handling for cleanup
+### Requirements
+- `entr` package must be installed (`sudo pacman -S entr` on Arch)
 
-The custom `dev.sh` script ensures all of this works correctly during development.
+### When to use
+- When you want the simplest auto-reload experience
+- When working in IDEs or editors that don't play well with tmux
+- For most CLAI development scenarios
 
 ---
 
@@ -110,30 +108,40 @@ Alias for `make dev-benchmark`. Same functionality.
 
 ---
 
-## `make dev-tmux`
+## `make dev-entr` (Simple TUI Auto-Reload)
 
-**Best for:** Multi-pane terminal workflow with logs visible
+**Best for:** Main clai TUI application development without tmux complexity
 
-Creates a tmux session with:
-- Left pane: App running under air
-- Right pane: Live logs (`tail -f debug.log`)
+This target uses `entr` (a simple file-watching utility) to provide auto-reload functionality without the tmux setup required by `make dev`. It's ideal when you want auto-reloading but prefer to work in a single terminal pane.
 
-### Features:
-- ✅ Split-screen view (app + logs)
-- ✅ Air auto-reload in left pane
-- ✅ Live debug.log in right pane
-- ✅ Session named `clai_dev`
+### Features
+- ✅ **Proper TTY handling**: Unlike air, entr properly forwards terminal dimensions to Bubble Tea
+- ✅ **Simple setup**: No tmux required, works in any terminal
+- ✅ **Fast restarts**: Uses `entr -r` for clean process replacement
+- ✅ **Automatic cleanup**: Properly terminates old processes before starting new ones
 
-### Usage:
+### Usage
 ```bash
-make dev-tmux
+make dev-entr
 ```
 
-### Tmux Controls:
-- `Ctrl+b` then `arrow keys` - Switch panes
-- `Ctrl+b` then `z` - Zoom current pane
-- `Ctrl+b` then `d` - Detach session
-- `tmux attach -t clai_dev` - Re-attach
+### What it does
+1. Finds all `.go` files in the project (excluding vendor/)
+2. Uses `entr` to watch for file changes
+3. When a Go file changes, runs `dev_restart.sh` which:
+   - Kills any existing CLAI processes
+   - Cleans up stale sockets and logs
+   - Resets terminal state
+   - Starts CLAI with `make run-simple`
+
+### Requirements
+- `entr` package must be installed (`sudo pacman -S entr` on Arch)
+- Same terminal environment as `make run-simple`
+
+### When to use
+- When you want auto-reload but don't need the tmux split with logs
+- When working in IDEs or editors that don't play well with tmux
+- When you prefer simpler terminal workflows
 
 ---
 
