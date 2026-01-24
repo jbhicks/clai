@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"clai/internal/db"
 	"github.com/playwright-community/playwright-go"
 )
 
@@ -38,8 +40,13 @@ func TestModelsPageFullE2E(t *testing.T) {
 	}
 	defer page.Close()
 
-	server := NewServer(nil)
-	server.modelManager = NewModelManagerForTest()
+	server := &Server{
+		store:        nil,
+		modelManager: NewModelManagerForTest(),
+		sseClients:   make(map[chan string]bool),
+		sseMutex:     sync.RWMutex{},
+		port:         0,
+	}
 
 	testServer := httptest.NewServer(http.HandlerFunc(server.handleModelsPage))
 	defer testServer.Close()
@@ -228,8 +235,13 @@ func TestDownloadsFunctionalityE2E(t *testing.T) {
 	}
 	defer page.Close()
 
-	server := NewServer(nil)
-	server.modelManager = NewModelManagerForTest()
+	server := &Server{
+		store:        nil,
+		modelManager: NewModelManagerForTest(),
+		sseClients:   make(map[chan string]bool),
+		sseMutex:     sync.RWMutex{},
+		port:         0,
+	}
 
 	testServer := httptest.NewServer(http.HandlerFunc(server.handleModelsPage))
 	defer testServer.Close()
@@ -377,8 +389,13 @@ func TestServersListFunctionalityE2E(t *testing.T) {
 }
 
 func TestAPIDownloadsEndpoint(t *testing.T) {
-	server := NewServer(nil)
-	server.modelManager = NewModelManagerForTest()
+	server := &Server{
+		store:        nil,
+		modelManager: NewModelManagerForTest(),
+		sseClients:   make(map[chan string]bool),
+		sseMutex:     sync.RWMutex{},
+		port:         0,
+	}
 
 	t.Run("Returns empty list when no downloads", func(t *testing.T) {
 		w := httptest.NewRecorder()
@@ -421,8 +438,19 @@ func TestAPIDownloadsEndpoint(t *testing.T) {
 }
 
 func TestAPIServersListEndpoint(t *testing.T) {
-	server := NewServer(nil)
-	server.modelManager = NewModelManagerForTest()
+	store, err := db.New()
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer store.DB().Close()
+
+	server := &Server{
+		store:        store,
+		modelManager: NewModelManagerForTest(),
+		sseClients:   make(map[chan string]bool),
+		sseMutex:     sync.RWMutex{},
+		port:         0,
+	}
 
 	tempDir := t.TempDir()
 	modelPath := filepath.Join(tempDir, "test-model.gguf")
@@ -475,8 +503,13 @@ func TestAPIServersListEndpoint(t *testing.T) {
 }
 
 func TestSSEEndpoints(t *testing.T) {
-	server := NewServer(nil)
-	server.modelManager = NewModelManagerForTest()
+	server := &Server{
+		store:        nil,
+		modelManager: NewModelManagerForTest(),
+		sseClients:   make(map[chan string]bool),
+		sseMutex:     sync.RWMutex{},
+		port:         0,
+	}
 
 	t.Run("SSE endpoint returns event stream", func(t *testing.T) {
 		w := httptest.NewRecorder()
@@ -537,8 +570,13 @@ func TestTestingPageE2E(t *testing.T) {
 	}
 	defer page.Close()
 
-	server := NewServer(nil)
-	server.modelManager = NewModelManagerForTest()
+	server := &Server{
+		store:        nil,
+		modelManager: NewModelManagerForTest(),
+		sseClients:   make(map[chan string]bool),
+		sseMutex:     sync.RWMutex{},
+		port:         0,
+	}
 
 	testServer := httptest.NewServer(http.HandlerFunc(server.handleTestingPage))
 	defer testServer.Close()

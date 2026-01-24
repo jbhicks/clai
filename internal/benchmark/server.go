@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"regexp"
@@ -19,16 +18,17 @@ import (
 	"clai/internal/db"
 	"clai/internal/gpu"
 	"clai/internal/llm"
+	"clai/internal/logger"
 	"clai/internal/tools"
 )
 
 // Server represents the benchmark web server
 type Server struct {
 	store        *db.Store
-	port         int
 	modelManager *ModelManager
 	sseClients   map[chan string]bool
-	sseClientsMu sync.RWMutex
+	sseMutex     sync.RWMutex
+	port         int
 }
 
 // NewServer creates a new benchmark server
@@ -77,16 +77,19 @@ func findAvailablePort(preferredPort int) (int, error) {
 
 // Start starts the web server on an available port
 // If preferredPort is set, it will try to use that port first
-func (s *Server) Start() error {
+func (s *Server) Start() (int, error) {
 	return s.StartWithPreferredPort(0)
 }
 
 // StartWithPreferredPort starts the web server, preferring the given port
-func (s *Server) StartWithPreferredPort(preferredPort int) error {
+func (s *Server) StartWithPreferredPort(preferredPort int) (int, error) {
+	logger.Info("BENCHMARK SERVER: StartWithPreferredPort called with preferredPort=%d", preferredPort)
 	port, err := findAvailablePort(preferredPort)
 	if err != nil {
-		return err
+		logger.Info("BENCHMARK SERVER: findAvailablePort failed: %v", err)
+		return 0, err
 	}
+	logger.Info("BENCHMARK SERVER: found available port: %d", port)
 	s.port = port
 
 	mux := http.NewServeMux()
@@ -128,18 +131,16 @@ func (s *Server) StartWithPreferredPort(preferredPort int) error {
 	mux.HandleFunc("/api/test/run", s.HandleRunTest)
 	mux.HandleFunc("/api/test/results", s.HandleGetTestResults)
 	mux.HandleFunc("/api/test/results/detailed", s.handleGetDetailedTestResults)
-	mux.HandleFunc("/api/benchmark/run", s.HandleRunBenchmark)
-	mux.HandleFunc("/api/benchmark/results", s.HandleGetBenchmarkResults)
-	mux.HandleFunc("/api/benchmark/clear", s.handleClearBenchmarkResults)
 	mux.HandleFunc("/api/test/result/detail", s.handleGetTestDetail)
 	mux.HandleFunc("/api/gpu/status", s.HandleGPUStatus)
 	mux.HandleFunc("/api/servers/events", s.handleServerEvents)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	addr := fmt.Sprintf(":%d", port)
-	log.Printf("Starting benchmark server on http://localhost%s\n", addr)
+	logger.Info("BENCHMARK SERVER: About to call http.ListenAndServe on %s", addr)
+	logger.Info("Starting benchmark server on http://localhost%s\n", addr)
 
-	return http.ListenAndServe(addr, mux)
+	return port, http.ListenAndServe(addr, mux)
 }
 
 // GetPort returns the port the server is running on
@@ -165,21 +166,21 @@ func (s *Server) handleServerEvents(w http.ResponseWriter, r *http.Request) {
 	clientChan := make(chan string, 10)
 
 	// Register client
-	s.sseClientsMu.Lock()
+	s.sseMutex.Lock()
 	s.sseClients[clientChan] = true
 	clientCount := len(s.sseClients)
-	s.sseClientsMu.Unlock()
+	s.sseMutex.Unlock()
 
-	log.Printf("SSE client connected, total clients: %d", clientCount)
+	logger.Info("SSE client connected, total clients: %d", clientCount)
 
 	// Deregister client on disconnect
 	defer func() {
-		s.sseClientsMu.Lock()
+		s.sseMutex.Lock()
 		delete(s.sseClients, clientChan)
 		remainingClients := len(s.sseClients)
 		close(clientChan)
-		s.sseClientsMu.Unlock()
-		log.Printf("SSE client disconnected, remaining clients: %d", remainingClients)
+		s.sseMutex.Unlock()
+		logger.Info("SSE client disconnected, remaining clients: %d", remainingClients)
 	}()
 
 	// Keep connection alive and send updates
@@ -200,17 +201,17 @@ func (s *Server) handleServerEvents(w http.ResponseWriter, r *http.Request) {
 			// Send SSE event with content to swap directly
 			// HTMX expects: event: eventname\ndata: HTML content\n\n
 			if htmlContent != "" {
-				log.Printf("SSE: Sending %s event (%d bytes)", eventName, len(htmlContent))
+				logger.Info("SSE: Sending %s event (%d bytes)", eventName, len(htmlContent))
 				fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventName, htmlContent)
 			} else {
-				log.Printf("SSE: Sending %s event (no content)", eventName)
+				logger.Info("SSE: Sending %s event (no content)", eventName)
 				fmt.Fprintf(w, "event: %s\ndata: \n\n", eventName)
 			}
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
 		case <-r.Context().Done():
-			log.Println("SSE: Client context done, closing connection")
+			logger.Info("SSE: Client context done, closing connection")
 			return
 		}
 	}
@@ -330,13 +331,13 @@ func (s *Server) renderBenchmarkResultsHTML() string {
 // broadcastServerUpdate sends a server list update to all SSE clients
 // Triggers clients to refresh their server list via sse-swap
 func (s *Server) broadcastServerUpdate() {
-	s.sseClientsMu.RLock()
-	defer s.sseClientsMu.RUnlock()
+	s.sseMutex.RLock()
+	defer s.sseMutex.RUnlock()
 
-	log.Printf("Broadcasting servers_update event to %d SSE clients", len(s.sseClients))
+	logger.Info("Broadcasting servers_update event to %d SSE clients", len(s.sseClients))
 
 	if len(s.sseClients) == 0 {
-		log.Println("No SSE clients connected, skipping broadcast")
+		logger.Info("No SSE clients connected, skipping broadcast")
 		return
 	}
 
@@ -345,22 +346,22 @@ func (s *Server) broadcastServerUpdate() {
 	for clientChan := range s.sseClients {
 		select {
 		case clientChan <- msg:
-			log.Println("Sent servers_update event to client")
+			logger.Info("Sent servers_update event to client")
 		default:
-			log.Println("Client buffer full, skipping")
+			logger.Info("Client buffer full, skipping")
 		}
 	}
 }
 
 // broadcastBenchmarkUpdate sends a benchmark completion event to all SSE clients
 func (s *Server) broadcastBenchmarkUpdate() {
-	s.sseClientsMu.RLock()
-	defer s.sseClientsMu.RUnlock()
+	s.sseMutex.RLock()
+	defer s.sseMutex.RUnlock()
 
-	log.Printf("Broadcasting benchmark_update event to %d SSE clients", len(s.sseClients))
+	logger.Info("Broadcasting benchmark_update event to %d SSE clients", len(s.sseClients))
 
 	if len(s.sseClients) == 0 {
-		log.Println("No SSE clients connected, skipping broadcast")
+		logger.Info("No SSE clients connected, skipping broadcast")
 		return
 	}
 
@@ -368,9 +369,9 @@ func (s *Server) broadcastBenchmarkUpdate() {
 	for clientChan := range s.sseClients {
 		select {
 		case clientChan <- msg:
-			log.Println("Sent benchmark_update event to client")
+			logger.Info("Sent benchmark_update event to client")
 		default:
-			log.Println("Client buffer full, skipping")
+			logger.Info("Client buffer full, skipping")
 		}
 	}
 }
@@ -391,14 +392,14 @@ func (s *Server) handleRunsList(w http.ResponseWriter, r *http.Request) {
 	runs, err := s.store.GetBenchmarkRuns(100) // Get more runs for the full list
 	if err != nil {
 		http.Error(w, "Failed to load benchmark runs", http.StatusInternalServerError)
-		log.Printf("Error loading runs: %v", err)
+		logger.Info("Error loading runs: %v", err)
 		return
 	}
 
 	component := templates.Dashboard(runs)
 	if err := component.Render(r.Context(), w); err != nil {
 		http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		log.Printf("Error rendering runs list: %v", err)
+		logger.Info("Error rendering runs list: %v", err)
 	}
 }
 
@@ -415,7 +416,7 @@ func (s *Server) handleRunDetails(w http.ResponseWriter, r *http.Request) {
 	run, err := s.store.GetBenchmarkRun(runID)
 	if err != nil {
 		http.Error(w, "Failed to load run", http.StatusInternalServerError)
-		log.Printf("Error loading run %d: %v", runID, err)
+		logger.Info("Error loading run %d: %v", runID, err)
 		return
 	}
 	if run == nil {
@@ -426,14 +427,14 @@ func (s *Server) handleRunDetails(w http.ResponseWriter, r *http.Request) {
 	results, err := s.store.GetBenchmarkResults(runID)
 	if err != nil {
 		http.Error(w, "Failed to load results", http.StatusInternalServerError)
-		log.Printf("Error loading results for run %d: %v", runID, err)
+		logger.Info("Error loading results for run %d: %v", runID, err)
 		return
 	}
 
 	component := templates.RunDetails(run, results)
 	if err := component.Render(r.Context(), w); err != nil {
 		http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		log.Printf("Error rendering run details: %v", err)
+		logger.Info("Error rendering run details: %v", err)
 	}
 }
 
@@ -442,7 +443,7 @@ func (s *Server) handleNewTest(w http.ResponseWriter, r *http.Request) {
 	component := templates.NewTest()
 	if err := component.Render(r.Context(), w); err != nil {
 		http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		log.Printf("Error rendering new test page: %v", err)
+		logger.Info("Error rendering new test page: %v", err)
 	}
 }
 
@@ -456,7 +457,7 @@ func (s *Server) handleModelsPage(w http.ResponseWriter, r *http.Request) {
 	component := templates.Models()
 	if err := component.Render(r.Context(), w); err != nil {
 		http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		log.Printf("Error rendering models page: %v", err)
+		logger.Info("Error rendering models page: %v", err)
 	}
 }
 
@@ -464,7 +465,7 @@ func (s *Server) handleTestingPage(w http.ResponseWriter, r *http.Request) {
 	component := templates.Testing()
 	if err := component.Render(r.Context(), w); err != nil {
 		http.Error(w, "Failed to render template", http.StatusInternalServerError)
-		log.Printf("Error rendering testing page: %v", err)
+		logger.Info("Error rendering testing page: %v", err)
 	}
 }
 
@@ -489,7 +490,7 @@ func (s *Server) handleResultDetails(w http.ResponseWriter, r *http.Request) {
 	results, err := s.store.GetBenchmarkResults(runID)
 	if err != nil {
 		http.Error(w, "Failed to load results", http.StatusInternalServerError)
-		log.Printf("Error loading results: %v", err)
+		logger.Info("Error loading results: %v", err)
 		return
 	}
 
@@ -549,7 +550,7 @@ type ModelInfo struct {
 
 // handleGetModels returns a list of available models from common servers
 func (s *Server) handleGetModels(w http.ResponseWriter, r *http.Request) {
-	log.Println("API: /api/models called")
+	logger.Info("API: /api/models called")
 	models := []ModelInfo{}
 
 	// Common server URLs to check
@@ -564,18 +565,18 @@ func (s *Server) handleGetModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, serverURL := range serverURLs {
-		log.Printf("Checking server: %s", serverURL)
+		logger.Info("Checking server: %s", serverURL)
 		// Try to fetch models from this server
 		fetchedModels := fetchModelsFromServer(serverURL)
-		log.Printf("Found %d models from %s", len(fetchedModels), serverURL)
+		logger.Info("Found %d models from %s", len(fetchedModels), serverURL)
 		models = append(models, fetchedModels...)
 	}
 
-	log.Printf("Total models found: %d", len(models))
+	logger.Info("Total models found: %d", len(models))
 
 	// If no models found, return default suggestions
 	if len(models) == 0 {
-		log.Println("No models found, returning defaults")
+		logger.Info("No models found, returning defaults")
 		models = []ModelInfo{
 			{Name: "Ollama (http://localhost:11434)", URL: "http://localhost:11434", APIType: "ollama"},
 			{Name: "llama.cpp (http://localhost:8081)", URL: "http://localhost:8081", APIType: "llamacpp"},
@@ -584,16 +585,16 @@ func (s *Server) handleGetModels(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(models); err != nil {
-		log.Printf("Error encoding models JSON: %v", err)
+		logger.Info("Error encoding models JSON: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	log.Println("Successfully sent models response")
+	logger.Info("Successfully sent models response")
 }
 
 // handleGetModelOptions returns HTML <option> elements for HTMX
 func (s *Server) handleGetModelOptions(w http.ResponseWriter, r *http.Request) {
-	log.Println("API: /api/models/options called")
+	logger.Info("API: /api/models/options called")
 	models := []ModelInfo{}
 
 	// Common server URLs to check
@@ -608,13 +609,13 @@ func (s *Server) handleGetModelOptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, serverURL := range serverURLs {
-		log.Printf("Checking server: %s", serverURL)
+		logger.Info("Checking server: %s", serverURL)
 		fetchedModels := fetchModelsFromServer(serverURL)
-		log.Printf("Found %d models from %s", len(fetchedModels), serverURL)
+		logger.Info("Found %d models from %s", len(fetchedModels), serverURL)
 		models = append(models, fetchedModels...)
 	}
 
-	log.Printf("Total models found: %d", len(models))
+	logger.Info("Total models found: %d", len(models))
 
 	// Return HTML options
 	w.Header().Set("Content-Type", "text/html")
@@ -622,7 +623,7 @@ func (s *Server) handleGetModelOptions(w http.ResponseWriter, r *http.Request) {
 	// Default option
 	if len(models) == 0 {
 		fmt.Fprint(w, `<option value="">No models found (enter manually)</option>`)
-		log.Println("No models found, returning empty option")
+		logger.Info("No models found, returning empty option")
 		return
 	}
 
@@ -648,7 +649,7 @@ func (s *Server) handleGetModelOptions(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `<option value='%s'>%s - %s (%s)</option>`, jsonData, model.Name, apiTypeDisplay, model.URL)
 	}
 
-	log.Printf("Successfully sent %d model options as HTML", len(models))
+	logger.Info("Successfully sent %d model options as HTML", len(models))
 }
 
 // handleSearchHuggingFace searches HuggingFace for GGUF models and returns HTML datalist options
@@ -666,7 +667,7 @@ func (s *Server) handleSearchHuggingFace(w http.ResponseWriter, r *http.Request)
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(searchURL)
 	if err != nil {
-		log.Printf("Failed to search HuggingFace: %v", err)
+		logger.Info("Failed to search HuggingFace: %v", err)
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, "")
 		return
@@ -681,7 +682,7 @@ func (s *Server) handleSearchHuggingFace(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
-		log.Printf("Failed to decode HuggingFace response: %v", err)
+		logger.Info("Failed to decode HuggingFace response: %v", err)
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, "")
 		return
@@ -753,14 +754,14 @@ func (s *Server) handleGetModelInfo(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(apiURL)
 	if err != nil {
-		log.Printf("Failed to fetch model info for %s: %v", modelID, err)
+		logger.Info("Failed to fetch model info for %s: %v", modelID, err)
 		http.Error(w, "Failed to fetch model info", http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("HuggingFace API returned status %d for model %s", resp.StatusCode, modelID)
+		logger.Info("HuggingFace API returned status %d for model %s", resp.StatusCode, modelID)
 		http.Error(w, fmt.Sprintf("Model not found (status %d)", resp.StatusCode), http.StatusNotFound)
 		return
 	}
@@ -792,7 +793,7 @@ func (s *Server) handleGetModelInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&modelData); err != nil {
-		log.Printf("Failed to decode model info for %s: %v", modelID, err)
+		logger.Info("Failed to decode model info for %s: %v", modelID, err)
 		http.Error(w, "Failed to parse model info", http.StatusInternalServerError)
 		return
 	}
@@ -979,7 +980,7 @@ func (s *Server) handleGetModelInfo(w http.ResponseWriter, r *http.Request) {
 		for _, filename := range ggufFiles {
 			// Extract quantization
 			quant := extractQuantization(filename)
-			log.Printf("DEBUG: File '%s' -> Quantization '%s'", filename, quant)
+			logger.Info("DEBUG: File '%s' -> Quantization '%s'", filename, quant)
 			if quant == "" {
 				// Try extracting from directory name (e.g., Q2_K/file.gguf)
 				if strings.Contains(filename, "/") {
@@ -1587,7 +1588,7 @@ func fetchModelsFromServer(serverURL string) []ModelInfo {
 	models := []ModelInfo{}
 
 	// Try llama.cpp API format first (/v1/models)
-	log.Printf("Fetching models from %s/v1/models", serverURL)
+	logger.Info("Fetching models from %s/v1/models", serverURL)
 	resp, err := http.Get(serverURL + "/v1/models")
 	if err == nil && resp.StatusCode == http.StatusOK {
 		defer resp.Body.Close()
@@ -1603,7 +1604,7 @@ func fetchModelsFromServer(serverURL string) []ModelInfo {
 		}
 
 		if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-			log.Printf("Successfully decoded llama.cpp/OpenAI response from %s", serverURL)
+			logger.Info("Successfully decoded llama.cpp/OpenAI response from %s", serverURL)
 
 			// Try models array first (llama.cpp format)
 			if len(result.Models) > 0 {
@@ -1618,7 +1619,7 @@ func fetchModelsFromServer(serverURL string) []ModelInfo {
 							URL:     serverURL,
 							APIType: "llamacpp",
 						})
-						log.Printf("  - %s (llamacpp)", name)
+						logger.Info("  - %s (llamacpp)", name)
 					}
 				}
 				return models // Return early, don't check data array
@@ -1633,7 +1634,7 @@ func fetchModelsFromServer(serverURL string) []ModelInfo {
 							URL:     serverURL,
 							APIType: "openai",
 						})
-						log.Printf("  - %s (openai)", model.ID)
+						logger.Info("  - %s (openai)", model.ID)
 					}
 				}
 				return models
@@ -1645,16 +1646,16 @@ func fetchModelsFromServer(serverURL string) []ModelInfo {
 	}
 
 	// Try Ollama API format (/api/tags)
-	log.Printf("Fetching models from %s/api/tags", serverURL)
+	logger.Info("Fetching models from %s/api/tags", serverURL)
 	resp, err = http.Get(serverURL + "/api/tags")
 	if err != nil {
-		log.Printf("Error fetching from %s: %v", serverURL, err)
+		logger.Info("Error fetching from %s: %v", serverURL, err)
 		return models
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Server %s returned status %d", serverURL, resp.StatusCode)
+		logger.Info("Server %s returned status %d", serverURL, resp.StatusCode)
 		return models
 	}
 
@@ -1665,11 +1666,11 @@ func fetchModelsFromServer(serverURL string) []ModelInfo {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Printf("Error decoding response from %s: %v", serverURL, err)
+		logger.Info("Error decoding response from %s: %v", serverURL, err)
 		return models
 	}
 
-	log.Printf("Successfully decoded %d models from %s", len(result.Models), serverURL)
+	logger.Info("Successfully decoded %d models from %s", len(result.Models), serverURL)
 
 	for _, model := range result.Models {
 		models = append(models, ModelInfo{
@@ -1677,7 +1678,7 @@ func fetchModelsFromServer(serverURL string) []ModelInfo {
 			URL:     serverURL,
 			APIType: "ollama",
 		})
-		log.Printf("  - %s (ollama)", model.Name)
+		logger.Info("  - %s (ollama)", model.Name)
 	}
 
 	return models
@@ -1786,7 +1787,7 @@ func (s *Server) HandleRunTest(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:  time.Now(),
 	}
 	if err := s.store.SaveQuickTest(quickTest); err != nil {
-		log.Printf("Failed to save quick test: %v", err)
+		logger.Info("Failed to save quick test: %v", err)
 		// Don't fail the request, just log the error
 	}
 
@@ -1817,7 +1818,7 @@ func (s *Server) HandleGetTestResults(w http.ResponseWriter, r *http.Request) {
 	// Fetch recent test results
 	tests, err := s.store.GetRecentQuickTests(20)
 	if err != nil {
-		log.Printf("Failed to fetch quick tests: %v", err)
+		logger.Info("Failed to fetch quick tests: %v", err)
 		tests = []db.QuickTest{} // Empty slice on error
 	}
 
@@ -1918,25 +1919,25 @@ func (s *Server) HandleRunBenchmark(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, `<div id="benchmark_status_msg" style="padding: 12px; background: #2563eb; color: white; border-radius: 4px; margin: 10px 0;">
 		<strong>🚀 Benchmark started for %s</strong><br>
-		<div style="margin-top: 8px;">Running %d agentic tests... This may take a few minutes.</div>
+		<div style="margin-top: 8px;">Running %d benchmark tests... This may take a few minutes.</div>
 		<div style="margin-top: 8px; font-size: 12px; opacity: 0.8;">
 			View results on the <a href="/testing" style="color: white; text-decoration: underline;">Testing &amp; Results</a> tab.
 		</div>
-	</div>`, server.ModelName, len(llm.AgenticBenchmarkSuite))
+	</div>`, server.ModelName, len(llm.ModelBenchmarkSuite))
 
 	// Run benchmarks asynchronously
-	go s.runAgenticBenchmarks(server)
+	go s.runBenchmarks(server)
 }
 
-// runAgenticBenchmarks runs the agentic benchmark suite asynchronously
-func (s *Server) runAgenticBenchmarks(server *ModelServer) {
+// runBenchmarks runs the unified benchmark suite asynchronously
+func (s *Server) runBenchmarks(server *ModelServer) {
 	startTime := time.Now()
 
 	// Create benchmark run record
 	run := &db.AgenticBenchmarkRun{
 		ModelName:   server.ModelName,
 		ModelPath:   server.ModelPath,
-		TotalTests:  len(llm.AgenticBenchmarkSuite),
+		TotalTests:  len(llm.ModelBenchmarkSuite),
 		PassedTests: 0,
 		FailedTests: 0,
 		SuccessRate: 0.0,
@@ -1945,28 +1946,28 @@ func (s *Server) runAgenticBenchmarks(server *ModelServer) {
 
 	runID, err := s.store.SaveAgenticBenchmarkRun(run)
 	if err != nil {
-		log.Printf("Failed to save benchmark run: %v", err)
+		logger.Info("Failed to save benchmark run: %v", err)
 		return
 	}
 	run.ID = int(runID)
 
-	log.Printf("Starting agentic benchmark run %d for %s", runID, server.ModelName)
+	logger.Info("Starting benchmark run %d for %s", runID, server.ModelName)
 
 	// Run each test
-	for _, test := range llm.AgenticBenchmarkSuite {
+	for _, test := range llm.ModelBenchmarkSuite {
 		testStart := time.Now()
 
 		result := &db.AgenticBenchmarkResult{
 			RunID:           int(runID),
 			TestName:        test.Name,
-			TaskDescription: test.Description,
-			Prompt:          test.Prompt,
-			ExpectedResult:  "See validator function",
+			TaskDescription: test.Query, // Use Query as description
+			Prompt:          test.Query, // Use Query as prompt
+			ExpectedResult:  fmt.Sprintf("Should contain: %s", strings.Join(test.ShouldContain, ", ")),
 			CreatedAt:       testStart,
 		}
 
 		// Send prompt to model to generate code
-		code, err := s.sendPromptToModel(server, test.Prompt)
+		code, err := s.sendPromptToModel(server, test.Query)
 		if err != nil {
 			result.Passed = false
 			result.ErrorMessage.Valid = true
@@ -1974,7 +1975,7 @@ func (s *Server) runAgenticBenchmarks(server *ModelServer) {
 			result.DurationMs = time.Since(testStart).Milliseconds()
 			s.store.SaveAgenticBenchmarkResult(result)
 			run.FailedTests++
-			log.Printf("  ❌ %s: %v", test.Name, err)
+			logger.Info("  ❌ %s: %v", test.Name, err)
 			s.broadcastBenchmarkUpdate()
 			continue
 		}
@@ -1991,7 +1992,7 @@ func (s *Server) runAgenticBenchmarks(server *ModelServer) {
 			result.DurationMs = time.Since(testStart).Milliseconds()
 			s.store.SaveAgenticBenchmarkResult(result)
 			run.FailedTests++
-			log.Printf("  ❌ %s: No code found in response", test.Name)
+			logger.Info("  ❌ %s: No code found in response", test.Name)
 			s.broadcastBenchmarkUpdate()
 			continue
 		}
@@ -2008,13 +2009,35 @@ func (s *Server) runAgenticBenchmarks(server *ModelServer) {
 			result.DurationMs = time.Since(testStart).Milliseconds()
 			s.store.SaveAgenticBenchmarkResult(result)
 			run.FailedTests++
-			log.Printf("  ❌ %s: Execution failed: %v", test.Name, execErr)
+			logger.Info("  ❌ %s: Execution failed: %v", test.Name, execErr)
 			s.broadcastBenchmarkUpdate()
 			continue
 		}
 
-		// Validate the output
-		passed, reason := test.Validator(output)
+		// Validate the output using ShouldContain/ShouldNotContain logic
+		passed := true
+		var failureReasons []string
+
+		// Check ShouldContain (all must be present)
+		for _, required := range test.ShouldContain {
+			if !strings.Contains(output, required) {
+				passed = false
+				failureReasons = append(failureReasons, fmt.Sprintf("missing required content: '%s'", required))
+			}
+		}
+
+		// Check ShouldNotContain (none should be present)
+		for _, forbidden := range test.ShouldNotContain {
+			if strings.Contains(output, forbidden) {
+				passed = false
+				failureReasons = append(failureReasons, fmt.Sprintf("contains forbidden content: '%s'", forbidden))
+			}
+		}
+
+		reason := "Validation passed"
+		if !passed {
+			reason = strings.Join(failureReasons, "; ")
+		}
 		result.Passed = passed
 		result.ValidationReason.Valid = true
 		result.ValidationReason.String = reason
@@ -2022,10 +2045,10 @@ func (s *Server) runAgenticBenchmarks(server *ModelServer) {
 
 		if passed {
 			run.PassedTests++
-			log.Printf("  ✅ %s: %s (%dms)", test.Name, reason, result.DurationMs)
+			logger.Info("  ✅ %s: %s (%dms)", test.Name, reason, result.DurationMs)
 		} else {
 			run.FailedTests++
-			log.Printf("  ❌ %s: %s (%dms)", test.Name, reason, result.DurationMs)
+			logger.Info("  ❌ %s: %s (%dms)", test.Name, reason, result.DurationMs)
 		}
 
 		s.store.SaveAgenticBenchmarkResult(result)
@@ -2045,10 +2068,10 @@ func (s *Server) runAgenticBenchmarks(server *ModelServer) {
 	run.CompletedAt.Time = time.Now()
 
 	if err := s.store.UpdateAgenticBenchmarkRun(run); err != nil {
-		log.Printf("Failed to update benchmark run: %v", err)
+		logger.Info("Failed to update benchmark run: %v", err)
 	}
 
-	log.Printf("Benchmark run %d complete: %d/%d passed (%.1f%%) in %dms",
+	logger.Info("Benchmark run %d complete: %d/%d passed (%.1f%%) in %dms",
 		runID, run.PassedTests, run.TotalTests, run.SuccessRate, run.TotalDurationMs)
 
 	// Broadcast completion event to SSE clients
@@ -2394,12 +2417,12 @@ func (s *Server) handleClearBenchmarkResults(w http.ResponseWriter, r *http.Requ
 
 	// Delete all benchmark runs and results
 	if err := s.store.DeleteAllAgenticBenchmarkRuns(); err != nil {
-		log.Printf("Failed to clear benchmark results: %v", err)
+		logger.Info("Failed to clear benchmark results: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to clear results: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("All benchmark runs and results cleared")
+	logger.Info("All benchmark runs and results cleared")
 
 	// Return empty table
 	w.Header().Set("Content-Type", "text/html")
@@ -2408,9 +2431,9 @@ func (s *Server) handleClearBenchmarkResults(w http.ResponseWriter, r *http.Requ
 
 // HandleGPUStatus returns the GPU status dashboard HTML
 func (s *Server) HandleGPUStatus(w http.ResponseWriter, r *http.Request) {
-	log.Println("HandleGPUStatus: Starting...")
+	logger.Info("HandleGPUStatus: Starting...")
 	gpus, err := gpu.GetGPUInfo()
-	log.Println("HandleGPUStatus: Got GPU info")
+	logger.Info("HandleGPUStatus: Got GPU info")
 
 	w.Header().Set("Content-Type", "text/html")
 

@@ -67,27 +67,31 @@ func getBuildIdentifier() string {
 }
 
 func main() {
+	// Check for subcommands first - these should run without TUI setup
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "debug":
+			runDebugCommand(os.Args[2:])
+			return
+		case "models":
+			runModelsCommand(os.Args[2:])
+			return
+		case "benchmark":
+			runBenchmarkCommand(os.Args[2:])
+			return
+		case "query":
+			runQueryCommand(os.Args[2:])
+			return
+		}
+	}
+
+	// Only for TUI mode - initialize logging and screen clearing
 	startTime := time.Now()
 	logger.Info("CLAI startup beginning")
 
 	// Clear screen immediately on startup to remove any previous output (especially in tmux)
 	fmt.Print("\x1b[2J\x1b[H")
 	logger.Info("Screen cleared in %v", time.Since(startTime))
-
-	if len(os.Args) >= 2 && os.Args[1] == "debug" {
-		runDebugCommand(os.Args[2:])
-		return
-	}
-
-	if len(os.Args) >= 2 && os.Args[1] == "models" {
-		runModelsCommand(os.Args[2:])
-		return
-	}
-
-	if len(os.Args) >= 2 && os.Args[1] == "benchmark" {
-		runBenchmarkCommand(os.Args[2:])
-		return
-	}
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -257,7 +261,6 @@ func main() {
 		Theme:         theme,
 		DB:            store,
 		Layout:        ui.DefaultLayoutConfig(),
-		LayoutManager: ui.NewLayoutManager(ui.DefaultLayoutConfig(), theme),
 	}
 
 	// Re-setup textarea styling with the (potentially loaded) theme
@@ -314,6 +317,13 @@ func main() {
 	// Let Bubble Tea detect terminal size automatically via WindowSizeMsg
 	logger.Info("Starting app, Bubble Tea will detect terminal size...")
 
+	// Create Bubble Tea program - skip alternate screen in tmux for better pane clearing
+	var opts []tea.ProgramOption
+	if os.Getenv("TMUX") == "" {
+		opts = append(opts, tea.WithAltScreen())
+	}
+	p := tea.NewProgram(m, opts...)
+
 	// Start benchmark server in background
 	logger.Info("Starting benchmark server in background...")
 	logger.Info("DEBUG: ActivePane initialized to: %d", ui.ChatPane)
@@ -323,21 +333,16 @@ func main() {
 			if r := recover(); r != nil {
 				logger.Error("BENCHMARK SERVER PANIC: %v", r)
 				logger.Error("BENCHMARK STACK TRACE:\n%s", getStackTrace())
-				fmt.Fprintf(os.Stderr, "BENCHMARK SERVER PANIC: %v\n", r)
-				fmt.Fprintf(os.Stderr, "BENCHMARK STACK TRACE:\n%s", getStackTrace())
 			}
 		}()
-		if err := benchmarkServer.Start(); err != nil {
+		port, err := benchmarkServer.Start()
+		if err != nil {
 			logger.Error("Failed to start benchmark server: %v", err)
+		} else {
+			logger.Info("Benchmark server started on port %d", port)
+			p.Send(ui.WebUIPortMsg{Port: port})
 		}
 	}()
-
-	// Create Bubble Tea program - skip alternate screen in tmux for better pane clearing
-	var opts []tea.ProgramOption
-	if os.Getenv("TMUX") == "" {
-		opts = append(opts, tea.WithAltScreen())
-	}
-	p := tea.NewProgram(m, opts...)
 
 	// Start goroutine to bridge debug channel to tea program
 	go func() {

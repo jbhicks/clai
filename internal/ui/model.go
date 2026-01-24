@@ -126,6 +126,7 @@ type Model struct {
 	Help          help.Model
 	Keys          KeyMap
 	StatusBarText string
+	WebUIPort     int
 	ShowHelp      bool
 	ActivePane    ActivePane
 	ErrorBanner   lipgloss.Style
@@ -171,6 +172,7 @@ type (
 		Status AgentStatus
 		Code   string
 	}
+	WebUIPortMsg      struct{ Port int }
 	prdLoadedMsg      *ralph.PRD
 	prdErrorMsg       error
 	prdFileChangedMsg struct{}
@@ -580,6 +582,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prdLoadedMsg:
 		m.prd = msg
 		logger.Info("Loaded PRD with %d stories", len(msg.UserStories))
+	case WebUIPortMsg:
+		m.WebUIPort = msg.Port
+		// Update status bar text with the new port
+		themeName := getThemeName(m.Theme)
+		m.StatusBarText = fmt.Sprintf("Model: %s | Host: %s | Format: %s | Theme: %s | Web UI: http://localhost:%d",
+			m.Chat.LlmClient.Model(),
+			m.Chat.LlmClient.Host(),
+			m.Chat.LlmClient.APIFormatString(),
+			themeName,
+			m.WebUIPort)
 	default:
 		var cmd tea.Cmd
 		updatedChat, cmd := m.Chat.Update(msg)
@@ -700,11 +712,12 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		m.Help.Styles.FullDesc = lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Primary.DimForeground))
 		m.Help.Styles.FullSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Primary.DimForeground))
 		themeName := getThemeName(m.Theme)
-		m.StatusBarText = fmt.Sprintf("Model: %s | Host: %s | Format: %s | Theme: %s",
+		m.StatusBarText = fmt.Sprintf("Model: %s | Host: %s | Format: %s | Theme: %s | Web UI: http://localhost:%d",
 			m.Chat.LlmClient.Model(),
 			m.Chat.LlmClient.Host(),
 			m.Chat.LlmClient.APIFormatString(),
-			themeName)
+			themeName,
+			m.WebUIPort)
 		return nil
 	case "ctrl+n":
 		// Save current conversation before creating new one
@@ -1268,11 +1281,12 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 
 	// Update status bar text with theme name
 	themeName := getThemeName(m.Theme)
-	m.StatusBarText = fmt.Sprintf("Model: %s | Host: %s | Format: %s | Theme: %s",
+	m.StatusBarText = fmt.Sprintf("Model: %s | Host: %s | Format: %s | Theme: %s | Web UI: http://localhost:%d",
 		m.Chat.LlmClient.Model(),
 		m.Chat.LlmClient.Host(),
 		m.Chat.LlmClient.APIFormatString(),
-		themeName)
+		themeName,
+		m.WebUIPort)
 	return nil
 }
 

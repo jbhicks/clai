@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -100,13 +99,11 @@ func detectLlamaServerVersion(binaryPath string) string {
 	return ""
 }
 
-// NewModelManager creates a new model manager
-func NewModelManager(dbStore *db.Store) *ModelManager {
+// NewModelManagerWithBackgroundRefresh creates a new model manager with optional background refresh
+func NewModelManagerWithBackgroundRefresh(dbStore *db.Store, enableBackgroundRefresh bool) *ModelManager {
 	modelsDir := os.Getenv("MODELS_PATH")
-	if modelsDir == "" {
-		// Default to user's home models directory
-		homeDir, _ := os.UserHomeDir()
-		modelsDir = filepath.Join(homeDir, "models")
+	if modelsDir == "" && enableBackgroundRefresh {
+		logger.Fatal("MODELS_PATH environment variable must be set")
 	}
 
 	// Initialize backends map
@@ -140,15 +137,22 @@ func NewModelManager(dbStore *db.Store) *ModelManager {
 		stopRefresh:     make(chan struct{}),
 	}
 
-	// Start background refresh goroutine
-	go mm.backgroundRefresh()
+	// Only start background refresh if enabled (disabled for tests)
+	if enableBackgroundRefresh {
+		go mm.backgroundRefresh()
+	}
 
 	return mm
 }
 
-// NewModelManagerForTest creates a model manager without database (for testing)
+// NewModelManager creates a new model manager with background refresh enabled
+func NewModelManager(dbStore *db.Store) *ModelManager {
+	return NewModelManagerWithBackgroundRefresh(dbStore, true)
+}
+
+// NewModelManagerForTest creates a model manager without database and without background refresh (for testing)
 func NewModelManagerForTest() *ModelManager {
-	return NewModelManager(nil)
+	return NewModelManagerWithBackgroundRefresh(nil, false)
 }
 
 // backgroundRefresh periodically refreshes server status in the background
@@ -246,6 +250,11 @@ func (mm *ModelManager) notifyStateChange() {
 func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
+
+	// For tests, modelsDir may be empty - return empty list
+	if mm.modelsDir == "" {
+		return []*ModelServer{}, nil
+	}
 
 	files, err := ioutil.ReadDir(mm.modelsDir)
 	if err != nil {
@@ -500,7 +509,7 @@ func (mm *ModelManager) RefreshServerStatus() error {
 
 			// Add to servers map
 			mm.servers[modelPath] = newServer
-			log.Printf("Discovered running server for %s on port %d (PID %d)", info.modelName, info.port, info.pid)
+			logger.Info("Discovered running server for %s on port %d (PID %d)", info.modelName, info.port, info.pid)
 		}
 	}
 
@@ -519,7 +528,7 @@ func (mm *ModelManager) RefreshServerStatus() error {
 				statPath := fmt.Sprintf("/proc/%d/stat", server.PID)
 				if _, err := os.Stat(statPath); os.IsNotExist(err) {
 					// Process doesn't exist - it died
-					log.Printf("Detected dead process PID %d for %s, marking as stopped", server.PID, server.ModelName)
+					logger.Info("Detected dead process PID %d for %s, marking as stopped", server.PID, server.ModelName)
 					shouldMarkStopped = true
 				} else if statData, err := os.ReadFile(statPath); err == nil {
 					// Check if it's a zombie
@@ -527,7 +536,7 @@ func (mm *ModelManager) RefreshServerStatus() error {
 					if closeParenIdx := strings.LastIndex(statStr, ")"); closeParenIdx > 0 {
 						fields := strings.Fields(statStr[closeParenIdx+1:])
 						if len(fields) > 0 && fields[0] == "Z" {
-							log.Printf("Detected zombie process PID %d for %s, marking as stopped", server.PID, server.ModelName)
+							logger.Info("Detected zombie process PID %d for %s, marking as stopped", server.PID, server.ModelName)
 							shouldMarkStopped = true
 						}
 					}
@@ -696,7 +705,7 @@ func (mm *ModelManager) findAvailablePortForModel() (int, error) {
 		listener, err := net.Listen("tcp", addr)
 		if err == nil {
 			listener.Close()
-			log.Printf("Found available port: %d", port)
+			logger.Info("Found available port: %d", port)
 			return port, nil
 		}
 	}
@@ -753,17 +762,17 @@ func (mm *ModelManager) UpdateVRAMUsage() error {
 	processes, err := gpu.GetProcessGPUMemory()
 	if err != nil {
 		// Don't fail if GPU info isn't available, just log
-		log.Printf("UpdateVRAMUsage: Failed to get GPU process info: %v", err)
+		logger.Info("UpdateVRAMUsage: Failed to get GPU process info: %v", err)
 		return nil
 	}
 
-	log.Printf("UpdateVRAMUsage: Found %d GPU processes", len(processes))
+	logger.Info("UpdateVRAMUsage: Found %d GPU processes", len(processes))
 
 	// Create a map of PID -> VRAM usage for quick lookup
 	pidToVRAM := make(map[int]int64)
 	for _, proc := range processes {
 		pidToVRAM[proc.PID] = proc.VRAMUsed
-		log.Printf("UpdateVRAMUsage: GPU Process - PID: %d, Name: %s, VRAM: %d bytes", proc.PID, proc.ProcessName, proc.VRAMUsed)
+		logger.Info("UpdateVRAMUsage: GPU Process - PID: %d, Name: %s, VRAM: %d bytes", proc.PID, proc.ProcessName, proc.VRAMUsed)
 	}
 
 	// Update VRAM for all running servers
@@ -772,12 +781,12 @@ func (mm *ModelManager) UpdateVRAMUsage() error {
 
 	for _, server := range mm.servers {
 		if server.PID > 0 {
-			log.Printf("UpdateVRAMUsage: Checking server %s (PID: %d)", server.ModelName, server.PID)
+			logger.Info("UpdateVRAMUsage: Checking server %s (PID: %d)", server.ModelName, server.PID)
 			if vram, exists := pidToVRAM[server.PID]; exists {
 				server.VRAMUsageBytes = vram
-				log.Printf("UpdateVRAMUsage: Updated server %s VRAM to %d bytes", server.ModelName, vram)
+				logger.Info("UpdateVRAMUsage: Updated server %s VRAM to %d bytes", server.ModelName, vram)
 			} else {
-				log.Printf("UpdateVRAMUsage: No VRAM data found for PID %d", server.PID)
+				logger.Info("UpdateVRAMUsage: No VRAM data found for PID %d", server.PID)
 			}
 		}
 	}
@@ -967,7 +976,7 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 	}
 
 	pid := cmd.Process.Pid
-	log.Printf("Started model server: %s on port %d (PID: %d)", modelName, port, pid)
+	logger.Info("Started model server: %s on port %d (PID: %d)", modelName, port, pid)
 
 	// Step 3: Acquire lock briefly to update state
 	mm.mu.Lock()
@@ -1024,7 +1033,7 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 				server.Status = "running"
 				server.ErrorMessage = "" // Clear any previous errors
 				server.LastChecked = time.Now().Unix()
-				log.Printf("Model server ready: %s on port %d", server.ModelName, port)
+				logger.Info("Model server ready: %s on port %d", server.ModelName, port)
 			}
 			mm.mu.Unlock()
 			return
@@ -1049,13 +1058,13 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 					fields := strings.Fields(statStr[closeParenIdx+1:])
 					if len(fields) > 0 && fields[0] == "Z" {
 						// Process is a zombie - it crashed
-						log.Printf("Detected zombie process PID %d for %s", serverPID, modelPath)
+						logger.Info("Detected zombie process PID %d for %s", serverPID, modelPath)
 						break
 					}
 				}
 			} else {
 				// /proc/PID/stat doesn't exist - process is truly dead
-				log.Printf("Detected dead process PID %d for %s", serverPID, modelPath)
+				logger.Info("Detected dead process PID %d for %s", serverPID, modelPath)
 				break
 			}
 		}
@@ -1097,7 +1106,7 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 			server.ErrorMessage += "\n\nLast 20 lines from log:\n" + logContent
 		}
 
-		log.Printf("Model server failed to start: %s on port %d - %s", server.ModelName, port, server.ErrorMessage)
+		logger.Info("Model server failed to start: %s on port %d - %s", server.ModelName, port, server.ErrorMessage)
 	}
 	mm.mu.Unlock()
 
@@ -1133,13 +1142,13 @@ func (mm *ModelManager) StopServer(modelPath string) error {
 	if mm.isSystemdManaged(pid) {
 		serviceName := mm.getSystemdServiceName(pid)
 		if serviceName != "" {
-			log.Printf("Detected systemd-managed service: %s, using systemctl to stop", serviceName)
+			logger.Info("Detected systemd-managed service: %s, using systemctl to stop", serviceName)
 			cmd := exec.Command("systemctl", "--user", "stop", serviceName)
 			if err := cmd.Run(); err != nil {
-				log.Printf("Warning: failed to stop systemd service %s: %v, falling back to kill", serviceName, err)
+				logger.Info("Warning: failed to stop systemd service %s: %v, falling back to kill", serviceName, err)
 				// Fall through to kill if systemctl fails
 			} else {
-				log.Printf("Stopped systemd service: %s", serviceName)
+				logger.Info("Stopped systemd service: %s", serviceName)
 				stoppedViaSystemd = true
 			}
 		}
@@ -1153,7 +1162,7 @@ func (mm *ModelManager) StopServer(modelPath string) error {
 		} else if err := process.Kill(); err != nil {
 			stopErr = fmt.Errorf("failed to kill process: %w", err)
 		} else {
-			log.Printf("Stopped model server: %s (PID: %d)", modelName, pid)
+			logger.Info("Stopped model server: %s (PID: %d)", modelName, pid)
 		}
 	}
 
@@ -1198,26 +1207,26 @@ func (mm *ModelManager) DeleteModel(modelPath string) error {
 			if err := os.Remove(partPath); err != nil {
 				if os.IsNotExist(err) {
 					missingParts++
-					log.Printf("Split model part already gone: %s", partPath)
+					logger.Info("Split model part already gone: %s", partPath)
 				} else {
-					log.Printf("Warning: failed to delete split model part %s: %v", partPath, err)
+					logger.Info("Warning: failed to delete split model part %s: %v", partPath, err)
 				}
 			} else {
 				deletedParts++
-				log.Printf("Deleted split model part: %s", partPath)
+				logger.Info("Deleted split model part: %s", partPath)
 			}
 		}
 		if missingParts > 0 {
-			log.Printf("Deleted %d/%d split model parts (%d were already missing)", deletedParts, len(server.SplitAllParts), missingParts)
+			logger.Info("Deleted %d/%d split model parts (%d were already missing)", deletedParts, len(server.SplitAllParts), missingParts)
 		} else {
-			log.Printf("Deleted all %d split model parts", deletedParts)
+			logger.Info("Deleted all %d split model parts", deletedParts)
 		}
 	} else {
 		// Single file - delete it
 		if err := os.Remove(modelPath); err != nil {
 			return fmt.Errorf("failed to delete model file: %w", err)
 		}
-		log.Printf("Deleted model file: %s", modelPath)
+		logger.Info("Deleted model file: %s", modelPath)
 	}
 
 	// Remove from tracking
@@ -1358,18 +1367,18 @@ func (mm *ModelManager) GetServerByModelPath(modelPath string) (*ModelServer, bo
 
 // HandleListModels returns all available models and their server status as HTML
 func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
-	log.Println("HandleListModels: Starting...")
+	logger.Info("HandleListModels: Starting...")
 	models, err := s.modelManager.ScanAvailableModels()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to scan models: %v", err), http.StatusInternalServerError)
 		return
 	}
-	log.Println("HandleListModels: Scanned models")
+	logger.Info("HandleListModels: Scanned models")
 
 	// Get cached server status (refreshed by background goroutine every 3s)
-	log.Println("HandleListModels: Getting server status...")
+	logger.Info("HandleListModels: Getting server status...")
 	models = s.modelManager.GetServerStatus()
-	log.Println("HandleListModels: Done with setup")
+	logger.Info("HandleListModels: Done with setup")
 
 	// Get available backends for the UI
 	backends := s.modelManager.GetBackends()
@@ -1827,31 +1836,31 @@ func (s *Server) HandleStartServer(w http.ResponseWriter, r *http.Request) {
 	// Check for custom context size parameter
 	contextSize := 131072 // default
 	ctxStr := r.FormValue("context_size")
-	log.Printf("DEBUG: Received context_size parameter: '%s'", ctxStr)
+	logger.Info("DEBUG: Received context_size parameter: '%s'", ctxStr)
 	if ctxStr != "" {
 		if ctx, err := strconv.Atoi(ctxStr); err == nil && ctx > 0 {
 			contextSize = ctx
-			log.Printf("Using custom context size: %d for %s", contextSize, modelPath)
+			logger.Info("Using custom context size: %d for %s", contextSize, modelPath)
 		} else {
-			log.Printf("DEBUG: Failed to parse context_size: err=%v", err)
+			logger.Info("DEBUG: Failed to parse context_size: err=%v", err)
 		}
 	} else {
-		log.Printf("DEBUG: No context_size parameter provided, using default")
+		logger.Info("DEBUG: No context_size parameter provided, using default")
 	}
 
 	// Check for custom ngl (GPU layers) parameter
 	ngl := 999 // default = all layers
 	nglStr := r.FormValue("ngl")
-	log.Printf("DEBUG: Received ngl parameter: '%s'", nglStr)
+	logger.Info("DEBUG: Received ngl parameter: '%s'", nglStr)
 	if nglStr != "" {
 		if n, err := strconv.Atoi(nglStr); err == nil && n >= 0 {
 			ngl = n
-			log.Printf("Using custom ngl: %d for %s", ngl, modelPath)
+			logger.Info("Using custom ngl: %d for %s", ngl, modelPath)
 		} else {
-			log.Printf("DEBUG: Failed to parse ngl: err=%v", err)
+			logger.Info("DEBUG: Failed to parse ngl: err=%v", err)
 		}
 	} else {
-		log.Printf("DEBUG: No ngl parameter provided, using default (all layers)")
+		logger.Info("DEBUG: No ngl parameter provided, using default (all layers)")
 	}
 
 	// Check for backend parameter (rocm or vulkan)
@@ -1859,10 +1868,10 @@ func (s *Server) HandleStartServer(w http.ResponseWriter, r *http.Request) {
 	if backend == "" {
 		backend = "rocm" // default to ROCm
 	}
-	log.Printf("Using backend: %s for %s", backend, modelPath)
+	logger.Info("Using backend: %s for %s", backend, modelPath)
 
 	if err := s.modelManager.StartServerWithBackend(modelPath, contextSize, ngl, backend); err != nil {
-		log.Printf("Error starting server for %s: %v", modelPath, err)
+		logger.Info("Error starting server for %s: %v", modelPath, err)
 		http.Error(w, fmt.Sprintf("Failed to start server: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -1892,7 +1901,7 @@ func (s *Server) HandleStopServer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.modelManager.StopServer(modelPath); err != nil {
-		log.Printf("Error stopping server for %s: %v", modelPath, err)
+		logger.Info("Error stopping server for %s: %v", modelPath, err)
 		http.Error(w, fmt.Sprintf("Failed to stop server: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -1935,7 +1944,7 @@ func (s *Server) HandleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
 	// Read current .env content
 	content, err := os.ReadFile(envPath)
 	if err != nil {
-		log.Printf("Error reading .env: %v", err)
+		logger.Info("Error reading .env: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to read config: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -1977,12 +1986,12 @@ func (s *Server) HandleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
 	// Write back to .env
 	newContent := strings.Join(newLines, "\n")
 	if err := os.WriteFile(envPath, []byte(newContent), 0644); err != nil {
-		log.Printf("Error writing .env: %v", err)
+		logger.Info("Error writing .env: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to update config: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Set default model to %s (%s)", modelName, hostURL)
+	logger.Info("Set default model to %s (%s)", modelName, hostURL)
 
 	// Return success message
 	w.Header().Set("Content-Type", "text/html")
@@ -2025,7 +2034,7 @@ func (s *Server) HandleDeleteModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.modelManager.DeleteModel(modelPath); err != nil {
-		log.Printf("Error deleting model %s: %v", modelPath, err)
+		logger.Info("Error deleting model %s: %v", modelPath, err)
 
 		// Return error message in red box (HTMX will swap this into the page)
 		w.Header().Set("Content-Type", "text/html")
@@ -2036,7 +2045,7 @@ func (s *Server) HandleDeleteModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Successfully deleted model: %s", modelPath)
+	logger.Info("Successfully deleted model: %s", modelPath)
 
 	// Return updated server list
 	s.HandleListModels(w, r)
