@@ -1,13 +1,13 @@
 package main
 
 import (
-	"context"
-	"flag"
-	"fmt"
 	"clai/internal/benchmark"
 	"clai/internal/db"
 	"clai/internal/llm"
 	"clai/internal/logger"
+	"context"
+	"flag"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -26,12 +26,20 @@ func runBenchmarkCommand(args []string) {
 	var cliMode bool
 	var testIndex int
 	var sequential bool
+	var listTests bool
 	flag.BoolVar(&cliMode, "cli", false, "Run benchmarks in command-line mode (no web server)")
 	flag.IntVar(&testIndex, "test", -1, "Run specific test by index (0-based), use -1 for all tests")
 	flag.BoolVar(&sequential, "sequential", false, "Run tests sequentially instead of parallel (slower but more stable)")
+	flag.BoolVar(&listTests, "list", false, "List all available benchmark tests and exit")
 
 	// Parse the provided args instead of os.Args
 	flag.CommandLine.Parse(args)
+
+	// Handle list command
+	if listTests {
+		listBenchmarkTests()
+		return
+	}
 
 	// Initialize logger to file
 	logFile, err := os.Create("debug.log")
@@ -66,11 +74,13 @@ func runBenchmarkCommand(args []string) {
 
 	// Start server in a goroutine
 	go func() {
-		if err := server.StartWithPreferredPort(preferredPort); err != nil {
+		port, err := server.StartWithPreferredPort(preferredPort)
+		if err != nil {
 			logger.Error("Server error: %v", err)
 			fmt.Fprintf(os.Stderr, "Failed to start server: %v\n", err)
 			os.Exit(1)
 		}
+		logger.Info("Benchmark server started on port %d", port)
 	}()
 
 	// Wait a moment for server to start
@@ -345,7 +355,9 @@ func printBenchmarkResults(run *db.BenchmarkRun, results []db.BenchmarkResult, t
 			fmt.Printf("💥 Failure Reason: %s\n", result.FailureReason)
 		}
 
+		fmt.Println() // Add blank line before separator
 		fmt.Println("=================================================================================")
+		fmt.Println() // Add final newline for proper terminal spacing
 
 	} else {
 		// Show summary for multiple tests
@@ -482,4 +494,33 @@ func openBrowser(url string) error {
 	}
 
 	return cmd.Start()
+}
+
+// listBenchmarkTests lists all available benchmark tests
+func listBenchmarkTests() {
+	fmt.Println("=================================================================================")
+	fmt.Printf("AVAILABLE MODEL BENCHMARK TESTS (%d total)\n", len(llm.ModelBenchmarkSuite))
+	fmt.Println("=================================================================================")
+
+	for i, test := range llm.ModelBenchmarkSuite {
+		fmt.Printf("\n[%2d] %s\n", i, test.Name)
+		fmt.Printf("     Behavior: %s\n", test.ExpectedBehavior)
+		fmt.Printf("     Query: %s\n", test.Query)
+
+		if len(test.ShouldContain) > 0 {
+			fmt.Printf("     Must contain: %s\n", strings.Join(test.ShouldContain, " OR "))
+		}
+		if len(test.ShouldNotContain) > 0 {
+			fmt.Printf("     Must NOT contain: %s\n", strings.Join(test.ShouldNotContain, " OR "))
+		}
+		fmt.Printf("     Max iterations: %d, Timeout: %ds\n", test.MaxIterations, test.TimeoutSeconds)
+	}
+
+	fmt.Println("\n=================================================================================")
+	fmt.Println("USAGE:")
+	fmt.Println("  clai benchmark --list                    # List all tests")
+	fmt.Println("  clai benchmark --cli --test N            # Run specific test by index")
+	fmt.Println("  clai benchmark --cli                     # Run all tests")
+	fmt.Println("  clai benchmark                           # Start web UI")
+	fmt.Println("=================================================================================")
 }

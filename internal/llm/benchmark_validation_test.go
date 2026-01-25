@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,31 +218,42 @@ func TestBenchmarkFileExistsForAgentQuery(t *testing.T) {
 func TestBenchmarkLineCountExpectations(t *testing.T) {
 	root := getProjectRoot()
 	filePath := filepath.Join(root, "internal/llm/sample.txt")
-	content, err := os.ReadFile(filePath)
+	file, err := os.Open(filePath)
 	if err != nil {
 		t.Fatalf("Failed to read sample.txt: %v", err)
 	}
+	defer file.Close()
 
-	lines := strings.Split(string(content), "\n")
-
-	// Count lines containing the word "Line"
+	// Count lines containing word "Line"
 	lineCount := 0
-	for _, line := range lines {
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
 		if strings.Contains(line, "Line") {
 			lineCount++
 		}
 	}
 
-	// The test expects "2" as the answer
+	// The test expects "2" as answer
 	if lineCount != 2 {
 		t.Errorf("sample.txt has %d lines containing 'Line', but test expects answer '2'", lineCount)
+	}
+
+	// Reset file position to read from beginning
+	file.Seek(0, 0)
+
+	// Read all lines for verification
+	var allLines []string
+	scanner = bufio.NewScanner(file)
+	for scanner.Scan() {
+		allLines = append(allLines, scanner.Text())
 	}
 
 	// Verify which lines have "Line"
 	expectedLines := []string{"Line 3:", "Line 4:"}
 	for _, expected := range expectedLines {
 		found := false
-		for _, line := range lines {
+		for _, line := range allLines {
 			if strings.Contains(line, expected) {
 				found = true
 				break

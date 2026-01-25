@@ -1,7 +1,7 @@
 #!/bin/bash
 # Automated model download script - downloads all recommended models in background
 
-MODELS_DIR="/home/josh/models"
+MODELS_DIR="${MODELS_PATH:-/home/josh/models}"
 LOG_FILE="$MODELS_DIR/download_all.log"
 
 # Colors

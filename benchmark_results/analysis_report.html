@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Benchmark Analysis Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .stat-box { background: #f0f0f0; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #007bff; }
+        .performance-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .performance-table th, .performance-table td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        .performance-table th { background-color: #007bff; color: white; }
+        .score-high { background-color: #d4edda; }
+        .score-medium { background-color: #fff3cd; }
+        .score-low { background-color: #f8d7da; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .chart { background: #e9ecef; padding: 20px; border-radius: 5px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Benchmark Analysis Report</h1>
+        
+        <div class="stat-box">
+            <h2>Summary Statistics</h2>
+            <p><strong>Total Tests:</strong> 5</p>
+            <p><strong>Average Score:</strong> 83.36</p>
+        </div>
+
+        <div class="grid">
+            <div class="stat-box">
+                <h2>Category Breakdown</h2>
+        <p><strong>analysis:</strong> 1</p>
+        <p><strong>advanced:</strong> 1</p>
+        <p><strong>basic:</strong> 1</p>
+        <p><strong>coding:</strong> 1</p>
+        <p><strong>reasoning:</strong> 1</p>
+            </div>
+
+            <div class="stat-box">
+                <h2>Status Breakdown</h2>
+        <p><strong>passed:</strong> 5</p>
+            </div>
+        </div>
+
+        <h2>Top Performers</h2>
+        <table class="performance-table">
+            <tr><th>Test Name</th><th>Category</th><th>Score</th><th>Duration</th><th>Conclusion</th></tr>
+        <tr class="score-high">
+            <td>Basic Arithmetic Operations</td><td>basic</td><td>95.50</td><td>2.3s</td><td>Model performed exceptionally well on basic arithmetic tasks with high accuracy and speed.</td>
+        </tr>        <tr class="score-high">
+            <td>Code Generation Python</td><td>coding</td><td>88.70</td><td>4.2s</td><td>Generated clean, syntactically correct Python code with good structure and logic.</td>
+        </tr>        <tr class="score-medium">
+            <td>Complex Mathematical Reasoning</td><td>reasoning</td><td>82.30</td><td>5.7s</td><td>Model showed solid performance on complex reasoning tasks though with occasional logical gaps.</td>
+        </tr>        <tr class="score-medium">
+            <td>Text Analysis NLP</td><td>analysis</td><td>79.10</td><td>3.8s</td><td>Demonstrated strong natural language understanding and text processing capabilities.</td>
+        </tr>        <tr class="score-low">
+            <td>Multi-step Problem Solving</td><td>advanced</td><td>71.20</td><td>8.9s</td><td>Completed multi-step problems but required more time and occasional hints for optimal solutions.</td>
+        </tr>    </table>
+
+    </div>
+</body>
+</html>

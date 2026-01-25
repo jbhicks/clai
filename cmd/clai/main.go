@@ -6,7 +6,6 @@ import (
 	"clai/internal/llm"
 	"clai/internal/logger"
 	"clai/internal/ui"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -87,6 +86,26 @@ func main() {
 
 	// Only for TUI mode - initialize logging and screen clearing
 	startTime := time.Now()
+
+	// Initialize logging early
+	tuiLogFile, err := os.Create("tui.log")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open tui.log for writing: %v\n", err)
+		os.Exit(1)
+	}
+	logger.InitNamed("tui", tuiLogFile)
+	// Set default logger to TUI logger for backward compatibility
+	logger.Init(tuiLogFile)
+
+	// Initialize benchmark logger to benchmark.log
+	benchmarkLogFile, err := os.Create("benchmark.log")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open benchmark.log for writing: %v\n", err)
+		os.Exit(1)
+	}
+	logger.InitNamed("benchmark", benchmarkLogFile)
+
+	// Trigger restart test
 	logger.Info("CLAI startup beginning")
 
 	// Clear screen immediately on startup to remove any previous output (especially in tmux)
@@ -104,9 +123,11 @@ func main() {
 	}()
 	// Check for TTY (interactive terminal) by trying to open /dev/tty
 	// Skip TTY check in development environments if CLAI_DEV is set
-	if os.Getenv("CLAI_DEV") != "1" {
+	// Also skip in tmux environments
+	if os.Getenv("CLAI_DEV") != "1" && os.Getenv("TMUX") == "" {
 		ttyCheck, err := os.Open("/dev/tty")
 		if err != nil {
+			logger.Error("Error: This program requires an interactive terminal (TTY). Exiting.")
 			fmt.Fprintln(os.Stderr, "Error: This program requires an interactive terminal (TTY). Exiting.")
 			os.Exit(1)
 		}
@@ -116,23 +137,27 @@ func main() {
 
 	// Detect terminal size for TUI (works in tmux/screen)
 	terminalWidth, terminalHeight := 80, 24
+	logger.Info("Default terminal size: %dx%d", terminalWidth, terminalHeight)
 	if linesOut, err := exec.Command("tput", "lines").Output(); err == nil {
 		if colsOut, err := exec.Command("tput", "cols").Output(); err == nil {
 			if h, err := strconv.Atoi(strings.TrimSpace(string(linesOut))); err == nil {
 				if w, err := strconv.Atoi(strings.TrimSpace(string(colsOut))); err == nil {
 					terminalWidth, terminalHeight = w, h
+					logger.Info("Detected terminal size from tput: %dx%d", terminalWidth, terminalHeight)
+				} else {
+					logger.Warn("Failed to parse cols output: %s", string(colsOut))
 				}
+			} else {
+				logger.Warn("Failed to parse lines output: %s", string(linesOut))
 			}
+		} else {
+			logger.Warn("Failed to get cols: %v", err)
 		}
+	} else {
+		logger.Warn("Failed to get lines: %v", err)
 	}
 	logger.Info("Terminal size detection completed in %v (size: %dx%d)", time.Since(startTime), terminalWidth, terminalHeight)
-	// Log to debug.log, overwrite each run
-	logFile, err := os.Create("debug.log")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to open debug.log for writing: %v\n", err)
-		os.Exit(1)
-	}
-	logger.Init(logFile)
+
 	logger.Info("Logger initialization completed in %v", time.Since(startTime))
 
 	// Handle SIGINT for clean shutdown
@@ -142,7 +167,8 @@ func main() {
 		<-sigChan
 		logger.Info("Received signal, shutting down gracefully...")
 		ui.StopDebugServer()
-		logFile.Close()
+		tuiLogFile.Close()
+		benchmarkLogFile.Close()
 		// Reset terminal state before exit
 		fmt.Print("\x1b[2J\x1b[H\x1b[?1049l") // Clear screen, reset cursor, exit alt screen
 		os.Exit(0)
@@ -159,7 +185,7 @@ func main() {
 	}
 	systemPrompt := os.Getenv("SYSTEM_PROMPT")
 
-	flag.Parse()
+	logger.Info("About to create LLM client")
 	llmClient := llm.NewClient(host, modelName, systemPrompt)
 	logger.Info("LLM client creation completed in %v", time.Since(startTime))
 
@@ -172,6 +198,7 @@ func main() {
 	defer store.Close()
 	logger.Info("Database initialization completed in %v", time.Since(startTime))
 
+	logger.Info("About to fetch model info")
 	modelInfo, err := llmClient.GetModelInfo()
 	var assistantIntro string
 	if err != nil {
@@ -197,6 +224,8 @@ func main() {
 		}
 	}
 	logger.Info("Model info fetching completed in %v", time.Since(startTime))
+
+	logger.Info("About to create UI components")
 
 	availableThemes := ui.GetAvailableThemes()
 	theme := availableThemes[0]
@@ -317,32 +346,30 @@ func main() {
 	// Let Bubble Tea detect terminal size automatically via WindowSizeMsg
 	logger.Info("Starting app, Bubble Tea will detect terminal size...")
 
-	// Create Bubble Tea program - skip alternate screen in tmux for better pane clearing
+	logger.Info("About to create Bubble Tea program")
+	// Create Bubble Tea program - use alternate screen for proper TUI rendering
 	var opts []tea.ProgramOption
-	if os.Getenv("TMUX") == "" {
-		opts = append(opts, tea.WithAltScreen())
-	}
+	opts = append(opts, tea.WithAltScreen())
+	logger.Info("Using alternate screen for TUI rendering")
 	p := tea.NewProgram(m, opts...)
+	logger.Info("Bubble Tea program created successfully")
 
-	// Start benchmark server in background
-	logger.Info("Starting benchmark server in background...")
-	logger.Info("DEBUG: ActivePane initialized to: %d", ui.ChatPane)
+	logger.Info("About to create benchmark server")
 	benchmarkServer := benchmark.NewServer(store)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Error("BENCHMARK SERVER PANIC: %v", r)
-				logger.Error("BENCHMARK STACK TRACE:\n%s", getStackTrace())
-			}
-		}()
-		port, err := benchmarkServer.Start()
-		if err != nil {
-			logger.Error("Failed to start benchmark server: %v", err)
-		} else {
-			logger.Info("Benchmark server started on port %d", port)
-			p.Send(ui.WebUIPortMsg{Port: port})
-		}
-	}()
+	logger.Info("Benchmark server created successfully")
+
+	logger.Info("About to start benchmark server")
+	port, err := benchmarkServer.Start()
+	if err != nil {
+		logger.Warn("Failed to start benchmark server: %v", err)
+	} else {
+		logger.Info("Benchmark server started on port %d", port)
+	}
+
+	logger.Info("About to start background refresh")
+	// Start background refresh now that benchmark server is running
+	benchmarkServer.StartBackgroundRefresh()
+	logger.Info("Background refresh started")
 
 	// Start goroutine to bridge debug channel to tea program
 	go func() {
@@ -353,23 +380,40 @@ func main() {
 		}
 	}()
 
+	logger.Info("About to start debug server")
 	if err := ui.StartDebugServer(debugChan); err != nil {
 		logger.Warn("Failed to start debug server: %v", err)
 	}
+
+	logger.Info("Debug server started, about to clear screen")
 
 	// Clear screen immediately before starting TUI
 	fmt.Print("\x1b[2J\x1b[H")
 	logger.Info("All initialization completed in %v, starting TUI", time.Since(startTime))
 
+	logger.Info("About to call p.Run()")
+	view := m.View()
+	logger.Info("Initial View() returned: %d characters", len(view))
+	if len(view) > 0 {
+		previewLen := 200
+		if len(view) < 200 {
+			previewLen = len(view)
+		}
+		logger.Info("First %d chars of view: %q", previewLen, view[:previewLen])
+	} else {
+		logger.Info("View() returned empty string!")
+	}
 	if _, err := p.Run(); err != nil {
 		logger.Error("Fatal error: %v", err)
 		ui.StopDebugServer()
-		logFile.Close()
+		tuiLogFile.Close()
+		benchmarkLogFile.Close()
 		os.Exit(1)
 	}
 
 	ui.StopDebugServer()
-	logFile.Close()
+	tuiLogFile.Close()
+	benchmarkLogFile.Close()
 }
 
 // Trigger rebuild

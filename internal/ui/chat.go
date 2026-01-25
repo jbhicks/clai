@@ -411,9 +411,7 @@ func (c *ChatModel) rebuildContentIfDirty() {
 			}
 			displayContent := cleanContent
 			const maxToolOutputLength = 1000
-			if len(displayContent) > maxToolOutputLength {
-				displayContent = displayContent[:maxToolOutputLength] + "\n... (output truncated)"
-			}
+			displayContent = truncateForWidth(displayContent, maxToolOutputLength) + "\n... (output truncated)"
 			toolHeader := themeStyles.ToolBadge.Render(languageIcon + " " + header)
 			bubble := themeStyles.ToolMessage.Width(bubbleWidth).Render(toolHeader + "\n" + displayContent)
 			// Pad each line to full chat width

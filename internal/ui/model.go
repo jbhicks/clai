@@ -225,10 +225,10 @@ func TailLogFileCmd(m *Model) tea.Cmd {
 }
 
 func tailLogFile(logChan chan<- tea.Msg, done <-chan struct{}) {
-	// Truncate debug.log on startup to avoid reading old content
-	os.WriteFile("debug.log", []byte{}, 0644)
+	// Truncate tui.log on startup to avoid reading old content
+	os.WriteFile("tui.log", []byte{}, 0644)
 
-	f, err := os.Open("debug.log")
+	f, err := os.Open("tui.log")
 	if err == nil {
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
@@ -236,7 +236,7 @@ func tailLogFile(logChan chan<- tea.Msg, done <-chan struct{}) {
 		}
 		f.Close()
 	}
-	t, err := os.Stat("debug.log")
+	t, err := os.Stat("tui.log")
 	var offset int64 = 0
 	if err == nil {
 		offset = t.Size()
@@ -246,7 +246,7 @@ func tailLogFile(logChan chan<- tea.Msg, done <-chan struct{}) {
 		case <-done:
 			return
 		default:
-			file, err := os.Open("debug.log")
+			file, err := os.Open("tui.log")
 			if err != nil {
 				time.Sleep(1 * time.Second)
 				continue
@@ -762,10 +762,13 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "up":
 		if m.Chat.Textarea.Focused() {
-			if len(m.Chat.QueryHistory) > 0 && m.Chat.HistoryIndex < len(m.Chat.QueryHistory) {
+			if len(m.Chat.QueryHistory) > 0 && m.Chat.HistoryIndex < len(m.Chat.QueryHistory)-1 {
 				m.Chat.HistoryIndex++
-				m.Chat.Textarea.SetValue(m.Chat.QueryHistory[len(m.Chat.QueryHistory)-m.Chat.HistoryIndex])
-				m.Chat.Textarea.CursorEnd()
+				index := len(m.Chat.QueryHistory) - m.Chat.HistoryIndex
+				if index >= 0 && index < len(m.Chat.QueryHistory) {
+					m.Chat.Textarea.SetValue(m.Chat.QueryHistory[index])
+					m.Chat.Textarea.CursorEnd()
+				}
 			}
 		} else {
 			m.Chat.SmoothScrollTarget = max(m.Chat.Viewport.YOffset-1, 0)
@@ -776,8 +779,12 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		}
 	case "down":
 		if m.Chat.Textarea.Focused() {
-			if m.Chat.HistoryIndex > 1 {
+			if m.Chat.HistoryIndex > 0 {
 				m.Chat.HistoryIndex--
+				// Ensure bounds are safe - don't go below 0
+				if m.Chat.HistoryIndex < 0 {
+					m.Chat.HistoryIndex = 0
+				}
 				m.Chat.Textarea.SetValue(m.Chat.QueryHistory[len(m.Chat.QueryHistory)-m.Chat.HistoryIndex])
 				m.Chat.Textarea.CursorEnd()
 			} else if m.Chat.HistoryIndex == 1 {
@@ -1327,61 +1334,64 @@ func (m *Model) renderBriefingRoom() string {
 }
 
 func (m *Model) View() string {
-	// Active pane styling
-	themeStyles := GetThemeStyles(m.Theme)
-	briefingPaneStyle := themeStyles.MainPane
-	chatPaneStyle := themeStyles.MainPane
-	logPaneStyle := themeStyles.MainPane
+	styles := GetThemeStyles(m.Theme)
 
-	if m.ActivePane == BriefingRoom {
-		briefingPaneStyle = briefingPaneStyle.Copy().BorderForeground(lipgloss.Color(m.Theme.Theme.Bright.Yellow))
-	} else if m.ActivePane == ChatPane {
-		chatPaneStyle = chatPaneStyle.Copy().BorderForeground(lipgloss.Color(m.Theme.Theme.Bright.Yellow))
+	// Build main content based on active pane
+	var mainContent string
+
+	switch m.ActivePane {
+	case ChatPane:
+		// Left: Chat pane
+		chatView := m.Chat.View()
+
+		// Right: Agent status (top) and log (bottom) stacked vertically
+		agentStatusView := m.AgentStatus.View()
+		logView := m.Log.View()
+
+		// Join agent status and log vertically for right pane
+		rightPane := lipgloss.JoinVertical(lipgloss.Left, agentStatusView, logView)
+
+		// Join left and right panes horizontally
+		mainContent = lipgloss.JoinHorizontal(lipgloss.Top, chatView, rightPane)
+
+	case BriefingRoom:
+		// Left: Briefing room content (stories/PRD)
+		briefingView := m.renderBriefingRoom()
+
+		// Right: Agent status (top) and log (bottom) stacked vertically
+		agentStatusView := m.AgentStatus.View()
+		logView := m.Log.View()
+
+		// Join agent status and log vertically for right pane
+		rightPane := lipgloss.JoinVertical(lipgloss.Left, agentStatusView, logView)
+
+		// Join left and right panes horizontally
+		mainContent = lipgloss.JoinHorizontal(lipgloss.Top, briefingView, rightPane)
+
+	case LogPane:
+		// Full-screen log viewer
+		mainContent = m.Log.View()
 	}
 
-	// Render briefing room pane (left, full height)
-	briefingViewInner := m.renderBriefingRoom()
-	briefingView := briefingPaneStyle.Render(briefingViewInner)
+	// Render status bar
+	statusBar := styles.StatusBar.Width(m.Width).Render(m.StatusBarText)
 
-	// Render chat pane (right, full height)
-	chatViewInner := m.Chat.View()
-	chatView := chatPaneStyle.Render(chatViewInner)
+	// Join main content and status bar vertically
+	layout := lipgloss.JoinVertical(lipgloss.Left, mainContent, statusBar)
 
-	// For now, combine briefing and chat horizontally
-	mainView := lipgloss.JoinHorizontal(lipgloss.Top, briefingView, chatView)
-
-	// If log viewer is active (ctrl-l pressed), show it instead
-	if m.ActivePane == LogPane {
-		// Render log pane (full width, full height)
-		logContent := m.Log.View()
-		lines := strings.Split(logContent, "\n")
-		var renderedLines []string
-		for _, line := range lines {
-			renderedLines = append(renderedLines, themeStyles.BackgroundWrapper.Width(m.Width).Render(line))
-		}
-		if m.Height > 0 {
-			for len(renderedLines) < m.Height-1 { // -1 for status bar
-				renderedLines = append(renderedLines, themeStyles.BackgroundWrapper.Width(m.Width).Render(""))
-			}
-		}
-		logContentFilled := strings.Join(renderedLines, "\n")
-		logPane := logPaneStyle.Copy().BorderForeground(lipgloss.Color(m.Theme.Theme.Bright.Yellow)).Render(logContentFilled)
-		mainView = logPane
-	}
-
-	statusBarRendered := themeStyles.StatusBar.Width(m.Width).Render(m.StatusBarText)
-	layout := lipgloss.JoinVertical(lipgloss.Left, mainView, statusBarRendered)
-
+	// Add error banner if needed
 	if m.ShowError && m.ErrorMessage != "" {
-		layout = lipgloss.JoinVertical(lipgloss.Left, layout, m.ErrorBanner.Width(m.Width).Render(m.ErrorMessage))
+		errorBanner := m.ErrorBanner.Width(m.Width).Render(m.ErrorMessage)
+		layout = lipgloss.JoinVertical(lipgloss.Left, layout, errorBanner)
 	}
 
+	// Add help overlay if needed
 	if m.ShowHelp {
-		chatPaneWidth := int(float64(m.Width) * m.Layout.HelpPaneWidthRatio)
-		themeStyles := GetThemeStyles(m.Theme)
-		helpBox := themeStyles.HelpBox.Width(max(chatPaneWidth/2, 10)).Render(m.Help.View(m.Keys))
-		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, helpBox)
+		helpContent := m.Help.View(m.Keys)
+		helpBox := styles.HelpBox.Render(helpContent)
+		// Place help box centered over the layout
+		layout = lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, helpBox)
 	}
-	return layout
 
+	return layout
 }

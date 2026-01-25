@@ -171,11 +171,8 @@ func (v *AgentStatusView) View() string {
 		content.WriteString("\n")
 
 		if v.Status.Thought != "" {
-			maxLen := v.Width - 10
-			thought := v.Status.Thought
-			if maxLen > 3 && len(thought) > maxLen {
-				thought = thought[:maxLen-3] + "..."
-			}
+			maxLen := safeWidth(v.Width, 10)
+			thought := truncateForWidth(v.Status.Thought, maxLen)
 			content.WriteString(labelStyle.Render("Task: "))
 			content.WriteString(themeStyles.LogValue.Render(thought))
 			content.WriteString("\n")
@@ -225,11 +222,8 @@ func (v *AgentStatusView) View() string {
 				actionStyle = themeStyles.LogDim
 			}
 
-			maxLen := v.Width - 8
-			desc := action.Description
-			if len(desc) > maxLen {
-				desc = desc[:maxLen-3] + "..."
-			}
+			maxLen := safeWidth(v.Width, 8)
+			desc := truncateForWidth(action.Description, maxLen)
 
 			line := fmt.Sprintf("  %s %s", icon, actionStyle.Render(desc))
 			content.WriteString(line)
@@ -247,10 +241,7 @@ func (v *AgentStatusView) View() string {
 
 	if len(v.History) > 0 && v.CurrentCode == nil {
 		content.WriteString("\n")
-		padCount := v.Width - 4
-		if padCount < 0 {
-			padCount = 0
-		}
+		padCount := safeWidth(v.Width, 4)
 		divider := strings.Repeat("━", padCount)
 		content.WriteString(themeStyles.LogDim.Render(divider))
 		content.WriteString("\n")
@@ -266,18 +257,8 @@ func (v *AgentStatusView) View() string {
 			task := v.History[i]
 			elapsed := formatElapsed(time.Since(task.CompletedAt))
 
-			maxLen := v.Width - 20
-			if maxLen < 0 {
-				maxLen = 0
-			}
-			thought := task.Thought
-			if len(thought) > maxLen {
-				if maxLen > 3 {
-					thought = thought[:maxLen-3] + "..."
-				} else {
-					thought = thought[:maxLen]
-				}
-			}
+			maxLen := safeWidth(v.Width, 20)
+			thought := truncateForWidth(task.Thought, maxLen)
 
 			line := fmt.Sprintf("▸ %s (%d) - %s",
 				themeStyles.LogDim.Render(thought),
@@ -328,10 +309,7 @@ func (v *AgentStatusView) renderCodeBlock(maxHeight int) string {
 	headerText := headerStyle.Render(fmt.Sprintf("%s Executing %s", statusIcon, v.CurrentCode.Language))
 
 	// Safe inner width for header and box (avoid negative values)
-	innerWidth := v.Width - 4
-	if innerWidth < 0 {
-		innerWidth = 0
-	}
+	innerWidth := safeWidth(v.Width, 4)
 
 	headerWrapper := lipgloss.NewStyle().
 		Width(innerWidth).
@@ -354,17 +332,8 @@ func (v *AgentStatusView) renderCodeBlock(maxHeight int) string {
 	var codeContent strings.Builder
 	for _, line := range codeLines {
 		// Safe truncation based on available width
-		maxLineLen := v.Width - 13
-		if maxLineLen < 0 {
-			maxLineLen = 0
-		}
-		if len(line) > maxLineLen {
-			if maxLineLen > 3 {
-				line = line[:maxLineLen-3] + "..."
-			} else {
-				line = line[:maxLineLen]
-			}
-		}
+		maxLineLen := safeWidth(v.Width, 13)
+		line = truncateForWidth(line, maxLineLen)
 		codeContent.WriteString(codeStyle.Render(line))
 		codeContent.WriteString("\n")
 	}

@@ -1,0 +1,13 @@
+{
+  "bubbletea-ui-dev": {
+    "description": "Bubble Tea TUI development guidance and documentation access",
+    "tools": [
+      "bubbletea_docs",
+      "lipgloss_docs", 
+      "layout_calculator",
+      "responsive_helpers",
+      "debug_strategies",
+      "color_schemes"
+    ]
+  }
+}

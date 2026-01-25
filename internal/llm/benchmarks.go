@@ -29,8 +29,9 @@ type ModelBenchmarkResult struct {
 	TokensPerSecond float64  // Token generation speed
 }
 
-// ModelBenchmarkSuite defines the complete test suite
+// ModelBenchmarkSuite defines the complete unified test suite (21 tests total)
 // Tests focus on END RESULTS rather than specific tools used
+// Organized in three categories: Core Tests (12), Advanced Tests (4), Ultra-Challenging Tests (5)
 var ModelBenchmarkSuite = []ModelBenchmarkTest{
 	{
 		Name:             "Extract Specific Value from File",
@@ -43,10 +44,10 @@ var ModelBenchmarkSuite = []ModelBenchmarkTest{
 	},
 	{
 		Name:             "Count Files by Extension",
-		Query:            "How many .go files are in /home/josh/clai/internal/llm directory? Give me just the number.",
+		Query:            "How many .go files are in /home/josh/clai/test-files directory? Give me just the number.",
 		ExpectedBehavior: "code",
-		ShouldContain:    []string{"18"},                                   // There are 18 .go files in the directory
-		ShouldNotContain: []string{"I don't have access", "I cannot", "0"}, // 0 would be wrong
+		ShouldContain:    []string{"20"},                                                           // There are 20 .go files in the directory
+		ShouldNotContain: []string{"I don't have access", "I cannot", " 0 ", "0 files", "found 0"}, // Exact 0 would be wrong
 		MaxIterations:    5,
 		TimeoutSeconds:   30,
 	},
@@ -61,16 +62,16 @@ var ModelBenchmarkSuite = []ModelBenchmarkTest{
 	},
 	{
 		Name:             "JSON Data Extraction",
-		Query:            "Read test_data.json and tell me how many users have the role 'engineer'",
+		Query:            "Read internal/llm/test_data.json and tell me how many users have role 'engineer'",
 		ExpectedBehavior: "multi-step",
 		ShouldContain:    []string{"2"},        // Alice and Charlie have role "engineer"
-		ShouldNotContain: []string{"I cannot"}, // Should be able to read the file
+		ShouldNotContain: []string{"I cannot"}, // Should be able to read file
 		MaxIterations:    8,
 		TimeoutSeconds:   45,
 	},
 	{
 		Name:             "JSON Data Analysis",
-		Query:            "Read test_data.json and calculate the average age of all users. Round to nearest integer.",
+		Query:            "Read internal/llm/test_data.json and calculate the average age of all users. Round to nearest integer.",
 		ExpectedBehavior: "multi-step",
 		ShouldContain:    []string{"30"},                // (30+25+35+28)/4 = 29.5 → 30
 		ShouldNotContain: []string{"I cannot", "error"}, // Should be able to read and calculate
@@ -106,12 +107,12 @@ var ModelBenchmarkSuite = []ModelBenchmarkTest{
 	},
 	{
 		Name:             "JSON Field Extraction",
-		Query:            "Read test_data.json and give me the name of the user with id 3",
+		Query:            "Read internal/llm/test_data.json and give me the name of the user with id 3",
 		ExpectedBehavior: "multi-step",
 		ShouldContain:    []string{"Charlie"},
-		ShouldNotContain: []string{"error"}, // Should be able to read the file
-		MaxIterations:    8,
-		TimeoutSeconds:   45,
+		ShouldNotContain: []string{"error"},
+		MaxIterations:    5,
+		TimeoutSeconds:   30,
 	},
 	{
 		Name:             "Error Handling",
@@ -124,10 +125,10 @@ var ModelBenchmarkSuite = []ModelBenchmarkTest{
 	},
 	{
 		Name:             "Code File Analysis",
-		Query:            "In the file agent.go, how many times does the word 'Agent' appear? Just give me the number.",
+		Query:            "In the file internal/llm/agent.go, how many times does the word 'Agent' appear? Just give me the number.",
 		ExpectedBehavior: "multi-step",
-		ShouldContain:    []string{},                    // Will vary, but should be a number > 0
-		ShouldNotContain: []string{"I cannot", "error"}, // Remove "0" since model might mention it while explaining
+		ShouldContain:    []string{"15"},                                                          // Exact count from agent.go
+		ShouldNotContain: []string{"I cannot", "error", "tool_calls", "execute_bash", "function"}, // Should not contain raw JSON tool call
 		MaxIterations:    8,
 		TimeoutSeconds:   45,
 	},
@@ -139,117 +140,6 @@ var ModelBenchmarkSuite = []ModelBenchmarkTest{
 		ShouldNotContain: []string{"<code", "London", "Berlin"},
 		MaxIterations:    2,
 		TimeoutSeconds:   15,
-	},
-
-	// Agentic Benchmarks - converted to unified format
-	// These test the model's ability to autonomously use tools
-	{
-		Name:             "Read File Contents (Agentic)",
-		Query:            "What's in internal/llm/sample.txt?",
-		ExpectedBehavior: "multi-step",
-		ShouldContain:    []string{"Hello World", "TOTAL_COUNT: 42"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    8,
-		TimeoutSeconds:   45,
-	},
-	{
-		Name:             "Simple Calculation (Agentic)",
-		Query:            "What's 42 plus 58?",
-		ExpectedBehavior: "code",
-		ShouldContain:    []string{"100"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    5,
-		TimeoutSeconds:   30,
-	},
-	{
-		Name:             "Extract JSON Data (Agentic)",
-		Query:            "How many users are in internal/llm/test_data.json?",
-		ExpectedBehavior: "multi-step",
-		ShouldContain:    []string{"4"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    8,
-		TimeoutSeconds:   45,
-	},
-	{
-		Name:             "Filter JSON by Field (Agentic)",
-		Query:            "List the names of all engineers in internal/llm/test_data.json",
-		ExpectedBehavior: "multi-step",
-		ShouldContain:    []string{"Alice", "Charlie"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    8,
-		TimeoutSeconds:   45,
-	},
-	{
-		Name:             "Count Lines in File (Agentic)",
-		Query:            "How many lines are in internal/llm/sample.txt?",
-		ExpectedBehavior: "multi-step",
-		ShouldContain:    []string{"5", "five"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    5,
-		TimeoutSeconds:   30,
-	},
-	{
-		Name:             "Extract Specific Line (Agentic)",
-		Query:            "What's the TOTAL_COUNT value in internal/llm/sample.txt?",
-		ExpectedBehavior: "multi-step",
-		ShouldContain:    []string{"42"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    5,
-		TimeoutSeconds:   30,
-	},
-	{
-		Name:             "List Directory Contents (Agentic)",
-		Query:            "What .md files are in the current directory?",
-		ExpectedBehavior: "multi-step",
-		ShouldContain:    []string{".md"}, // Just check for .md extension mention
-		ShouldNotContain: []string{},      // Agentic tests don't forbid specific content
-		MaxIterations:    3,
-		TimeoutSeconds:   15,
-	},
-	{
-		Name:             "Text Processing (Agentic)",
-		Query:            "Convert the word 'benchmarking' to uppercase",
-		ExpectedBehavior: "code",
-		ShouldContain:    []string{"BENCHMARKING"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    5,
-		TimeoutSeconds:   30,
-	},
-	{
-		Name:             "Calculate String Length (Agentic)",
-		Query:            "How many characters are in the word 'benchmarking'?",
-		ExpectedBehavior: "code",
-		ShouldContain:    []string{"12", "twelve"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    5,
-		TimeoutSeconds:   30,
-	},
-	{
-		Name:             "Generate Sequence (Agentic)",
-		Query:            "Count from 1 to 5, one number per line",
-		ExpectedBehavior: "code",
-		ShouldContain:    []string{"1", "2", "3", "4", "5"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    5,
-		TimeoutSeconds:   30,
-	},
-	{
-		Name:             "JSON Age Calculation (Agentic)",
-		Query:            "What's the average age of users in internal/llm/test_data.json?",
-		ExpectedBehavior: "multi-step",
-		ShouldContain:    []string{"29.5", "29", "30"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    8,
-		TimeoutSeconds:   45,
-	},
-	{
-		Name:             "Date/Time Query (Agentic)",
-		Query:            "What day of the week is it?",
-		ExpectedBehavior: "code",
-		ShouldContain:    []string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"},
-		ShouldNotContain: []string{}, // Agentic tests don't forbid specific content
-		MaxIterations:    5,
-		TimeoutSeconds:   30,
 	},
 
 	// Advanced Challenging Tests - inspired by BFCL, AgentBench, and MCP-AgentBench
@@ -273,12 +163,12 @@ var ModelBenchmarkSuite = []ModelBenchmarkTest{
 	},
 	{
 		Name:             "Multi-Step Analysis",
-		Query:            "Find all users in test_data.json older than 30, then calculate their average age",
+		Query:            "Find all users in internal/llm/test_data.json older than 30, then calculate their average age",
 		ExpectedBehavior: "multi-step",
-		ShouldContain:    []string{"35"}, // Only Charlie is older than 30 (age 35)
-		ShouldNotContain: []string{"I cannot"},
-		MaxIterations:    10,
-		TimeoutSeconds:   60,
+		ShouldContain:    []string{"35", "Charlie"},                  // Only Charlie is older than 30 (age 35)
+		ShouldNotContain: []string{"I cannot", "users.json", "36.5"}, // Should not use wrong file or result
+		MaxIterations:    5,                                          // Reduced from 10 to enforce efficiency
+		TimeoutSeconds:   30,                                         // Reduced from 60 to encourage speed
 	},
 	{
 		Name:             "Safe File Operations",

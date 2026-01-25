@@ -3,7 +3,7 @@
 # notify_downloads_complete.sh
 # Monitors model downloads and notifies when complete
 
-MODELS_DIR="/home/josh/models"
+MODELS_DIR="${MODELS_PATH:-/home/josh/models}"
 LOG_FILE="$MODELS_DIR/download_all.log"
 CLAI_BIN="/home/josh/clai/clai"
 

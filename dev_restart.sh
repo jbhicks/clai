@@ -1,34 +1,42 @@
 #!/bin/bash
-# CLAI Development Watch Script using entr
-# Simple version that entr calls to restart CLAI
+# CLAI Development restart script - handles cleanup and startup
 
-# Clean up any existing processes
-pkill -TERM -f "go run ./cmd/clai" 2>/dev/null || true
-pkill -TERM -f "make run" 2>/dev/null || true
-pkill -TERM -f "./clai benchmark" 2>/dev/null || true
-for pid in $(ps aux | grep "/clai" | grep -v "grep" | awk '{print $2}'); do
-    kill -TERM $pid 2>/dev/null || true
-done
+echo "Restarting CLAI..."
 
-# Clean up socket
+# Clean up existing processes
+pkill -f "go run ./cmd/clai" 2>/dev/null || true
 rm -f /tmp/clai.sock 2>/dev/null || true
 
-# Truncate logs
-truncate -s 0 debug.log 2>/dev/null || true
-truncate -s 0 benchmark.log 2>/dev/null || true
+# Reset logs
+truncate -s 0 debug.log benchmark.log 2>/dev/null || true
 
-# Reset terminal (just in case)
-# Note: CLAI handles its own terminal setup, so minimal reset here
-stty sane 2>/dev/null || true
+# Set environment
+export CLAI_DEV=1
 
-echo "Rebuilding and restarting CLAI..."
-# Run CLAI in background - entr will wait for this script to exit
-make run-simple &
-CLAI_PID=$!
+# Load environment variables from .env file
+if [ -f .env ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+else
+    echo "Warning: .env file not found"
+fi
 
-# Wait a moment for CLAI to start
-sleep 2
+# Check if we're in a suitable terminal environment
+# Check for TTY (interactive terminal) by trying to open /dev/tty
+# Allow tmux sessions and development mode
+if [ "$CLAI_DEV" != "1" ] && [ ! -t 0 ] && [ -z "$TMUX" ]; then
+    echo "Warning: CLAI requires an interactive terminal (TTY). Consider using tmux:"
+    echo "  tmux new-session -d -s clai-dev 'make dev-tmux'"
+    echo "  tmux attach -t clai-dev"
+    exit 1
+fi
 
-# Exit so entr can wait for next file change
-# CLAI continues running in background
-exit 0
+# Check if we're in tmux (interactive development) or regular entr (auto-reload)
+if [ -n "$TMUX" ]; then
+    # In tmux: Run CLAI in foreground
+    echo "Running CLAI in tmux (foreground mode)..."
+    go run -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S) -X main.gitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X main.buildCount=$(git rev-list --count HEAD 2>/dev/null || echo 0) -X main.buildRand=$RANDOM" ./cmd/clai
+else
+    # With entr: Run CLAI in foreground (entr handles restarts)
+    echo "Running CLAI with entr auto-reload..."
+    go run -ldflags "-X main.buildTime=$(date -u +%Y%m%d-%H%M%S) -X main.gitCommit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X main.buildCount=$(git rev-list --count HEAD 2>/dev/null || echo 0) -X main.buildRand=$RANDOM" ./cmd/clai
+fi

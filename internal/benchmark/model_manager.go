@@ -1,6 +1,8 @@
 package benchmark
 
 import (
+	"bufio"
+	"bytes"
 	"clai/internal/db"
 	"clai/internal/gpu"
 	"clai/internal/logger"
@@ -85,8 +87,9 @@ func detectLlamaServerVersion(binaryPath string) string {
 
 	// Parse output like "version: 6867 (a45e1cd6)"
 	// Extract the build number and commit hash
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+	for scanner.Scan() {
+		line := scanner.Text()
 		if strings.HasPrefix(line, "version:") {
 			// Extract version info
 			parts := strings.Fields(line)
@@ -101,6 +104,7 @@ func detectLlamaServerVersion(binaryPath string) string {
 
 // NewModelManagerWithBackgroundRefresh creates a new model manager with optional background refresh
 func NewModelManagerWithBackgroundRefresh(dbStore *db.Store, enableBackgroundRefresh bool) *ModelManager {
+	logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Starting creation")
 	modelsDir := os.Getenv("MODELS_PATH")
 	if modelsDir == "" && enableBackgroundRefresh {
 		logger.Fatal("MODELS_PATH environment variable must be set")
@@ -110,6 +114,7 @@ func NewModelManagerWithBackgroundRefresh(dbStore *db.Store, enableBackgroundRef
 	backends := make(map[string]*BackendInfo)
 
 	// Check for ROCm backend
+	logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Checking ROCm backend")
 	rocmPath := "/home/josh/llama.cpp-rocm-wmma/build/bin/llama-server"
 	if version := detectLlamaServerVersion(rocmPath); version != "" {
 		backends["rocm"] = &BackendInfo{
@@ -117,9 +122,13 @@ func NewModelManagerWithBackgroundRefresh(dbStore *db.Store, enableBackgroundRef
 			Version: version,
 			Type:    "rocm",
 		}
+		logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Found ROCm backend: %s", version)
+	} else {
+		logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: ROCm backend not found")
 	}
 
 	// Check for Vulkan backend
+	logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Checking Vulkan backend")
 	vulkanPath := "/home/josh/llama.cpp-vulkan/build/bin/llama-server"
 	if version := detectLlamaServerVersion(vulkanPath); version != "" {
 		backends["vulkan"] = &BackendInfo{
@@ -127,6 +136,9 @@ func NewModelManagerWithBackgroundRefresh(dbStore *db.Store, enableBackgroundRef
 			Version: version,
 			Type:    "vulkan",
 		}
+		logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Found Vulkan backend: %s", version)
+	} else {
+		logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Vulkan backend not found")
 	}
 
 	mm := &ModelManager{
@@ -137,11 +149,18 @@ func NewModelManagerWithBackgroundRefresh(dbStore *db.Store, enableBackgroundRef
 		stopRefresh:     make(chan struct{}),
 	}
 
+	logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: ModelManager struct created")
+
 	// Only start background refresh if enabled (disabled for tests)
 	if enableBackgroundRefresh {
+		logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Starting background refresh")
 		go mm.backgroundRefresh()
+		logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Background refresh goroutine started")
+	} else {
+		logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Background refresh disabled")
 	}
 
+	logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Creation complete")
 	return mm
 }
 
@@ -157,31 +176,47 @@ func NewModelManagerForTest() *ModelManager {
 
 // backgroundRefresh periodically refreshes server status in the background
 func (mm *ModelManager) backgroundRefresh() {
+	logger.InfoNamed("benchmark", "backgroundRefresh: Starting background refresh")
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
 	// Do an initial refresh immediately
+	logger.InfoNamed("benchmark", "backgroundRefresh: Doing initial refresh")
 	mm.RefreshServerStatus()
+	logger.InfoNamed("benchmark", "backgroundRefresh: Initial RefreshServerStatus complete")
 	mm.UpdateVRAMUsage()
+	logger.InfoNamed("benchmark", "backgroundRefresh: Initial UpdateVRAMUsage complete")
 	mm.UpdateCPUAndMemory()
+	logger.InfoNamed("benchmark", "backgroundRefresh: Initial UpdateCPUAndMemory complete")
 	mm.notifyStateChange()
+	logger.InfoNamed("benchmark", "backgroundRefresh: Initial notifyStateChange complete")
 
+	logger.InfoNamed("benchmark", "backgroundRefresh: Initial refresh complete, starting ticker loop")
 	for {
 		select {
 		case <-ticker.C:
+			logger.InfoNamed("benchmark", "backgroundRefresh: Ticker fired, doing refresh")
 			mm.RefreshServerStatus()
+			logger.InfoNamed("benchmark", "backgroundRefresh: Periodic RefreshServerStatus complete")
 			mm.UpdateVRAMUsage()
+			logger.InfoNamed("benchmark", "backgroundRefresh: Periodic UpdateVRAMUsage complete")
 			mm.UpdateCPUAndMemory()
+			logger.InfoNamed("benchmark", "backgroundRefresh: Periodic UpdateCPUAndMemory complete")
 			mm.notifyStateChange()
+			logger.InfoNamed("benchmark", "backgroundRefresh: Periodic notifyStateChange complete")
 		case <-mm.stopRefresh:
+			logger.InfoNamed("benchmark", "backgroundRefresh: Received stop signal, exiting")
 			return
 		}
 	}
 }
 
-// Stop gracefully stops the background refresh goroutine
-func (mm *ModelManager) Stop() {
-	close(mm.stopRefresh)
+// StartBackgroundRefresh starts the background refresh goroutine
+// Can be called after initialization is complete to avoid interfering with startup
+func (mm *ModelManager) StartBackgroundRefresh() {
+	logger.InfoNamed("benchmark", "StartBackgroundRefresh: Starting background refresh")
+	go mm.backgroundRefresh()
+	logger.InfoNamed("benchmark", "StartBackgroundRefresh: Background refresh goroutine started")
 }
 
 // GetBackends returns available llama-server backends with version info
@@ -363,6 +398,7 @@ func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 // RefreshServerStatus checks all running servers and updates their status
 // This function does NOT hold locks during I/O operations to avoid blocking other operations
 func (mm *ModelManager) RefreshServerStatus() error {
+	logger.InfoNamed("benchmark", "RefreshServerStatus: Starting refresh")
 	// Step 1: Scan all ports WITHOUT holding any locks (this is slow I/O)
 	type portInfo struct {
 		port        int
@@ -375,6 +411,7 @@ func (mm *ModelManager) RefreshServerStatus() error {
 	var activePortsInfo []portInfo
 
 	// Step 1a: First, check ports of servers we know about
+	logger.InfoNamed("benchmark", "RefreshServerStatus: Checking known ports")
 	mm.mu.RLock()
 	knownPorts := make([]int, 0, len(mm.servers))
 	for _, server := range mm.servers {
@@ -385,9 +422,12 @@ func (mm *ModelManager) RefreshServerStatus() error {
 	mm.mu.RUnlock()
 
 	// Check known ports
+	logger.InfoNamed("benchmark", "RefreshServerStatus: Found %d known ports to check", len(knownPorts))
 	for _, port := range knownPorts {
+		logger.InfoNamed("benchmark", "RefreshServerStatus: Checking known port %d", port)
 		url := fmt.Sprintf("http://localhost:%d/v1/models", port)
 		if !mm.checkServerHealth(url) {
+			logger.InfoNamed("benchmark", "RefreshServerStatus: Port %d not healthy, skipping", port)
 			continue
 		}
 
@@ -402,11 +442,14 @@ func (mm *ModelManager) RefreshServerStatus() error {
 		if info.modelName != "" {
 			activePortsInfo = append(activePortsInfo, info)
 		}
+		logger.InfoNamed("benchmark", "RefreshServerStatus: Finished checking port %d", port)
 	}
 
 	// Step 1b: Scan for any servers we don't know about (8081-8180 range)
 	// This handles externally started servers or missed registrations
+	logger.InfoNamed("benchmark", "RefreshServerStatus: Scanning unknown ports 8081-8180")
 	for port := 8081; port <= 8180; port++ {
+		logger.InfoNamed("benchmark", "RefreshServerStatus: Checking unknown port %d", port)
 		// Skip if we already checked this port
 		alreadyChecked := false
 		for _, knownPort := range knownPorts {
@@ -416,11 +459,13 @@ func (mm *ModelManager) RefreshServerStatus() error {
 			}
 		}
 		if alreadyChecked {
+			logger.InfoNamed("benchmark", "RefreshServerStatus: Port %d already checked, skipping", port)
 			continue
 		}
 
 		url := fmt.Sprintf("http://localhost:%d/v1/models", port)
 		if !mm.checkServerHealth(url) {
+			logger.InfoNamed("benchmark", "RefreshServerStatus: Port %d not healthy, skipping", port)
 			continue
 		}
 
@@ -435,7 +480,10 @@ func (mm *ModelManager) RefreshServerStatus() error {
 		if info.modelName != "" {
 			activePortsInfo = append(activePortsInfo, info)
 		}
+		logger.InfoNamed("benchmark", "RefreshServerStatus: Finished checking port %d", port)
 	}
+
+	logger.InfoNamed("benchmark", "RefreshServerStatus: Finished scanning ports, found %d active ports", len(activePortsInfo))
 
 	// Step 2: Now acquire lock and update server status quickly
 	mm.mu.Lock()
@@ -608,10 +656,15 @@ func (mm *ModelManager) findPIDForPort(port int) int {
 	}
 
 	// lsof can return multiple PIDs (one per line), find the llama-server process
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	for _, line := range lines {
+	scanner := bufio.NewScanner(strings.NewReader(strings.TrimSpace(string(output))))
+	var firstPID int
+	for scanner.Scan() {
+		line := scanner.Text()
 		var pid int
 		if _, err := fmt.Sscanf(line, "%d", &pid); err == nil && pid > 0 {
+			if firstPID == 0 {
+				firstPID = pid // Store first PID as fallback
+			}
 			// Check if this PID is a llama-server process
 			cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 			if err == nil && strings.Contains(string(cmdline), "llama-server") {
@@ -621,10 +674,8 @@ func (mm *ModelManager) findPIDForPort(port int) int {
 	}
 
 	// Fallback: return the first PID if no llama-server found
-	if len(lines) > 0 {
-		var pid int
-		fmt.Sscanf(lines[0], "%d", &pid)
-		return pid
+	if firstPID > 0 {
+		return firstPID
 	}
 
 	return 0
@@ -758,39 +809,43 @@ func (mm *ModelManager) getModelMetadataFromPort(port int) {
 
 // UpdateVRAMUsage updates VRAM usage for all running servers
 func (mm *ModelManager) UpdateVRAMUsage() error {
+	logger.InfoNamed("benchmark", "UpdateVRAMUsage: Starting VRAM usage update")
 	// Get all GPU processes
+	logger.InfoNamed("benchmark", "UpdateVRAMUsage: Getting GPU process info")
 	processes, err := gpu.GetProcessGPUMemory()
 	if err != nil {
 		// Don't fail if GPU info isn't available, just log
-		logger.Info("UpdateVRAMUsage: Failed to get GPU process info: %v", err)
+		logger.InfoNamed("benchmark", "UpdateVRAMUsage: Failed to get GPU process info: %v", err)
 		return nil
 	}
 
-	logger.Info("UpdateVRAMUsage: Found %d GPU processes", len(processes))
+	logger.InfoNamed("benchmark", "UpdateVRAMUsage: Found %d GPU processes", len(processes))
 
 	// Create a map of PID -> VRAM usage for quick lookup
 	pidToVRAM := make(map[int]int64)
 	for _, proc := range processes {
 		pidToVRAM[proc.PID] = proc.VRAMUsed
-		logger.Info("UpdateVRAMUsage: GPU Process - PID: %d, Name: %s, VRAM: %d bytes", proc.PID, proc.ProcessName, proc.VRAMUsed)
+		logger.InfoNamed("benchmark", "UpdateVRAMUsage: GPU Process - PID: %d, Name: %s, VRAM: %d bytes", proc.PID, proc.ProcessName, proc.VRAMUsed)
 	}
 
 	// Update VRAM for all running servers
+	logger.InfoNamed("benchmark", "UpdateVRAMUsage: Updating server VRAM data")
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
 
 	for _, server := range mm.servers {
 		if server.PID > 0 {
-			logger.Info("UpdateVRAMUsage: Checking server %s (PID: %d)", server.ModelName, server.PID)
+			logger.InfoNamed("benchmark", "UpdateVRAMUsage: Checking server %s (PID: %d)", server.ModelName, server.PID)
 			if vram, exists := pidToVRAM[server.PID]; exists {
 				server.VRAMUsageBytes = vram
-				logger.Info("UpdateVRAMUsage: Updated server %s VRAM to %d bytes", server.ModelName, vram)
+				logger.InfoNamed("benchmark", "UpdateVRAMUsage: Updated server %s VRAM to %d bytes", server.ModelName, vram)
 			} else {
-				logger.Info("UpdateVRAMUsage: No VRAM data found for PID %d", server.PID)
+				logger.InfoNamed("benchmark", "UpdateVRAMUsage: No VRAM data found for PID %d", server.PID)
 			}
 		}
 	}
 
+	logger.InfoNamed("benchmark", "UpdateVRAMUsage: VRAM usage update complete")
 	return nil
 }
 
@@ -856,15 +911,17 @@ func (mm *ModelManager) isSystemdManaged(pid int) bool {
 // getSystemdServiceName extracts the systemd service name for a PID
 func (mm *ModelManager) getSystemdServiceName(pid int) string {
 	cgroupPath := fmt.Sprintf("/proc/%d/cgroup", pid)
-	data, err := ioutil.ReadFile(cgroupPath)
+	file, err := os.Open(cgroupPath)
 	if err != nil {
 		return ""
 	}
+	defer file.Close()
 
 	// Parse cgroup to extract service name
 	// Format: 0::/user.slice/user-1000.slice/user@1000.service/app.slice/llama-server.service
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
 		if strings.Contains(line, ".service") {
 			parts := strings.Split(line, "/")
 			for _, part := range parts {
@@ -1080,18 +1137,26 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 		// Try to read the last 20 lines of the log file to get the actual error
 		logFile := filepath.Join("/tmp", fmt.Sprintf("llama-server-%d.log", port))
 		logContent := ""
-		if data, err := os.ReadFile(logFile); err == nil {
-			lines := strings.Split(string(data), "\n")
-			// Get last 20 non-empty lines
-			var lastLines []string
-			for i := len(lines) - 1; i >= 0 && len(lastLines) < 20; i-- {
-				line := strings.TrimSpace(lines[i])
+		if file, err := os.Open(logFile); err == nil {
+			defer file.Close()
+
+			// Read all lines and keep last 20 non-empty lines
+			var allLines []string
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
 				if line != "" {
-					lastLines = append([]string{line}, lastLines...)
+					allLines = append(allLines, line)
 				}
 			}
-			if len(lastLines) > 0 {
-				logContent = strings.Join(lastLines, "\n")
+
+			// Get last 20 lines if we have more
+			if len(allLines) > 20 {
+				allLines = allLines[len(allLines)-20:]
+			}
+
+			if len(allLines) > 0 {
+				logContent = strings.Join(allLines, "\n")
 			}
 		}
 
@@ -1942,15 +2007,20 @@ func (s *Server) HandleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read current .env content
-	content, err := os.ReadFile(envPath)
+	file, err := os.Open(envPath)
 	if err != nil {
 		logger.Info("Error reading .env: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to read config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	defer file.Close()
 
 	// Parse and update environment variables
-	lines := strings.Split(string(content), "\n")
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
 	modelName := filepath.Base(modelPath)
 	// Remove .gguf extension for cleaner model name
 	if strings.HasSuffix(modelName, ".gguf") {
@@ -2073,9 +2143,17 @@ func (s *Server) HandleServerLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read log file
-	content, err := ioutil.ReadFile(logFile)
-	if err != nil {
+	// Read log file using scanner for memory efficiency
+	var content []byte
+	if file, err := os.Open(logFile); err == nil {
+		defer file.Close()
+		var lines []string
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
+		}
+		content = []byte(strings.Join(lines, "\n"))
+	} else {
 		http.Error(w, fmt.Sprintf("Failed to read log file: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -2116,14 +2194,19 @@ func (s *Server) HandleServerLogsStream(w http.ResponseWriter, r *http.Request) 
 
 	// Send initial log content
 	sendLogUpdate := func() error {
-		data, err := os.ReadFile(logFile)
-		if err != nil {
+		var lines []string
+		if file, err := os.Open(logFile); err == nil {
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				lines = append(lines, scanner.Text())
+			}
+		} else {
 			// File might not exist yet if server is just starting
-			data = []byte("Waiting for server to start...")
+			lines = []string{"Waiting for server to start..."}
 		}
 
 		// Get last 50 lines
-		lines := strings.Split(string(data), "\n")
 		startIdx := 0
 		if len(lines) > 50 {
 			startIdx = len(lines) - 50

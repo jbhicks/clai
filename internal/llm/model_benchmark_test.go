@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"clai/internal/logger"
 )
 
 // Note: ModelBenchmarkTest, ModelBenchmarkResult, and ModelBenchmarkSuite
@@ -51,14 +53,30 @@ func runSingleBenchmark(t *testing.T, client LLMClientInterface, test ModelBench
 
 **Critical rules:**
 1. When you need to read files, execute commands, or perform system operations, use code execution by wrapping code in XML tags:
-   <code language="bash">cat /path/to/file</code>
-   <code language="python">print("Hello")</code>
-   <code language="javascript">console.log("Hello")</code>
+    <code language="bash">cat /path/to/file</code>
+    <code language="python">print("Hello")</code>
+    <code language="javascript">console.log("Hello")</code>
 
-2. DO NOT use echo/print/console.log to narrate your thinking. Only use them for actual task output.
-3. You have filesystem access. Read files directly instead of asking the user.
-4. Execute commands as needed to complete tasks.
-5. Keep code blocks focused and purposeful.
+2. **Efficiency requirements:**
+   - Complete tasks in minimum number of steps (ideally 1-2 iterations)
+   - Combine multiple operations into single code blocks when possible
+   - Avoid unnecessary file exploration or directory listings
+   - Read files directly when you know the path - don't search for alternatives
+
+3. **File handling:**
+   - When a task mentions a specific file (e.g., "test_data.json"), use that exact file
+   - Don't search for other files unless the specified file doesn't exist
+   - Prefer the specified file even if other similar files exist
+
+4. **Error handling:**
+   - If a tool execution fails, fix the specific issue and retry
+   - Don't abandon the approach after one error
+   - Check JSON string escaping for Python code
+
+5. **Code execution:**
+   - DO NOT use echo/print/console.log to narrate your thinking. Only use them for actual task output.
+   - Keep code blocks focused and purposeful.
+   - Validate code syntax before execution.
 
 Answer questions clearly and execute code when needed to provide accurate information.`
 
@@ -411,6 +429,11 @@ func getSuccessRateColor(rate float64) string {
 
 // TestModelBenchmark_CurrentModel runs the full benchmark suite against the current model
 // Run with: go test -v -run TestModelBenchmark_CurrentModel ./internal/llm
+func TestMain(m *testing.M) {
+	// Initialize logger for benchmark tests
+	logger.Init(os.Stdout)
+}
+
 func TestModelBenchmark_CurrentModel(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping benchmark test in short mode")

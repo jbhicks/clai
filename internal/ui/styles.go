@@ -13,6 +13,62 @@ import (
 	"github.com/muesli/termenv"
 )
 
+// safeWidth ensures width-derived arithmetic is clamped to non-negative values
+func safeWidth(width, sub int) int {
+	result := width - sub
+	if result < 0 {
+		result = 0
+	}
+	return result
+}
+
+// truncateForWidth safely truncates text to fit within maxLen using rune-aware slicing
+func truncateForWidth(text string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+
+	// Convert to runes for Unicode-safe truncation
+	runes := []rune(text)
+	if len(runes) <= maxLen {
+		return text
+	}
+
+	// If we have room for ellipsis, add it
+	if maxLen > 3 {
+		return string(runes[:maxLen-3]) + "..."
+	}
+
+	// No room for ellipsis, just truncate
+	return string(runes[:maxLen])
+}
+
+// truncateForWidthWithEllipsis safely truncates text with ellipsis when possible
+func truncateForWidthWithEllipsis(text string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
+
+	// Convert to runes for Unicode-safe truncation
+	runes := []rune(text)
+	if len(runes) <= maxLen {
+		return text
+	}
+
+	// Always add ellipsis if truncating
+	if maxLen > 3 {
+		return string(runes[:maxLen-3]) + "..."
+	} else if maxLen == 3 {
+		return "..."
+	} else if maxLen == 2 {
+		return ".."
+	} else if maxLen == 1 {
+		return "."
+	}
+
+	return ""
+}
+
 // Custom theme definitions with vibrant colors
 var DraculaTheme = theme.Theme{
 	Primary: theme.Primary{

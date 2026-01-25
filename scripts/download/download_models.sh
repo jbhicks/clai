@@ -1,7 +1,7 @@
 #!/bin/bash
 # Download recommended models for tool calling and compare them
 
-MODELS_DIR="/home/josh/models"
+MODELS_DIR="${MODELS_PATH:-/home/josh/models}"
 DOWNLOAD_LOG="$MODELS_DIR/download.log"
 
 # Colors

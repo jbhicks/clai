@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const (
@@ -28,6 +29,15 @@ const (
 3. You have filesystem access. Read files directly instead of asking the user.
 4. Execute commands as needed to complete tasks.
 5. Keep code blocks focused and purposeful.
+
+**Efficiency Guidelines:**
+6. Avoid redundant operations - don't make multiple identical tool calls
+   - Before reading a file, check if you've already read it in this conversation
+   - Don't repeat the same command with identical parameters
+   - Consolidate multiple operations when possible (e.g., combine file reads)
+7. Plan your approach: Think through what tools you need before making calls
+   - Make one comprehensive call instead of multiple small calls
+   - Use a single tool call to accomplish multiple related tasks when feasible
 
 **Default behavior when uncertain:**
 - If asked about project status, plans, or "what's next", read TODO.md, README.md, or AGENTS.md
@@ -56,10 +66,12 @@ type LLMClientInterface interface {
 }
 
 type Client struct {
-	host         string
-	model        string
-	systemPrompt string
-	apiFormat    APIFormat
+	host           string
+	model          string
+	systemPrompt   string
+	apiFormat      APIFormat
+	circuitBreaker *CircuitBreaker
+	backoff        *ExponentialBackoff
 }
 
 func NewClient(host, model, systemPrompt string) *Client {
@@ -67,58 +79,94 @@ func NewClient(host, model, systemPrompt string) *Client {
 		systemPrompt = defaultSystemPrompt
 	}
 
-	c := &Client{
-		host:         host,
-		model:        model,
-		systemPrompt: systemPrompt,
-		apiFormat:    FormatUnknown,
+	// For Qwen models, append tool schemas to system prompt with specific optimizations
+	if strings.Contains(strings.ToLower(model), "qwen") {
+		// Add Qwen-specific efficiency instructions
+		systemPrompt = systemPrompt + "\n\n**Qwen-Specific Instructions:**\n- CRITICAL: Make one tool call at a time when possible\n- Avoid making multiple identical tool calls in the same response\n- If you need to read the same file multiple times, read it once and reuse the information\n- Consolidate operations into single comprehensive tool calls\n- Review your planned tool calls to eliminate duplicates before sending\n"
+
+		tools := tools.GetAvailableTools()
+		if len(tools) > 0 {
+			toolsJSON, err := json.Marshal(tools)
+			if err == nil {
+				systemPrompt = systemPrompt + "\n\nYou have access to tools. When you need to use a tool, respond with a JSON object in this exact format:\n\n{\"tool_calls\": [{\"id\": \"call_id\", \"type\": \"function\", \"function\": {\"name\": \"tool_name\", \"arguments\": \"{\\\"param\\\": \\\"value\\\"}\" }}]}\n\nAvailable tools:\n" + string(toolsJSON)
+			}
+		}
 	}
+
+	c := &Client{
+		host:           host,
+		model:          model,
+		systemPrompt:   systemPrompt,
+		apiFormat:      FormatUnknown,
+		circuitBreaker: NewCircuitBreaker(fmt.Sprintf("llm-%s-%s", host, model), 3, 30*time.Second),
+		backoff:        NewExponentialBackoff(100*time.Millisecond, 5*time.Second, 3),
+	}
+	logger.Debug("[LLM] About to detect API format")
 	c.detectAPIFormat()
+	logger.Debug("[LLM] API format detection completed: %d", c.apiFormat)
 	return c
 }
 
 func (c *Client) detectAPIFormat() {
-	testMessages := []Message{{Role: "user", Content: "hi"}}
-	reqBody := Request{
-		Model:    c.model,
-		Messages: testMessages,
-		Stream:   false,
-	}
+	logger.Debug("[FORMAT-DETECT] Starting API format detection for host %s", c.host)
 
-	jsonBody, err := json.Marshal(reqBody)
+	err := c.backoff.RetryWithBackoff(func() error {
+		testMessages := []Message{{Role: "user", Content: "hi"}}
+		reqBody := Request{
+			Model:    c.model,
+			Messages: testMessages,
+			Stream:   false,
+		}
+
+		jsonBody, err := json.Marshal(reqBody)
+		if err != nil {
+			logger.Debug("[FORMAT-DETECT] Failed to marshal test request: %v", err)
+			c.apiFormat = FormatOllama
+			return nil // Don't retry formatting errors
+		}
+
+		logger.Debug("[FORMAT-DETECT] Sending test request to %s", c.host+"/api/chat")
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Post(c.host+"/api/chat", "application/json", bytes.NewBuffer(jsonBody))
+		if err != nil {
+			logger.Debug("[FORMAT-DETECT] Failed to send test request: %v", err)
+			return err // Retry on network errors
+		}
+		defer resp.Body.Close()
+
+		logger.Debug("[FORMAT-DETECT] Received response with status %s", resp.Status)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			logger.Debug("[FORMAT-DETECT] Failed to read response: %v", err)
+			c.apiFormat = FormatOllama
+			return nil // Don't retry read errors
+		}
+
+		logger.Debug("[FORMAT-DETECT] Response body length: %d", len(body))
+		var ollamaResp Response
+		if err := json.Unmarshal(body, &ollamaResp); err == nil && ollamaResp.Message.Content != "" {
+			logger.Debug("[FORMAT-DETECT] Detected Ollama native format")
+			c.apiFormat = FormatOllama
+			return nil // Success, don't retry
+		}
+
+		var openAIResp OpenAIStreamChunk
+		if err := json.Unmarshal(body, &openAIResp); err == nil && len(openAIResp.Choices) > 0 {
+			logger.Debug("[FORMAT-DETECT] Detected OpenAI-compatible format")
+			c.apiFormat = FormatOpenAI
+			return nil // Success, don't retry
+		}
+
+		// Default to Ollama if format detection fails
+		logger.Debug("[FORMAT-DETECT] Could not detect format, defaulting to Ollama")
+		c.apiFormat = FormatOllama
+		return nil // Success, don't retry
+	})
+
+	// If all retries failed, default to Ollama
 	if err != nil {
-		logger.Debug("[FORMAT-DETECT] Failed to marshal test request: %v", err)
+		logger.Debug("[FORMAT-DETECT] All retries failed, defaulting to Ollama: %v", err)
 		c.apiFormat = FormatOllama
-		return
-	}
-
-	resp, err := http.Post(c.host+"/api/chat", "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		logger.Debug("[FORMAT-DETECT] Failed to send test request: %v", err)
-		c.apiFormat = FormatOllama
-		return
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		logger.Debug("[FORMAT-DETECT] Failed to read response: %v", err)
-		c.apiFormat = FormatOllama
-		return
-	}
-
-	var ollamaResp Response
-	if err := json.Unmarshal(body, &ollamaResp); err == nil && ollamaResp.Message.Content != "" {
-		logger.Debug("[FORMAT-DETECT] Detected Ollama native format")
-		c.apiFormat = FormatOllama
-		return
-	}
-
-	var openAIResp OpenAIStreamChunk
-	if err := json.Unmarshal(body, &openAIResp); err == nil && len(openAIResp.Choices) > 0 {
-		logger.Debug("[FORMAT-DETECT] Detected OpenAI-compatible format")
-		c.apiFormat = FormatOpenAI
-		return
 	}
 
 	logger.Debug("[FORMAT-DETECT] Final API format for model %s: %d (%s)", c.model, c.apiFormat, c.APIFormatString())
@@ -210,6 +258,11 @@ type OpenAIRequestWithTools struct {
 }
 
 func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- string, includeSystemPrompt bool) (Response, error) {
+	// Check circuit breaker before making requests
+	if state, failures, _ := c.circuitBreaker.Stats(); state == "open" {
+		return Response{}, fmt.Errorf("LLM circuit breaker is open due to %d consecutive failures", failures)
+	}
+
 	var allMessages []Message
 	if includeSystemPrompt && c.systemPrompt != "" {
 		allMessages = append([]Message{{Role: "system", Content: c.systemPrompt}}, messages...)
@@ -246,11 +299,21 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Connection", "keep-alive")
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: 4 * time.Minute, // Prevent 524 timeouts
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+			DisableCompression:  false,
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.Debug("[LLM-STREAM-ERROR] HTTP request failed: %v", err)
+		c.circuitBreaker.recordResult(err)
 		return Response{}, err
 	}
 
@@ -262,7 +325,14 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 		logger.Debug("[LLM-STREAM] Goroutine started, apiFormat=%d (2=OpenAI)", c.apiFormat)
 
 		scanner := bufio.NewScanner(resp.Body)
-		scanner.Buffer(make([]byte, 4096), bufio.MaxScanTokenSize)
+		scanner.Buffer(make([]byte, 32*1024), 1024*1024) // 32KB initial, 1MB max for better performance
+
+		// Check for successful response before starting stream reading
+		if resp.StatusCode != http.StatusOK {
+			logger.Error("[LLM-STREAM] Unexpected status code: %d", resp.StatusCode)
+			streamChan <- fmt.Sprintf("Error: HTTP %d", resp.StatusCode)
+			return
+		}
 
 		if c.apiFormat == FormatOpenAI {
 			logger.Info("[LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)")
@@ -283,6 +353,7 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 
 				if data == "[DONE]" {
 					logger.Info("[LLM-OPENAI-STREAM] Received [DONE] marker")
+					c.circuitBreaker.recordResult(nil) // Record success
 					return
 				}
 
@@ -306,9 +377,11 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 			}
 			if err := scanner.Err(); err != nil {
 				logger.Info("[LLM-OPENAI-ERROR] Scanner error: %v", err)
+			} else {
+				logger.Info("[LLM-OPENAI-STREAM] Scanner finished without error (may indicate empty response or connection closed)")
 			}
-			logger.Info("[LLM-OPENAI-STREAM] Stream reading completed")
 		} else {
+			// Ollama/Hermes-style streaming
 			for scanner.Scan() {
 				raw := scanner.Bytes()
 				var llmResp Response
@@ -324,7 +397,16 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 					streamChan <- llmResp.Message.Content
 				}
 
+				// Handle tool calls in Ollama response (Hermes-style)
+				if len(llmResp.Message.ToolCalls) > 0 {
+					for _, toolCall := range llmResp.Message.ToolCalls {
+						toolCallJSON, _ := json.Marshal(toolCall)
+						streamChan <- string(toolCallJSON)
+					}
+				}
+
 				if llmResp.Done {
+					c.circuitBreaker.recordResult(nil) // Record success
 					return
 				}
 			}
@@ -335,12 +417,29 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 }
 
 func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, streamChan chan<- string, includeSystemPrompt bool) (Response, error) {
+	// Check circuit breaker before making requests
+	if state, failures, _ := c.circuitBreaker.Stats(); state == "open" {
+		return Response{}, fmt.Errorf("LLM circuit breaker is open due to %d consecutive failures", failures)
+	}
+
 	var allMessages []Message
 
 	// Prepare system prompt with tools for Hermes-style (Qwen) or include tools in request for OpenAI-style
 	systemPrompt := c.systemPrompt
 	if includeSystemPrompt && c.systemPrompt != "" {
-		if len(tools) > 0 && c.apiFormat == FormatOllama && !strings.Contains(strings.ToLower(c.model), "qwen") {
+		if c.apiFormat == FormatOpenAI && len(tools) > 0 {
+			// For OpenAI-compatible models with tools, modify system prompt to prioritize tool usage
+			systemPrompt = strings.Replace(c.systemPrompt,
+				`**Critical rules:**
+1. When you need to read files, execute commands, or perform system operations, use code execution by wrapping code in XML tags:
+   <code language="bash">cat /path/to/file</code>
+   <code language="python">print("Hello")</code>
+   <code language="javascript">console.log("Hello")</code>`,
+				`**Critical rules:**
+1. When you need to read files, execute commands, or perform system operations, use the available tools by making function calls.
+2. Do not use XML code tags - use the provided tools instead.`,
+				1)
+		} else if len(tools) > 0 && c.apiFormat == FormatOllama && !strings.Contains(strings.ToLower(c.model), "qwen") {
 			toolsJSON, err := json.Marshal(tools)
 			if err != nil {
 				return Response{}, fmt.Errorf("failed to marshal tools: %w", err)
@@ -356,6 +455,7 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 	var reqBody interface{}
 	if c.apiFormat == FormatOpenAI {
 		var requestTools []Tool
+		// Include tools for OpenAI-compatible models, but skip Qwen (they get tools via system prompt)
 		if !strings.Contains(strings.ToLower(c.model), "qwen") {
 			requestTools = tools
 		}
@@ -388,11 +488,21 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Connection", "keep-alive")
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: 4 * time.Minute, // Prevent 524 timeouts
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+			DisableCompression:  false,
+		},
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.Debug("[LLM-STREAM-ERROR] HTTP request failed: %v", err)
+		c.circuitBreaker.recordResult(err)
 		return Response{}, err
 	}
 
@@ -404,7 +514,14 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 		logger.Debug("[LLM-STREAM] Goroutine started for tools, apiFormat=%d (2=OpenAI)", c.apiFormat)
 
 		scanner := bufio.NewScanner(resp.Body)
-		scanner.Buffer(make([]byte, 4096), bufio.MaxScanTokenSize)
+		scanner.Buffer(make([]byte, 32*1024), 1024*1024) // 32KB initial, 1MB max for better performance
+
+		// Check for successful response before starting stream reading
+		if resp.StatusCode != http.StatusOK {
+			logger.Error("[LLM-STREAM] Unexpected status code: %d", resp.StatusCode)
+			streamChan <- fmt.Sprintf("Error: HTTP %d", resp.StatusCode)
+			return
+		}
 
 		if c.apiFormat == FormatOpenAI {
 			logger.Info("[LLM-OPENAI-STREAM] Starting OpenAI SSE response reading (with tools)")
@@ -421,6 +538,7 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 
 				if data == "[DONE]" {
 					logger.Info("[LLM-OPENAI-STREAM] Stream complete")
+					c.circuitBreaker.recordResult(nil) // Record success
 					return
 				}
 
@@ -511,8 +629,14 @@ func (c *Client) APIFormatString() string {
 	}
 }
 
+// CircuitBreakerStatus returns the current status of the circuit breaker
+func (c *Client) CircuitBreakerStatus() (state string, failures int, lastFailTime time.Time) {
+	return c.circuitBreaker.Stats()
+}
+
 func (c *Client) HealthCheck() error {
-	resp, err := http.Get(c.host + "/api/tags")
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(c.host + "/api/tags")
 	if err != nil {
 		return fmt.Errorf("failed to connect to Ollama at %s: %w", c.host, err)
 	}
@@ -558,7 +682,8 @@ func (c *Client) GetModelInfo() (*ShowModelResponse, error) {
 		return nil, err
 	}
 
-	resp, err := http.Post(c.host+"/api/show", "application/json", bytes.NewBuffer(jsonBody))
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(c.host+"/api/show", "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, err
 	}

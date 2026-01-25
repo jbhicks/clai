@@ -1,11 +1,15 @@
 package gpu
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // GPUInfo represents GPU statistics
@@ -37,9 +41,10 @@ func getGPUProductNames() (map[string]string, error) {
 	// Parse output like:
 	// GPU[0]		: Card Series: 		Radeon 8060S Graphics
 	productNames := make(map[string]string)
-	lines := strings.Split(string(output), "\n")
+	scanner := bufio.NewScanner(bytes.NewReader(output))
 
-	for _, line := range lines {
+	for scanner.Scan() {
+		line := scanner.Text()
 		// Look for lines like "GPU[0]		: Card Series: 		Radeon 8060S Graphics"
 		if strings.Contains(line, "Card Series:") {
 			parts := strings.Split(line, ":")
@@ -321,7 +326,9 @@ func GetProcessGPUMemory() ([]ProcessGPUInfo, error) {
 	}
 
 	// Run rocm-smi --showpids to get per-process VRAM usage
-	cmd := exec.Command("rocm-smi", "--showpids")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "rocm-smi", "--showpids")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get process info: %w", err)

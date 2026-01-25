@@ -23,8 +23,12 @@ func TestHandleStartServer_ReturnsUpdatedList(t *testing.T) {
 	}
 	f.Close()
 
-	// Create server with model manager
+	// Create server with database store (required for benchmark scoring)
+	store := createTestStore(t)
+	defer store.Close()
+
 	server := &Server{
+		store:        store,
 		modelManager: NewModelManagerForTest(),
 	}
 
@@ -289,15 +293,25 @@ func TestHandleListModels_HTMXCompatibility(t *testing.T) {
 	}
 	f.Close()
 
-	// Create server with custom models directory
-	mm := &ModelManager{
-		servers:   make(map[string]*ModelServer),
-		modelsDir: tempDir,
-	}
+	// Create server with database store and model manager
+	store := createTestStore(t)
+	defer store.Close()
 
 	server := &Server{
-		modelManager: mm,
+		store:        store,
+		modelManager: NewModelManagerForTest(), // This will detect backends
 	}
+
+	// Manually add the test model to the model manager
+	// (In production, ScanAvailableModels discovers from modelsDir)
+	server.modelManager.mu.Lock()
+	server.modelManager.servers[modelPath] = &ModelServer{
+		ModelPath: modelPath,
+		ModelName: "test-model.gguf",
+		Status:    "stopped",
+		APIType:   "llamacpp",
+	}
+	server.modelManager.mu.Unlock()
 
 	// Create GET request
 	req := httptest.NewRequest("GET", "/api/servers/list", nil)

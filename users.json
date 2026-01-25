@@ -1,0 +1,32 @@
+{
+  "users": [
+    {
+      "name": "Alice Johnson",
+      "age": 28
+    },
+    {
+      "name": "Bob Smith",
+      "age": 35
+    },
+    {
+      "name": "Carol Davis",
+      "age": 42
+    },
+    {
+      "name": "David Wilson",
+      "age": 29
+    },
+    {
+      "name": "Eve Brown",
+      "age": 31
+    },
+    {
+      "name": "Frank Miller",
+      "age": 27
+    },
+    {
+      "name": "Grace Lee",
+      "age": 38
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"clai/internal/logger"
 	"context"
 	"fmt"
 	"os"
@@ -56,6 +57,8 @@ func IsDangerousCode(code string) (bool, string) {
 func ExecuteCodeWithTimeout(language, code string, timeout time.Duration) (string, error) {
 	start := time.Now()
 
+	logger.Debug("[EXEC-CODE] Executing %s code: %s", language, code)
+
 	if dangerous, reason := IsDangerousCode(code); dangerous {
 		logExecution(language, code, -1, time.Since(start).Milliseconds(), 0, reason)
 		return "", fmt.Errorf("code execution blocked: %s", reason)
@@ -101,6 +104,7 @@ func ExecuteCodeWithTimeout(language, code string, timeout time.Duration) (strin
 	}
 
 	result := string(output)
+	logger.Debug("[EXEC-CODE] Output: %q, Error: %v", result, err)
 	exitCode := 0
 	execError := ""
 

@@ -26,16 +26,18 @@ func TestStreamingJSONAssembly_Integration(t *testing.T) {
 	for i, fragment := range fragments {
 		if i == 0 {
 			tc = ToolCall{
-				Name:       "execute_bash",
-				Parameters: json.RawMessage(fragment),
+				Function: ToolCallFunc{
+					Name:      "execute_bash",
+					Arguments: fragment,
+				},
 			}
 		} else {
 			// This is the current broken approach - just append fragments
-			tc.Parameters = json.RawMessage(string(tc.Parameters) + fragment)
+			tc.Function.Arguments = string(tc.Function.Arguments) + fragment
 		}
 	}
 
-	result := string(tc.Parameters)
+	result := string(tc.Function.Arguments)
 	t.Logf("Result: %s", result)
 
 	// This should fail because it's not valid JSON
@@ -51,11 +53,13 @@ func TestStreamingJSONAssembly_Integration(t *testing.T) {
 		var properTC ToolCall
 		properParams := json.RawMessage(`{"command":"ls","args":["--help"]}`)
 		properTC = ToolCall{
-			Name:       "execute_bash",
-			Parameters: properParams,
+			Function: ToolCallFunc{
+				Name:      "execute_bash",
+				Arguments: string(properParams),
+			},
 		}
 
-		result := string(properTC.Parameters)
+		result := string(properTC.Function.Arguments)
 		t.Logf("Proper result: %s", result)
 
 		var args map[string]interface{}

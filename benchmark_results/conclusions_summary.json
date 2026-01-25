@@ -1,0 +1,62 @@
+[
+  {
+    "test_id": "model_001",
+    "test_name": "Basic Arithmetic Operations",
+    "model_name": "llama3.1-gpu",
+    "category": "basic",
+    "performance": "excellent",
+    "score": 95.5,
+    "duration": "2.3s",
+    "timestamp": "2026-01-24T10:30:00Z",
+    "status": "passed",
+    "conclusion": "Model performed exceptionally well on basic arithmetic tasks with high accuracy and speed."
+  },
+  {
+    "test_id": "model_002",
+    "test_name": "Complex Mathematical Reasoning",
+    "model_name": "llama3.1-gpu",
+    "category": "reasoning",
+    "performance": "good",
+    "score": 82.3,
+    "duration": "5.7s",
+    "timestamp": "2026-01-24T10:31:00Z",
+    "status": "passed",
+    "conclusion": "Model showed solid performance on complex reasoning tasks though with occasional logical gaps."
+  },
+  {
+    "test_id": "model_003",
+    "test_name": "Code Generation Python",
+    "model_name": "llama3.1-gpu",
+    "category": "coding",
+    "performance": "very_good",
+    "score": 88.7,
+    "duration": "4.2s",
+    "timestamp": "2026-01-24T10:32:00Z",
+    "status": "passed",
+    "conclusion": "Generated clean, syntactically correct Python code with good structure and logic."
+  },
+  {
+    "test_id": "model_004",
+    "test_name": "Text Analysis NLP",
+    "model_name": "llama3.1-gpu",
+    "category": "analysis",
+    "performance": "good",
+    "score": 79.1,
+    "duration": "3.8s",
+    "timestamp": "2026-01-24T10:33:00Z",
+    "status": "passed",
+    "conclusion": "Demonstrated strong natural language understanding and text processing capabilities."
+  },
+  {
+    "test_id": "model_005",
+    "test_name": "Multi-step Problem Solving",
+    "model_name": "llama3.1-gpu",
+    "category": "advanced",
+    "performance": "fair",
+    "score": 71.2,
+    "duration": "8.9s",
+    "timestamp": "2026-01-24T10:34:00Z",
+    "status": "passed",
+    "conclusion": "Completed multi-step problems but required more time and occasional hints for optimal solutions."
+  }
+]

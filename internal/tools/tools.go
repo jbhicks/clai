@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"clai/internal/logger"
 	"encoding/json"
 	"fmt"
 )
@@ -103,7 +104,10 @@ func ExecuteTool(toolCall ToolCall) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("command parameter is required and must be a string")
 		}
-		return ExecuteCode("bash", command)
+		logger.Debug("[TOOLS-EXEC] Executing bash command: %s", command)
+		result, err := ExecuteCode("bash", command)
+		logger.Debug("[TOOLS-EXEC] Command result: %q, err: %v", result, err)
+		return result, err
 
 	case "execute_python":
 		var args map[string]interface{}

@@ -1,7 +1,13 @@
 const { chromium } = require('playwright');
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({
+    args: [
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-dev-shm-usage'
+    ]
+  });
   const page = await browser.newPage();
   await page.setViewportSize({ width: 1400, height: 1000 });
   

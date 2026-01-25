@@ -32,7 +32,8 @@ This repository is a Go CLI project for local AI agent interaction. Follow these
 - Run a single test: `go test -run TestFunctionName ./...`
 - Clean: `make clean`
 - Install: `make install`
-- Dev/debug: `make dev` (runs with DEBUG=true)
+- Dev/debug: `make dev-tmux` (runs with automatic reload in tmux session)
+- Benchmark: `make benchmark TEST=N` (runs specific benchmark test N)
 
 ## Server Management
 **🚨 ABSOLUTELY FORBIDDEN: Agents MUST NEVER start, stop, or restart dev/benchmark servers**
@@ -44,7 +45,7 @@ This repository is a Go CLI project for local AI agent interaction. Follow these
 - If you need to test functionality, use API calls to running servers, not starting new ones
 
 **EXCEPTION: Benchmark testing is allowed for development verification**
-- Agents MAY run `./clai benchmark --cli --test N` commands for testing specific benchmark tests
+- Agents MAY run `make benchmark TEST=N` or `./clai benchmark --cli --test N` commands for testing specific benchmark tests
 - This is permitted because these commands run and return results without blocking indefinitely
 - Use this only when explicitly requested by the user for testing changes
 - Still prohibited: Running full benchmark suites or starting benchmark servers
@@ -75,7 +76,7 @@ To prevent zombie processes from old development sessions:
 **CRITICAL: Use the same LLM server configuration as the main clai application**
 - The project uses a llama.cpp server (not Ollama) for LLM operations
 - CLI benchmarks (`clai benchmark --cli`) use the same configuration as clai
-- **Unified Benchmark Suite**: 29 tests total (12 model + 17 agentic + 5 advanced benchmarks)
+- **Unified Benchmark Suite**: 21 tests total (12 core + 4 advanced + 5 ultra-challenging benchmarks)
 - Environment variables (same as clai):
   - `OLLAMA_HOST`: Server URL (default: `http://localhost:8081`)
   - `OLLAMA_MODEL`: Model name (default: `llama3.1-gpu:latest`)
@@ -595,16 +596,15 @@ func (s *Server) handleNewEndpoint(w http.ResponseWriter, r *http.Request) {
 No Cursor or Copilot rules detected.
 
 ## Development Workflow
-- **ASSUME** the user is running `make dev` in another terminal/thread with automatic file watching and reload enabled.
+- **ASSUME** the user is running `make dev-tmux` in a tmux session with automatic file watching and reload enabled.
 - **🚨 ABSOLUTELY FORBIDDEN**: Agents MUST NEVER run the application themselves (e.g., `./clai` or `make run`).
-- **🚨 ABSOLUTELY FORBIDDEN**: Agents MUST NEVER run `make dev` themselves - it blocks execution indefinitely while watching for file changes.
-- **🚨 ABSOLUTELY FORBIDDEN**: Agents MUST NEVER start, stop, or restart servers (main app or benchmark server) - the user will handle this.
+- **🚨 ABSOLUTELY FORBIDDEN**: Agents MUST NEVER run `make dev` or `make dev-tmux` themselves - they require interactive terminals and block execution indefinitely.
 - After making code changes, **ASSUME** the automatic reload has already occurred.
 - To verify your changes:
-  1. Check `debug.log` for runtime logs: `tail -f debug.log` or `cat debug.log`
+   1. Check `tui.log` for runtime logs: `tail -f tui.log` or `cat tui.log`
   2. Look for errors, warnings, or debug output related to your changes
   3. **MANDATORY**: Use clai-debug MCP tools to verify UI/functionality changes
-- The dev watcher uses `air` to automatically rebuild and restart on `.go` file changes.
+- The dev watcher uses `entr` to automatically rebuild and restart on `.go` file changes.
 - **Exception:** You may check if processes are running (`ps aux | grep`), check listening ports (`ss -tlnp`), or read log files to diagnose issues, but do not start/stop/kill processes.
 
 ## Automated Testing with tmux

@@ -1,6 +1,7 @@
 package persistence
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -294,11 +295,14 @@ func (pm *PersistenceManager) ArchiveOnBranchChange(oldBranchFile string) error 
 		return fmt.Errorf("failed to get current branch: %w", err)
 	}
 
-	// Read the previously stored branch
-	oldBranchData, err := os.ReadFile(oldBranchFile)
+	// Read the previously stored branch using bufio.Scanner for efficiency
 	oldBranch := ""
-	if err == nil {
-		oldBranch = strings.TrimSpace(string(oldBranchData))
+	if file, err := os.Open(oldBranchFile); err == nil {
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		if scanner.Scan() {
+			oldBranch = strings.TrimSpace(scanner.Text())
+		}
 	}
 
 	// If branch changed, archive the old branch

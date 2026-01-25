@@ -28,6 +28,11 @@ func TestModelsPageFullE2E(t *testing.T) {
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
 		Headless:       playwright.Bool(true),
 		ExecutablePath: playwright.String("/usr/bin/chromium"),
+		Args: []string{
+			"--disable-gpu",
+			"--disable-software-rasterizer",
+			"--disable-dev-shm-usage",
+		},
 	})
 	if err != nil {
 		t.Fatalf("Failed to launch Chromium: %v", err)
@@ -223,6 +228,11 @@ func TestDownloadsFunctionalityE2E(t *testing.T) {
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
 		Headless:       playwright.Bool(true),
 		ExecutablePath: playwright.String("/usr/bin/chromium"),
+		Args: []string{
+			"--disable-gpu",
+			"--disable-software-rasterizer",
+			"--disable-dev-shm-usage",
+		},
 	})
 	if err != nil {
 		t.Fatalf("Failed to launch Chromium: %v", err)
@@ -314,6 +324,11 @@ func TestServersListFunctionalityE2E(t *testing.T) {
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
 		Headless:       playwright.Bool(true),
 		ExecutablePath: playwright.String("/usr/bin/chromium"),
+		Args: []string{
+			"--disable-gpu",
+			"--disable-software-rasterizer",
+			"--disable-dev-shm-usage",
+		},
 	})
 	if err != nil {
 		t.Fatalf("Failed to launch Chromium: %v", err)
@@ -558,6 +573,11 @@ func TestTestingPageE2E(t *testing.T) {
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
 		Headless:       playwright.Bool(true),
 		ExecutablePath: playwright.String("/usr/bin/chromium"),
+		Args: []string{
+			"--disable-gpu",
+			"--disable-software-rasterizer",
+			"--disable-dev-shm-usage",
+		},
 	})
 	if err != nil {
 		t.Fatalf("Failed to launch Chromium: %v", err)

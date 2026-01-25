@@ -3,7 +3,7 @@
 
 set -e
 
-MODELS_DIR="/home/josh/models"
+MODELS_DIR="${MODELS_PATH:-/home/josh/models}"
 LLAMA_SERVER="/home/josh/llama.cpp-rocm-wmma/build/bin/llama-server"
 SERVER_PORT=8081
 TEST_RESULTS_DIR="./model_test_results"
