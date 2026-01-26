@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
 )
 
 type StreamingCallback func(chunk string, toolCall *tools.ToolCall, codeBlock *CodeBlock)
@@ -218,8 +217,8 @@ func (a *Agent) parseResponse(response string) (*AgentResponse, error) {
 		toolCalls := a.parseToolCallsFromContent(response)
 		if len(toolCalls) > 0 {
 			logger.Debug("[AGENT-PARSE] Parsed %d tool calls from response", len(toolCalls))
-			result.Final = strings.TrimSpace(response)
 			result.Thought = strings.TrimSpace(response)
+			// Don't set Final for tool calls - let the conversation continue
 			return result, nil
 		}
 	}
@@ -360,8 +359,8 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 				ID       string `json:"id"`
 				Type     string `json:"type"`
 				Function struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
+					Name      string                 `json:"name"`
+					Arguments map[string]interface{} `json:"arguments"`
 				} `json:"function"`
 			} `json:"tool_calls"`
 		}
@@ -370,12 +369,13 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 			// Convert to tools.ToolCall format
 			var result []tools.ToolCall
 			for _, call := range openaiResp.ToolCalls {
+				marshaled, _ := json.Marshal(call.Function.Arguments)
 				result = append(result, tools.ToolCall{
 					ID:   call.ID,
 					Type: call.Type,
 					Function: tools.ToolCallFunc{
 						Name:      call.Function.Name,
-						Arguments: call.Function.Arguments,
+						Arguments: string(marshaled),
 					},
 				})
 			}
@@ -397,9 +397,26 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 		arrayContent := content[arrayStart : arrayEnd+1]
 		logger.Debug("[AGENT-PARSE-TOOL] Extracted array content: %s", arrayContent)
 
-		var calls []tools.ToolCall
-		if err := json.Unmarshal([]byte("["+arrayContent+"]"), &calls); err == nil {
-			toolCalls = append(toolCalls, calls...)
+		var calls []struct {
+			ID       string `json:"id"`
+			Type     string `json:"type"`
+			Function struct {
+				Name      string                 `json:"name"`
+				Arguments map[string]interface{} `json:"arguments"`
+			} `json:"function"`
+		}
+		if err := json.Unmarshal([]byte(arrayContent), &calls); err == nil {
+			for _, call := range calls {
+				marshaled, _ := json.Marshal(call.Function.Arguments)
+				toolCalls = append(toolCalls, tools.ToolCall{
+					ID:   call.ID,
+					Type: call.Type,
+					Function: tools.ToolCallFunc{
+						Name:      call.Function.Name,
+						Arguments: string(marshaled),
+					},
+				})
+			}
 			logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed direct array: %d calls", len(calls))
 		} else {
 			logger.Debug("[AGENT-PARSE-TOOL] Failed to parse array content: %v", err)
@@ -450,13 +467,29 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 					toolCallsPart := content[bracketStart : bracketEnd+1]
 					logger.Debug("[AGENT-PARSE-TOOL] Extracted tool_calls array: %s", toolCallsPart)
 
-					var calls []tools.ToolCall
+					var calls []struct {
+						ID       string `json:"id"`
+						Type     string `json:"type"`
+						Function struct {
+							Name      string                 `json:"name"`
+							Arguments map[string]interface{} `json:"arguments"`
+						} `json:"function"`
+					}
 					if err := json.Unmarshal([]byte(toolCallsPart), &calls); err == nil {
-						toolCalls = append(toolCalls, calls...)
+						for _, call := range calls {
+							marshaled, _ := json.Marshal(call.Function.Arguments)
+							toolCalls = append(toolCalls, tools.ToolCall{
+								ID:   call.ID,
+								Type: call.Type,
+								Function: tools.ToolCallFunc{
+									Name:      call.Function.Name,
+									Arguments: string(marshaled),
+								},
+							})
+						}
 						logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed OpenAI format tool calls: %d", len(calls))
 					} else {
 						logger.Debug("[AGENT-PARSE-TOOL] Failed to parse OpenAI tool_calls array: %v", err)
-						logger.Debug("[AGENT-PARSE-TOOL] Raw content being parsed: %s", toolCallsPart)
 					}
 				} else {
 					logger.Debug("[AGENT-PARSE-TOOL] Failed to find matching closing bracket for tool_calls array")
@@ -466,138 +499,6 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 			}
 		} else {
 			logger.Debug("[AGENT-PARSE-TOOL] Failed to find colon after tool_calls")
-		}
-	}
-
-	// Try plain JSON format as fallback
-	re := regexp.MustCompile(`\{[^{}]*"function"[^{}]*\}`)
-	jsonMatches := re.FindAllString(content, -1)
-	logger.Debug("[AGENT-PARSE-TOOL] Found %d JSON tool call matches", len(jsonMatches))
-
-	for _, match := range jsonMatches {
-		logger.Debug("[AGENT-PARSE-TOOL] Trying to parse JSON: %s", match)
-		var toolCall tools.ToolCall
-		if err := json.Unmarshal([]byte(match), &toolCall); err == nil && toolCall.Type == "function" && toolCall.Function.Name != "" {
-			toolCalls = append(toolCalls, toolCall)
-			logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed JSON tool call: %s", toolCall.Function.Name)
-		} else {
-			// Try to parse as alternative format {"function": "name", "arguments": {...}}
-			var alt map[string]interface{}
-			if err2 := json.Unmarshal([]byte(match), &alt); err2 == nil {
-				if funcName, ok := alt["function"].(string); ok {
-					if args, ok := alt["arguments"]; ok {
-						argsJSON, _ := json.Marshal(args)
-						toolCall = tools.ToolCall{
-							Type: "function",
-							ID:   "alt-parsed-" + funcName,
-							Function: tools.ToolCallFunc{
-								Name:      funcName,
-								Arguments: string(argsJSON),
-							},
-						}
-						toolCalls = append(toolCalls, toolCall)
-						logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed alt JSON tool call: %s", funcName)
-					}
-				}
-			} else {
-				logger.Debug("[AGENT-PARSE-TOOL] Failed to parse JSON as tool call: %v", err)
-			}
-		}
-	}
-
-	// Special handling for malformed Qwen format: <function=execute_bash{...} without closing tags
-	if strings.Contains(content, "<function=execute_bash") && len(toolCalls) == 0 {
-		// Extract the JSON part after <function=execute_bash
-		start := strings.Index(content, "<function=execute_bash")
-		if start != -1 {
-			jsonStart := strings.Index(content[start:], "{")
-			if jsonStart != -1 {
-				jsonPart := content[start+jsonStart:]
-				// Try to find a complete JSON object
-				braceCount := 0
-				endPos := -1
-				for i, r := range jsonPart {
-					if r == '{' {
-						braceCount++
-					} else if r == '}' {
-						braceCount--
-						if braceCount == 0 {
-							endPos = i
-							break
-						}
-					}
-				}
-				if endPos != -1 {
-					jsonStr := jsonPart[:endPos+1]
-					var call tools.ToolCall
-					if err := json.Unmarshal([]byte(jsonStr), &call); err == nil && call.Function.Name != "" {
-						toolCalls = append(toolCalls, call)
-					} else {
-						// Fallback: construct manually, try to extract command from malformed JSON
-						command := ""
-						// Look for file reading commands in the jsonStr
-						if strings.Contains(jsonStr, "cat internal/llm/sample.txt") {
-							command = "cat internal/llm/sample.txt"
-						} else if strings.Contains(jsonStr, "ls") && strings.Contains(jsonStr, "internal/llm/sample.txt") {
-							// Convert ls to cat for reading file content
-							command = "cat internal/llm/sample.txt"
-						} else if strings.Contains(jsonStr, "cat") && strings.Contains(jsonStr, "sample.txt") {
-							// Extract command between quotes if possible
-							parts := strings.Split(jsonStr, "\"")
-							for i, part := range parts {
-								if part == "cat" && i+1 < len(parts) {
-									command = "cat " + parts[i+1]
-									break
-								}
-							}
-						}
-						argsJSON, _ := json.Marshal(map[string]interface{}{"command": command})
-						call = tools.ToolCall{
-							Type: "function",
-							Function: tools.ToolCallFunc{
-								Name:      "execute_bash",
-								Arguments: string(argsJSON),
-							},
-						}
-						toolCalls = append(toolCalls, call)
-					}
-				}
-			}
-		}
-	}
-
-	// Try <tool_call> XML format as fallback (for Qwen models)
-	// Handle tool calls in format: <function=name{...}>
-	toolCallRe := regexp.MustCompile(`<function=(\w+)\s*(\{[^}]+\})`)
-	matches := toolCallRe.FindAllStringSubmatch(content, -1)
-	logger.Debug("[AGENT-PARSE-TOOL] Found %d <tool_call> XML matches", len(matches))
-
-	for _, match := range matches {
-		if len(match) >= 3 {
-			funcName := match[1]
-			jsonStr := match[2]
-
-			// Parse the JSON object
-			var toolCallData map[string]interface{}
-			if err := json.Unmarshal([]byte(jsonStr), &toolCallData); err == nil {
-				// Extract function name and arguments
-				if funcData, ok := toolCallData["function"].(map[string]interface{}); ok {
-					if name, ok := funcData["name"].(string); ok && name != "" {
-						if args, ok := funcData["arguments"].(string); ok && args != "" {
-							toolCall := tools.ToolCall{
-								Type: "function",
-								ID:   "xml-parsed-" + funcName,
-								Function: tools.ToolCallFunc{
-									Name:      name,
-									Arguments: args,
-								},
-							}
-							toolCalls = append(toolCalls, toolCall)
-							logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed <tool_call> XML format: %s", name)
-						}
-					}
-				}
-			}
 		}
 	}
 
@@ -641,6 +542,11 @@ func validateAndCleanToolCalls(toolCalls []tools.ToolCall) []tools.ToolCall {
 
 	for _, call := range toolCalls {
 		if isValidToolCall(call) {
+			// Validate arguments JSON
+			if err := validateToolCallArguments(call); err != nil {
+				logger.Warn("[AGENT-PARSE-TOOL] Skipping tool call with invalid arguments: %v", err)
+				continue
+			}
 			// Generate ID if missing
 			if call.ID == "" {
 				call.ID = fmt.Sprintf("auto-%s-%d", call.Function.Name, time.Now().UnixNano())
@@ -666,36 +572,472 @@ func isValidToolCall(call tools.ToolCall) bool {
 	return true
 }
 
-// splitJSONObjects attempts to split concatenated JSON objects
-func splitJSONObjects(jsonStr string) []string {
-	var objects []string
-	braceCount := 0
-	start := 0
+// validateToolCallArguments checks if tool call arguments are valid JSON
+func validateToolCallArguments(call tools.ToolCall) error {
+	if call.Function.Arguments == "" {
+		return nil // Empty arguments are allowed
+	}
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
+		return fmt.Errorf("invalid tool arguments JSON: %w", err)
+	}
+	return nil
+}
 
-	fmt.Printf("[DEBUG] splitJSONObjects input: %s\n", jsonStr)
-	for i, char := range jsonStr {
-		switch char {
-		case '{':
-			if braceCount == 0 {
-				start = i
-				fmt.Printf("[DEBUG] Starting new object at position %d\n", i)
-			}
-			braceCount++
-		case '}':
-			braceCount--
-			if braceCount == 0 {
-				// Found a complete JSON object
-				obj := jsonStr[start : i+1]
-				objects = append(objects, obj)
-				fmt.Printf("[DEBUG] Found complete object: %s\n", obj)
+// detectCompleteToolCalls checks if accumulated content contains complete tool call JSON
+func (a *Agent) detectCompleteToolCalls(content string) ([]tools.ToolCall, bool) {
+	// First check if content contains tool_calls
+	if !strings.Contains(content, `"tool_calls"`) {
+		return nil, false
+	}
+
+	// Look for complete tool call JSON structures anywhere in content
+	// This handles cases where tool calls are embedded in accumulated conversation content
+	toolCalls := a.extractToolCallsFromContent(content)
+	if len(toolCalls) > 0 {
+		return toolCalls, true
+	}
+
+	return nil, false
+}
+
+// extractToolCallsFromContent attempts to find and extract complete tool call JSON from any content
+func (a *Agent) extractToolCallsFromContent(content string) []tools.ToolCall {
+	var allToolCalls []tools.ToolCall
+
+	// Try multiple strategies to find tool calls
+
+	// Strategy 1: Look for complete tool call objects using regex-like pattern
+	objects := splitJSONObjects(content)
+	for _, obj := range objects {
+		if strings.Contains(obj, `"tool_calls"`) {
+			toolCalls := a.parseToolCallsFromContent(obj)
+			allToolCalls = append(allToolCalls, toolCalls...)
+		}
+	}
+
+	// Strategy 2: If strategy 1 failed, try parsing the entire content
+	if len(allToolCalls) == 0 {
+		toolCalls := a.parseToolCallsFromContent(content)
+		allToolCalls = append(allToolCalls, toolCalls...)
+	}
+
+	// Strategy 3: Look for individual tool call objects (not wrapped in tool_calls array)
+	if len(allToolCalls) == 0 {
+		objects = splitJSONObjects(content)
+		for _, obj := range objects {
+			if strings.Contains(obj, `"type": "function"`) &&
+				strings.Contains(obj, `"function"`) &&
+				strings.Contains(obj, `"name"`) {
+				// Try to parse as individual tool call
+				var toolCall tools.ToolCall
+				if err := json.Unmarshal([]byte(obj), &toolCall); err == nil {
+					if toolCall.Function.Name != "" {
+						allToolCalls = append(allToolCalls, toolCall)
+					}
+				}
 			}
 		}
 	}
 
-	fmt.Printf("[DEBUG] splitJSONObjects found %d objects\n", len(objects))
+	return allToolCalls
+}
+
+// hasToolCall checks if a tool call already exists in the list (by name and arguments)
+func (a *Agent) hasToolCall(toolCalls []tools.ToolCall, target tools.ToolCall) bool {
+	for _, tc := range toolCalls {
+		if tc.Function.Name == target.Function.Name && tc.Function.Arguments == target.Function.Arguments {
+			return true
+		}
+	}
+	return false
+}
+
+// isValidJSON checks if a string is valid JSON
+func isValidJSON(str string) bool {
+	// Quick rejection of obviously truncated content
+	if len(str) == 0 {
+		return false
+	}
+	
+	// Try to unmarshal into a generic interface
+	var js interface{}
+	err := json.Unmarshal([]byte(str), &js)
+	if err != nil {
+		return false
+	}
+	
+	// Try unmarshaling the remarshaled data
+	remarshaled, err := json.Marshal(js)
+	if err != nil {
+		return false
+	}
+	
+	// Try unmarshaling the remarshaled data
+	var rechecked interface{}
+	err = json.Unmarshal(remarshaled, &rechecked)
+	if err != nil {
+		return false
+	}
+	
+	// Additional strict validation for streaming tool calls
+	// Look for patterns that indicate truncation in the original string
+	truncatedPatterns := []string{
+		`": "`,
+		`": ""`,
+		`": {`,
+		`": [`,
+		`": true`,
+		`": false`,
+		`": null`,
+	}
+	
+	for _, pattern := range truncatedPatterns {
+		if strings.HasSuffix(str, pattern) && !strings.Contains(str, pattern+"\"") && !strings.Contains(str, pattern+"}") {
+			// Ends with truncated pattern but no proper completion
+			return false
+		}
+	}
+	
+	// Special check for argument strings that are clearly incomplete
+	if strings.Contains(str, `"arguments": "`) && !strings.Contains(str, `"arguments": "}`) {
+		// Arguments string starts but never ends properly
+		return false
+	}
+	
+	// Check if there's any incomplete string literals
+	if strings.Count(str, "\"") != strings.Count(str, "\\\"") {
+		// Unmatched quotes
+		return false
+	}
+	
+	return true
+}
+
+// splitJSONObjects attempts to split concatenated JSON objects using a more robust approach
+func splitJSONObjects(jsonStr string) []string {
+	var objects []string
+	
+	fmt.Printf("[DEBUG] splitJSONObjects input: %s\n", jsonStr)
+	
+	// Use a sliding window approach to find valid JSON objects
+	// Look for '{' and try every possible end point until we find valid JSON
+	for start := 0; start < len(jsonStr); start++ {
+		if jsonStr[start] != '{' {
+			continue
+		}
+		
+		fmt.Printf("[DEBUG] Found potential start at position %d\n", start)
+		
+		// Try different end points
+		braceCount := 0
+		inString := false
+		
+		for end := start; end < len(jsonStr); end++ {
+			char := jsonStr[end]
+			
+			// Simple string tracking - just for brace counting
+			if char == '"' && (end == 0 || jsonStr[end-1] != '\\') {
+				inString = !inString
+			}
+			
+			if !inString {
+				if char == '{' {
+					braceCount++
+				} else if char == '}' {
+					braceCount--
+					
+					// When braces are balanced, try to validate
+					if braceCount == 0 {
+						candidate := jsonStr[start : end+1]
+						fmt.Printf("[DEBUG] Trying candidate: %s\n", candidate)
+						
+						if isValidJSON(candidate) {
+							objects = append(objects, candidate)
+							fmt.Printf("[DEBUG] Found valid JSON object: %s\n", candidate)
+							// Move start past this object
+							start = end
+							break
+						} else {
+							fmt.Printf("[DEBUG] Candidate invalid, continuing\n")
+						}
+					} else if braceCount < 0 {
+						// Too many closing braces, reset
+						braceCount = 0
+						break
+					}
+				}
+			}
+		}
+	}
+
+	fmt.Printf("[DEBUG] splitJSONObjects found %d valid JSON objects\n", len(objects))
+	return objects
+}
+	var objects []string
+	
+	fmt.Printf("[DEBUG] splitJSONObjects input: %s\n", jsonStr)
+	
+	// Use a sliding window approach to find valid JSON objects
+	// Look for '{' and try every possible end point until we find valid JSON
+	for start := 0; start < len(jsonStr); start++ {
+		if jsonStr[start] != '{' {
+			continue
+		}
+		
+		fmt.Printf("[DEBUG] Found potential start at position %d\n", start)
+		
+		// Try different end points
+		braceCount := 0
+		inString := false
+		
+		for end := start; end < len(jsonStr); end++ {
+			char := jsonStr[end]
+			
+			// Simple string tracking - just for brace counting
+			if char == '"' && (end == 0 || jsonStr[end-1] != '\\') {
+				inString = !inString
+			}
+			
+			if !inString {
+				if char == '{' {
+					braceCount++
+				} else if char == '}' {
+					braceCount--
+					
+					// When braces are balanced, try to validate
+					if braceCount == 0 {
+						candidate := jsonStr[start : end+1]
+						fmt.Printf("[DEBUG] Trying candidate: %s\n", candidate)
+						
+						if isValidJSON(candidate) {
+							objects = append(objects, candidate)
+							fmt.Printf("[DEBUG] Found valid JSON object: %s\n", candidate)
+							// Move start past this object
+							start = end
+							break
+						} else {
+							fmt.Printf("[DEBUG] Candidate invalid, continuing\n")
+						}
+					} else if braceCount < 0 {
+						// Too many closing braces, reset
+						braceCount = 0
+						break
+					}
+				}
+			}
+		}
+	}
+
+	fmt.Printf("[DEBUG] splitJSONObjects found %d valid JSON objects\n", len(objects))
 	return objects
 }
 
+func isValidJSON(str string) bool {
+	// Quick rejection of obviously truncated content
+	if len(str) == 0 {
+		return false
+	}
+	
+	// Try to unmarshal into a generic interface
+	var js interface{}
+	err := json.Unmarshal([]byte(str), &js)
+	if err != nil {
+		return false
+	}
+	
+	// Try unmarshaling the remarshaled data
+	remarshaled, err := json.Marshal(js)
+	if err != nil {
+		return false
+	}
+	
+	// Try unmarshaling the remarshaled data
+	var rechecked interface{}
+	err = json.Unmarshal(remarshaled, &rechecked)
+	if err != nil {
+		return false
+	}
+	
+	// Additional strict validation for streaming tool calls
+	// Look for patterns that indicate truncation in the original string
+	truncatedPatterns := []string{
+		`": "`,
+		`": ""`,
+		`": {`,
+		`": [`,
+		`": true`,
+		`": false`,
+		`": null`,
+	}
+	
+	for _, pattern := range truncatedPatterns {
+		if strings.HasSuffix(str, pattern) && !strings.Contains(str, pattern+"\"") && !strings.Contains(str, pattern+"}") {
+			// Ends with truncated pattern but no proper completion
+			return false
+		}
+	}
+	
+	// Special check for argument strings that are clearly incomplete
+	if strings.Contains(str, `"arguments": "`) && !strings.Contains(str, `"arguments": "}`) {
+		// Arguments string starts but never ends properly
+		return false
+	}
+	
+	// Check if there's any incomplete string literals
+	if strings.Count(str, "\"") != strings.Count(str, "\\\"") {
+		// Unmatched quotes
+		return false
+	}
+	
+	return true
+}
+		
+		fmt.Printf("[DEBUG] Found potential start at position %d\n", start)
+		
+		// Try different end points
+		braceCount := 0
+		inString := false
+		
+		for end := start; end < len(jsonStr); end++ {
+			char := jsonStr[end]
+			
+			// Simple string tracking - just for brace counting
+			if char == '"' && (end == 0 || jsonStr[end-1] != '\\') {
+				inString = !inString
+			}
+			
+			if !inString {
+				if char == '{' {
+					braceCount++
+				} else if char == '}' {
+					braceCount--
+					
+					// When braces are balanced, try to validate
+					if braceCount == 0 {
+						candidate := jsonStr[start : end+1]
+						fmt.Printf("[DEBUG] Trying candidate: %s\n", candidate)
+						
+						if isValidJSON(candidate) {
+							objects = append(objects, candidate)
+							fmt.Printf("[DEBUG] Found valid JSON object: %s\n", candidate)
+							// Move start past this object
+							start = end
+							break
+						} else {
+							fmt.Printf("[DEBUG] Candidate invalid, continuing\n")
+						}
+					} else if braceCount < 0 {
+						// Too many closing braces, reset
+						braceCount = 0
+						break
+					}
+				}
+			}
+		}
+	}
+
+	fmt.Printf("[DEBUG] splitJSONObjects found %d valid JSON objects\n", len(objects))
+	return objects
+}
+
+func isValidJSON(str string) bool {
+	// Quick rejection of obviously truncated content
+	if len(str) == 0 {
+		return false
+	}
+	
+	// Try to unmarshal into a generic interface
+	var js interface{}
+	err := json.Unmarshal([]byte(str), &js)
+	if err != nil {
+		return false
+	}
+	
+	// Try unmarshaling the remarshaled data
+	remarshaled, err := json.Marshal(js)
+	if err != nil {
+		return false
+	}
+	
+	// Try unmarshaling the remarshaled data
+	var rechecked interface{}
+	err = json.Unmarshal(remarshaled, &rechecked)
+	if err != nil {
+		return false
+	}
+	
+	// Additional strict validation for streaming tool calls
+	// Look for patterns that indicate truncation in the original string
+	truncatedPatterns := []string{
+		`": "`,
+		`": ""`,
+		`": {`,
+		`": [`,
+		`": true`,
+		`": false`,
+		`": null`,
+	}
+	
+	for _, pattern := range truncatedPatterns {
+		if strings.HasSuffix(str, pattern) && !strings.Contains(str, pattern+"\"") && !strings.Contains(str, pattern+"}") {
+			// Ends with truncated pattern but no proper completion
+			return false
+		}
+	}
+	
+	// Special check for argument strings that are clearly incomplete
+	if strings.Contains(str, `"arguments": "`) && !strings.Contains(str, `"arguments": "}`) {
+		// Arguments string starts but never ends properly
+		return false
+	}
+	
+	// Check if there's any incomplete string literals
+	if strings.Count(str, "\"") != strings.Count(str, "\\\"") {
+		// Unmatched quotes
+		return false
+	}
+	
+	return true
+}
+				if escapeCount%2 == 0 {
+					inString = false
+				}
+			}
+		case '\\':
+			if inString && i+1 < len(jsonStr) {
+				// Skip escaped character - the for loop will increment i
+				// so we manually handle this by continuing
+			}
+		case '{':
+			if !inString {
+				localBraceCount++
+				if localBraceCount == 1 {
+					start = i
+					fmt.Printf("[DEBUG] Starting new object at position %d\n", i)
+				}
+			}
+		case '}':
+			if !inString {
+				localBraceCount--
+				if localBraceCount == 0 && start != -1 {
+					obj := jsonStr[start : i+1]
+					// Validate that this is actually valid JSON
+					if isValidJSON(obj) {
+						objects = append(objects, obj)
+						fmt.Printf("[DEBUG] Found valid JSON object: %s\n", obj)
+					} else {
+						fmt.Printf("[DEBUG] Skipping invalid JSON object: %s\n", obj)
+					}
+					start = -1
+				}
+			}
+		}
+	}
+
+	fmt.Printf("[DEBUG] splitJSONObjects found %d valid JSON objects\n", len(objects))
+	return objects
+}
 func (ld *LoopDetector) detectLoop(code, observation string, isStrangeLoopEnabled bool, reflectionDepth int) (bool, string) {
 	if code != "" {
 		ld.codeHistory = append(ld.codeHistory, code)
@@ -739,9 +1081,10 @@ func (ld *LoopDetector) detectLoop(code, observation string, isStrangeLoopEnable
 		obsLower := strings.ToLower(observation)
 		for _, errPattern := range permanentErrors {
 			if strings.Contains(obsLower, errPattern) {
+				// Check if this error has occurred multiple times
 				count := 0
-				for _, obs := range ld.observationHistory {
-					if strings.Contains(strings.ToLower(obs), errPattern) {
+				for _, pastObs := range ld.observationHistory {
+					if strings.Contains(strings.ToLower(pastObs), errPattern) {
 						count++
 					}
 				}
@@ -757,24 +1100,6 @@ func (ld *LoopDetector) detectLoop(code, observation string, isStrangeLoopEnable
 		// Check for excessive reflection depth
 		if reflectionDepth >= 5 { // Allow some depth but prevent runaway recursion
 			return true, fmt.Sprintf("Strange loop detected: reflection depth %d exceeds safety limit", reflectionDepth)
-		}
-
-		// Check for repetitive reflection patterns
-		if strings.Contains(observation, "Reflect:") || strings.Contains(observation, "Analysis:") {
-			ld.reflectionHistory = append(ld.reflectionHistory, observation)
-			if len(ld.reflectionHistory) >= ld.maxRepeats {
-				recent := ld.reflectionHistory[len(ld.reflectionHistory)-ld.maxRepeats:]
-				allSame := true
-				for i := 1; i < len(recent); i++ {
-					if recent[i] != recent[0] {
-						allSame = false
-						break
-					}
-				}
-				if allSame {
-					return true, fmt.Sprintf("Strange loop detected: same reflection performed %d times consecutively", ld.maxRepeats)
-				}
-			}
 		}
 	}
 
@@ -916,18 +1241,15 @@ func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (stri
 			logger.Debug("[AGENT-STREAM-CHUNK] Received chunk: %q", chunk)
 			fullContent.WriteString(chunk)
 
-			// Check if chunk contains tool calls
-			if strings.Contains(chunk, `"tool_calls"`) {
-				// Parse tool calls from accumulated content
-				accumulatedContent := fullContent.String()
-				candidateToolCalls := a.parseToolCallsFromContent(accumulatedContent)
-
+			// Check if accumulated content contains complete tool calls
+			if toolCalls, complete := a.detectCompleteToolCalls(fullContent.String()); complete {
 				// Stream any new tool calls to UI and collect them
-				for _, tc := range candidateToolCalls {
+				for _, tc := range toolCalls {
 					// Check if we already have this tool call (avoid duplicates)
 					found := false
 					for _, existing := range streamedToolCalls {
-						if existing.ID == tc.ID {
+						// Check for duplicates by function name and arguments, not ID
+						if existing.Function.Name == tc.Function.Name && existing.Function.Arguments == tc.Function.Arguments {
 							found = true
 							break
 						}
@@ -939,7 +1261,7 @@ func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (stri
 						streamedToolCalls = append(streamedToolCalls, tc)
 						logger.Debug("[AGENT-STREAM-COLLECTED] Collected tool call: %s (ID: %s)", tc.Function.Name, tc.ID)
 					} else {
-						logger.Debug("[AGENT-STREAM-DUPLICATE] Skipping duplicate tool call: %s (ID: %s)", tc.Function.Name, tc.ID)
+						logger.Debug("[AGENT-STREAM-DUPLICATE] Skipping duplicate tool call: %s (args: %s)", tc.Function.Name, tc.Function.Arguments)
 					}
 				}
 			} else {
@@ -951,25 +1273,83 @@ func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (stri
 		content := fullContent.String()
 		fmt.Printf("[DEBUG] Streaming completed for iteration %d: content_length=%d, tool_calls_collected=%d\n", iteration, len(content), len(streamedToolCalls))
 
-		// Parse final content for additional tool calls (in case we missed any)
-		additionalToolCalls := a.parseToolCallsFromContent(content)
-		for _, tc := range additionalToolCalls {
-			// Check for duplicates
-			found := false
-			for _, existing := range streamedToolCalls {
-				if existing.ID == tc.ID {
-					found = true
-					break
+		// Parse the response early to check for final answers
+		parsed, err := a.parseResponse(content)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		// If final answer is detected with tool calls, execute them and continue to next iteration
+		if parsed.Final != "" && len(streamedToolCalls) > 0 {
+			fmt.Printf("[DEBUG] Final answer detected with tool calls - executing tools and continuing conversation\n")
+
+			// Add assistant message with tool calls
+			a.AddMessage("assistant", content)
+
+			// Execute each tool call
+			for _, toolCall := range streamedToolCalls {
+				fmt.Printf("[DEBUG] Executing tool in final iteration: %s\n", toolCall.Function.Name)
+
+				toolResult, err := tools.ExecuteTool(toolCall)
+				if err != nil {
+					fmt.Printf("[DEBUG] Tool execution failed: %v\n", err)
+					a.AddMessage("tool", fmt.Sprintf("Tool execution error: %v", err), toolCall.ID)
+				} else {
+					fmt.Printf("[DEBUG] Tool result: %s\n", toolResult)
+					a.AddMessage("tool", toolResult, toolCall.ID)
 				}
 			}
-			if !found {
-				// Generate unique ID using timestamp
-				tc.ID = fmt.Sprintf("call_%d", time.Now().UnixNano())
-				callback("", &tc, nil) // Stream tool call to UI
-				streamedToolCalls = append(streamedToolCalls, tc)
-				logger.Debug("[AGENT-STREAM-ADDITIONAL] Found additional tool call: %s (ID: %s)", tc.Function.Name, tc.ID)
+
+			// Continue to next iteration to let model process tool results
+			fmt.Printf("[DEBUG] Tool execution complete, continuing to next iteration for final answer processing\n")
+			continue
+		}
+
+		// If final answer is detected with no tool calls, return immediately
+		if parsed.Final != "" {
+			logger.Debug("[AGENT-STREAM-COMPLETE] Final answer reached: %s", parsed.Final)
+			if a.statusCallback != nil {
+				a.statusCallback(0, "", false, "", "")
+			}
+			callback("", nil, nil)
+			return parsed.Final, nil
+		}
+
+		// Enhanced fallback: Try multiple strategies to find tool calls if we didn't collect any during streaming
+		if len(streamedToolCalls) == 0 {
+			logger.Debug("[AGENT-FALLBACK] No tool calls collected during streaming, trying fallback strategies")
+
+			// Strategy 1: Parse full accumulated content
+			additionalToolCalls := a.parseToolCallsFromContent(content)
+			for _, tc := range additionalToolCalls {
+				if !a.hasToolCall(streamedToolCalls, tc) {
+					callback("", &tc, nil) // Stream tool call to UI
+					streamedToolCalls = append(streamedToolCalls, tc)
+					logger.Debug("[AGENT-FALLBACK-1] Found tool call in full content: %s", tc.Function.Name)
+				}
+			}
+
+			// Strategy 2: Try desperate attempt - look for any JSON objects that might be tool calls
+			if len(streamedToolCalls) == 0 {
+				allObjects := splitJSONObjects(content)
+				for _, obj := range allObjects {
+					if strings.Contains(obj, `"function"`) && strings.Contains(obj, `"name"`) {
+						var tc tools.ToolCall
+						if err := json.Unmarshal([]byte(obj), &tc); err == nil && tc.Function.Name != "" {
+							if !a.hasToolCall(streamedToolCalls, tc) {
+								callback("", &tc, nil) // Stream tool call to UI
+								streamedToolCalls = append(streamedToolCalls, tc)
+								logger.Debug("[AGENT-FALLBACK-2] Found tool call via JSON object scan: %s", tc.Function.Name)
+							}
+						}
+					}
+				}
+			}
+
+			if len(streamedToolCalls) > 0 {
+				logger.Info("[AGENT-FALLBACK] Successfully recovered %d tool calls using fallback strategies", len(streamedToolCalls))
 			} else {
-				logger.Debug("[AGENT-STREAM-DUPLICATE] Skipping duplicate additional tool call: %s (ID: %s)", tc.Function.Name, tc.ID)
+				logger.Debug("[AGENT-FALLBACK] No tool calls found in any fallback strategy")
 			}
 		}
 
@@ -1024,7 +1404,7 @@ func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (stri
 		}
 
 		// After streaming completes, parse the full response for final logic
-		parsed, err := a.parseResponse(content)
+		parsed, err = a.parseResponse(content)
 		if err != nil {
 			return "", fmt.Errorf("failed to parse response: %w", err)
 		}

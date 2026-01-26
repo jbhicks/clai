@@ -1,0 +1,10 @@
+{
+  "description": "Test data file for user age analysis",
+  "users": [
+    {"id": 1, "name": "Alice", "age": 30, "role": "engineer"},
+    {"id": 2, "name": "Bob", "age": 25, "role": "designer"},
+    {"id": 3, "name": "Charlie", "age": 35, "role": "engineer"},
+    {"id": 4, "name": "Diana", "age": 28, "role": "manager"}
+  ],
+  "note": "Expected answer: Users older than 30 = [Charlie(35)], Average age = 35"
+}
