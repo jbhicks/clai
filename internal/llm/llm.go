@@ -330,7 +330,13 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 		// Check for successful response before starting stream reading
 		if resp.StatusCode != http.StatusOK {
 			logger.Error("[LLM-STREAM] Unexpected status code: %d", resp.StatusCode)
-			streamChan <- fmt.Sprintf("Error: HTTP %d", resp.StatusCode)
+			// Read error response body for more details
+			errorBody, _ := io.ReadAll(resp.Body)
+			errorMsg := fmt.Sprintf("Error: HTTP %d", resp.StatusCode)
+			if len(errorBody) > 0 {
+				errorMsg += fmt.Sprintf(" - %s", string(errorBody))
+			}
+			streamChan <- errorMsg
 			return
 		}
 
@@ -519,7 +525,13 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 		// Check for successful response before starting stream reading
 		if resp.StatusCode != http.StatusOK {
 			logger.Error("[LLM-STREAM] Unexpected status code: %d", resp.StatusCode)
-			streamChan <- fmt.Sprintf("Error: HTTP %d", resp.StatusCode)
+			// Read error response body for more details
+			errorBody, _ := io.ReadAll(resp.Body)
+			errorMsg := fmt.Sprintf("Error: HTTP %d", resp.StatusCode)
+			if len(errorBody) > 0 {
+				errorMsg += fmt.Sprintf(" - %s", string(errorBody))
+			}
+			streamChan <- errorMsg
 			return
 		}
 

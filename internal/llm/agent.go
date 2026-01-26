@@ -954,23 +954,13 @@ func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (stri
 		// Parse final content for additional tool calls (in case we missed any)
 		additionalToolCalls := a.parseToolCallsFromContent(content)
 		for _, tc := range additionalToolCalls {
-			// Check for duplicates
-			found := false
-			for _, existing := range streamedToolCalls {
-				if existing.ID == tc.ID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				// Generate unique ID using timestamp
+			// Generate unique ID using timestamp
+			if tc.ID == "" {
 				tc.ID = fmt.Sprintf("call_%d", time.Now().UnixNano())
-				callback("", &tc, nil) // Stream tool call to UI
-				streamedToolCalls = append(streamedToolCalls, tc)
-				logger.Debug("[AGENT-STREAM-ADDITIONAL] Found additional tool call: %s (ID: %s)", tc.Function.Name, tc.ID)
-			} else {
-				logger.Debug("[AGENT-STREAM-DUPLICATE] Skipping duplicate additional tool call: %s (ID: %s)", tc.Function.Name, tc.ID)
 			}
+			callback("", &tc, nil) // Stream tool call to UI
+			streamedToolCalls = append(streamedToolCalls, tc)
+			logger.Debug("[AGENT-STREAM-ADDITIONAL] Found missed tool call: %s (ID: %s)", tc.Function.Name, tc.ID)
 		}
 
 		fmt.Printf("[DEBUG] Final tool call count after streaming: %d\n", len(streamedToolCalls))
