@@ -10,6 +10,85 @@ import (
 	"time"
 )
 
+// StreamingToolCallAssembler assembles tool calls from streaming delta chunks
+type StreamingToolCallAssembler struct {
+	activeToolCalls map[string]*tools.ToolCall
+}
+
+// NewStreamingToolCallAssembler creates a new tool call assembler
+func NewStreamingToolCallAssembler() *StreamingToolCallAssembler {
+	return &StreamingToolCallAssembler{
+		activeToolCalls: make(map[string]*tools.ToolCall),
+	}
+}
+
+// ProcessDelta processes a streaming delta and returns any completed tool calls
+func (s *StreamingToolCallAssembler) ProcessDelta(delta OpenAIDelta) []tools.ToolCall {
+	var completedCalls []tools.ToolCall
+
+	for _, tc := range delta.ToolCalls {
+		if tc.ID == "" {
+			continue // Skip tool calls without ID
+		}
+
+		// Initialize or update the tool call
+		if existing, exists := s.activeToolCalls[tc.ID]; exists {
+			// Append to existing arguments
+			if tc.Function.Name != "" && existing.Function.Name == "" {
+				existing.Function.Name = tc.Function.Name
+			}
+			if tc.Function.Arguments != "" {
+				existing.Function.Arguments += tc.Function.Arguments
+			}
+		} else {
+			// Create new tool call
+			newTC := &tools.ToolCall{
+				ID:   tc.ID,
+				Type: tc.Type,
+				Function: tools.ToolCallFunc{
+					Name:      tc.Function.Name,
+					Arguments: tc.Function.Arguments,
+				},
+			}
+			s.activeToolCalls[tc.ID] = newTC
+		}
+
+		// Check if tool call is complete (simple heuristic: if arguments end with })
+		if existing := s.activeToolCalls[tc.ID]; existing != nil {
+			args := existing.Function.Arguments
+			if strings.HasSuffix(args, "}") {
+				// Complete this tool call
+				completedCalls = append(completedCalls, *existing)
+				delete(s.activeToolCalls, tc.ID)
+			}
+		}
+	}
+
+	return completedCalls
+}
+
+// Reset clears all active tool calls
+func (s *StreamingToolCallAssembler) Reset() {
+	s.activeToolCalls = make(map[string]*tools.ToolCall)
+}
+
+// GetActiveCount returns the number of active tool calls being assembled
+func (s *StreamingToolCallAssembler) GetActiveCount() int {
+	return len(s.activeToolCalls)
+}
+
+// validateToolCall validates a single tool call (for testing compatibility)
+func (s *StreamingToolCallAssembler) validateToolCall(tc *tools.ToolCall) bool {
+	if tc.Type != "function" {
+		return false
+	}
+	if tc.Function.Name == "" {
+		return false
+	}
+	// Arguments can be empty for some tools
+	return true
+}
+
 type StreamingCallback func(chunk string, toolCall *tools.ToolCall, codeBlock *CodeBlock)
 
 type AgentResponse struct {
@@ -350,8 +429,8 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 	fmt.Printf("[CRITICAL-DEBUG] PARSE METHOD CALLED WITH: %s\n", content)
 	var toolCalls []tools.ToolCall
 
-	// Check if content starts with tool_calls format immediately
-	if strings.HasPrefix(content, `{"tool_calls"`) {
+	// Check if content contains tool_calls format anywhere (not just at start)
+	if strings.Contains(content, `"tool_calls"`) {
 		logger.Debug("[AGENT-PARSE-TOOL] Detected OpenAI tool_calls format at start")
 		fmt.Printf("[AGENT-PARSE-TOOL] ENTERING DIRECT PARSING PATH\n")
 		// Try direct JSON parsing first
@@ -1168,7 +1247,7 @@ func (a *Agent) synthesizeFinalAnswerFromRecentTools() string {
 
 // injectSelfReflectionMessage adds a meta-message that references previous assistant responses with recursive depth
 func (a *Agent) injectSelfReflectionMessage(iteration int) {
-	// Find the most recent assistant message, considering reflection depth
+	// Find most recent assistant message, considering reflection depth
 	var lastAssistantContent string
 	reflectionLevel := 0
 
@@ -1210,4 +1289,30 @@ func (a *Agent) injectSelfReflectionMessage(iteration int) {
 		a.reflectionDepth++
 		logger.Debug("[AGENT-STRANGE-LOOP] Injected recursive reflection message at iteration %d, depth %d", iteration, a.reflectionDepth)
 	}
+}
+
+// extractToolCallsFromContent extracts tool calls from content (alias for parseToolCallsFromContent for backward compatibility)
+func (a *Agent) extractToolCallsFromContent(content string) []tools.ToolCall {
+	return a.parseToolCallsFromContent(content)
+}
+
+// detectCompleteToolCalls detects if content contains complete tool calls and returns them
+func (a *Agent) detectCompleteToolCalls(content string) ([]tools.ToolCall, bool) {
+	toolCalls := a.parseToolCallsFromContent(content)
+
+	// Check if we have valid tool calls with proper JSON arguments
+	for _, tc := range toolCalls {
+		var args map[string]interface{}
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+			logger.Debug("[AGENT-DETECT-TOOL] Incomplete tool call detected: %s, args: %s", tc.Function.Name, tc.Function.Arguments)
+			return nil, false
+		}
+	}
+
+	if len(toolCalls) > 0 {
+		logger.Debug("[AGENT-DETECT-TOOL] Complete tool calls detected: %d", len(toolCalls))
+		return toolCalls, true
+	}
+
+	return nil, false
 }

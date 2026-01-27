@@ -2123,9 +2123,9 @@ func (s *Server) sendPromptToModel(server *ModelServer, prompt string) (string, 
 Answer questions clearly and provide code when needed.`
 
 	requestBody := map[string]interface{}{
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": prompt},
+		"messages": []llm.Message{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: prompt},
 		},
 		"max_tokens":  1000,
 		"temperature": 0.1, // Low temperature for more deterministic code

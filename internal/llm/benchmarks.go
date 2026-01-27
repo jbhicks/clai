@@ -224,6 +224,6 @@ var ModelBenchmarkSuite = []ModelBenchmarkTest{
 		ShouldContain:    []string{"OrderedDict", "threading.Lock", "O(1)"}, // Key implementation elements
 		ShouldNotContain: []string{"I cannot"},
 		MaxIterations:    20,
-		TimeoutSeconds:   180,
+		TimeoutSeconds:   300, // 5 minutes for complex coding tasks
 	},
 }

@@ -15,6 +15,22 @@ import (
 )
 
 func runQueryCommand(args []string) {
+	// Check for help flag before parsing
+	if isHelpCommand(args) {
+		fmt.Println("clai query - Send a single query to the LLM")
+		fmt.Println("")
+		fmt.Println("Usage: clai query [OPTIONS] \"your question here\"")
+		fmt.Println("")
+		fmt.Println("Options:")
+		fmt.Println("  --model MODEL          Override model selection")
+		fmt.Println("  --format FORMAT       Output format (text, json)")
+		fmt.Println("  --system-prompt PROMPT Override system prompt")
+		fmt.Println("  --stream              Enable streaming output")
+		fmt.Println("  --no-history         Don't save to conversation history")
+		fmt.Println("  --verbose, -v         Show timing and debug info")
+		os.Exit(0)
+	}
+
 	// Parse CLI flags
 	var (
 		model        = flag.String("model", "", "Override the default model (defaults to OLLAMA_MODEL env var)")

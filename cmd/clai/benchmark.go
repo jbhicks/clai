@@ -23,11 +23,9 @@ import (
 
 func runBenchmarkCommand(args []string) {
 	// Parse CLI flags
-	var cliMode bool
 	var testIndex int
 	var sequential bool
 	var listTests bool
-	flag.BoolVar(&cliMode, "cli", false, "Run benchmarks in command-line mode (no web server)")
 	flag.IntVar(&testIndex, "test", -1, "Run specific test by index (0-based), use -1 for all tests")
 	flag.BoolVar(&sequential, "sequential", false, "Run tests sequentially instead of parallel (slower but more stable)")
 	flag.BoolVar(&listTests, "list", false, "List all available benchmark tests and exit")
@@ -59,74 +57,8 @@ func runBenchmarkCommand(args []string) {
 	}
 	defer store.Close()
 
-	// Handle CLI mode
-	if cliMode {
-		runBenchmarkCLI(store, testIndex, sequential)
-		return
-	}
-
-	// Create and start server
-	server := benchmark.NewServer(store)
-
-	// Check if server was already running (for reloads)
-	wasAlreadyRunning := checkServerRunning()
-	preferredPort := getPreferredPort()
-
-	// Start server in a goroutine
-	go func() {
-		port, err := server.StartWithPreferredPort(preferredPort)
-		if err != nil {
-			logger.Error("Server error: %v", err)
-			fmt.Fprintf(os.Stderr, "Failed to start server: %v\n", err)
-			os.Exit(1)
-		}
-		logger.Info("Benchmark server started on port %d", port)
-	}()
-
-	// Wait a moment for server to start
-	// TODO: Better way to wait for server to be ready
-	fmt.Println("Starting benchmark server...")
-
-	// Give server time to bind to port
-	port := 0
-	for i := 0; i < 10; i++ {
-		port = server.GetPort()
-		if port != 0 {
-			break
-		}
-		// Simple sleep alternative
-		for j := 0; j < 10000000; j++ {
-			// busy wait
-		}
-	}
-
-	if port == 0 {
-		fmt.Fprintln(os.Stderr, "Failed to get server port")
-		os.Exit(1)
-	}
-
-	url := fmt.Sprintf("http://localhost:%d", port)
-	fmt.Printf("Benchmark server running at %s\n", url)
-
-	// Only open browser if this is a fresh start (not a reload)
-	if !wasAlreadyRunning {
-		fmt.Println("Opening in browser...")
-		if err := openBrowser(url); err != nil {
-			logger.Warn("Failed to open browser: %v", err)
-			fmt.Printf("Please open %s in your browser\n", url)
-		}
-	} else {
-		fmt.Println("Server reloaded - browser tab should auto-refresh")
-	}
-
-	// Write lock file so we know server is running
-	writeLockFile(port)
-	defer removeLockFile()
-
-	fmt.Println("Press Ctrl+C to stop the server")
-
-	// Wait forever (until Ctrl+C)
-	select {}
+	// Always run CLI mode
+	runBenchmarkCLI(store, testIndex, sequential)
 }
 
 // checkServerRunning checks if the server was already running before this start

@@ -66,22 +66,147 @@ func getBuildIdentifier() string {
 }
 
 func main() {
+	// Handle no command case
+	if len(os.Args) == 1 {
+		handleNoCommand()
+		return
+	}
+
 	// Check for subcommands first - these should run without TUI setup
-	if len(os.Args) >= 2 {
+	if len(os.Args) >= 2 && commandExists(os.Args[1]) {
 		switch os.Args[1] {
 		case "debug":
+			if isHelpCommand(os.Args[2:]) {
+				fmt.Println("clai debug - Debug CLAI functionality")
+				fmt.Println("")
+				fmt.Println("Usage: clai debug [command] [options]")
+				fmt.Println("")
+				fmt.Println("This command is used for debugging CLAI internals.")
+				os.Exit(0)
+			}
 			runDebugCommand(os.Args[2:])
 			return
 		case "models":
+			if isHelpCommand(os.Args[2:]) {
+				fmt.Println("clai models - List available LLM models")
+				fmt.Println("")
+				fmt.Println("Usage: clai models [--verbose]")
+				fmt.Println("")
+				fmt.Println("Options:")
+				fmt.Println("  --verbose, -v    Show detailed model information")
+				os.Exit(0)
+			}
 			runModelsCommand(os.Args[2:])
 			return
 		case "benchmark":
+			if isHelpCommand(os.Args[2:]) {
+				fmt.Println("clai benchmark - Run benchmark server")
+				fmt.Println("")
+				fmt.Println("Usage: clai benchmark [--port PORT]")
+				fmt.Println("")
+				fmt.Println("Options:")
+				fmt.Println("  --port PORT     Override default port (default: 8080)")
+				os.Exit(0)
+			}
 			runBenchmarkCommand(os.Args[2:])
 			return
 		case "query":
+			if isHelpCommand(os.Args[2:]) {
+				fmt.Println("clai query - Send a single query to the LLM")
+				fmt.Println("")
+				fmt.Println("Usage: clai query [OPTIONS] \"your question here\"")
+				fmt.Println("")
+				fmt.Println("Options:")
+				fmt.Println("  --model MODEL          Override model selection")
+				fmt.Println("  --format FORMAT       Output format (text, json)")
+				fmt.Println("  --system-prompt PROMPT Override system prompt")
+				fmt.Println("  --stream              Enable streaming output")
+				fmt.Println("  --no-history         Don't save to conversation history")
+				fmt.Println("  --verbose, -v         Show timing and debug info")
+				os.Exit(0)
+			}
 			runQueryCommand(os.Args[2:])
 			return
+		case "orchestrate":
+			if isHelpCommand(os.Args[2:]) {
+				fmt.Println("clai orchestrate - Run Ralph autonomous development loop")
+				fmt.Println("")
+				fmt.Println("Usage: clai orchestrate [OPTIONS]")
+				fmt.Println("")
+				fmt.Println("Options:")
+				fmt.Println("  --stories FILE         Path to stories.json (default: .clai/stories.json)")
+				fmt.Println("  --max-iterations N     Maximum iterations (default: 50)")
+				fmt.Println("  --model MODEL          Model to use (default: opencode/claude-opus-4-5)")
+				fmt.Println("  --single              Run single iteration and exit")
+				fmt.Println("  --verbose, -v         Enable verbose logging")
+				fmt.Println("  --watch               Watch mode with live updates")
+				fmt.Println("  --help, -h           Show this help")
+				os.Exit(0)
+			}
+			runOrchestrateCommand(os.Args[2:])
+			return
+		case "task":
+			if len(os.Args) > 2 {
+				if os.Args[2] == "--help" || os.Args[2] == "-h" {
+					fmt.Println("clai task - Manage and execute individual tasks")
+					fmt.Println("")
+					fmt.Println("SUBCOMMANDS:")
+					fmt.Println("  execute     Execute a single task by ID")
+					fmt.Println("  decompose   Decompose a task into implementation steps")
+					fmt.Println("")
+					fmt.Println("Execute usage:")
+					fmt.Println("  clai task execute <task-id> [options]")
+					fmt.Println("")
+					fmt.Println("Execute options:")
+					fmt.Println("  --stories FILE        Path to stories.json")
+					fmt.Println("  --skip-checks         Skip quality checks")
+					fmt.Println("  --help, -h            Show this help")
+					os.Exit(0)
+				}
+				switch os.Args[2] {
+				case "execute":
+					if isHelpCommand(os.Args[3:]) {
+						fmt.Println("clai task execute - Execute a single task by ID")
+						fmt.Println("")
+						fmt.Println("Usage: clai task execute <task-id> [options]")
+						fmt.Println("")
+						fmt.Println("Arguments:")
+						fmt.Println("  task-id              ID of task to execute")
+						fmt.Println("")
+						fmt.Println("Options:")
+						fmt.Println("  --stories FILE        Path to stories.json")
+						fmt.Println("  --skip-checks         Skip quality checks")
+						fmt.Println("  --help, -h            Show this help")
+						os.Exit(0)
+					}
+					runTaskExecuteCommand(os.Args[3:])
+					return
+				case "decompose":
+					if isHelpCommand(os.Args[3:]) {
+						fmt.Println("clai task decompose - Decompose a task into implementation steps")
+						fmt.Println("")
+						fmt.Println("Usage: clai task decompose \"Task description\"")
+						fmt.Println("")
+						fmt.Println("This command helps break down tasks into manageable steps.")
+						os.Exit(0)
+					}
+					runDecomposeCommand(os.Args[3:])
+					return
+				}
+			}
 		}
+	}
+
+	// Check for general help request (should come before unknown command handling)
+	if len(os.Args) >= 2 && isHelpCommand(os.Args[1:]) {
+		showMainHelp()
+		os.Exit(0)
+	}
+
+	// Handle unknown commands
+	if len(os.Args) >= 2 && !commandExists(os.Args[1]) {
+		handleNoCommand()
+		return
 	}
 
 	// Only for TUI mode - initialize logging and screen clearing
@@ -358,18 +483,21 @@ func main() {
 	benchmarkServer := benchmark.NewServer(store)
 	logger.Info("Benchmark server created successfully")
 
-	logger.Info("About to start benchmark server")
-	port, err := benchmarkServer.Start()
-	if err != nil {
-		logger.Warn("Failed to start benchmark server: %v", err)
-	} else {
-		logger.Info("Benchmark server started on port %d", port)
-	}
+	// Start benchmark server in background goroutine to avoid blocking startup
+	logger.Info("About to start benchmark server asynchronously")
+	go func() {
+		port, err := benchmarkServer.Start()
+		if err != nil {
+			logger.Warn("Failed to start benchmark server: %v", err)
+		} else {
+			logger.Info("Benchmark server started on port %d", port)
 
-	logger.Info("About to start background refresh")
-	// Start background refresh now that benchmark server is running
-	benchmarkServer.StartBackgroundRefresh()
-	logger.Info("Background refresh started")
+			// Start background refresh now that benchmark server is running
+			logger.Info("About to start background refresh")
+			benchmarkServer.StartBackgroundRefresh()
+			logger.Info("Background refresh started")
+		}
+	}()
 
 	// Start goroutine to bridge debug channel to tea program
 	go func() {

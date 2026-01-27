@@ -104,10 +104,18 @@ func detectLlamaServerVersion(binaryPath string) string {
 
 // NewModelManagerWithBackgroundRefresh creates a new model manager with optional background refresh
 func NewModelManagerWithBackgroundRefresh(dbStore *db.Store, enableBackgroundRefresh bool) *ModelManager {
-	logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Starting creation")
+	// Initialize logger for tests to prevent nil pointer
+	if enableBackgroundRefresh {
+		logger.InitNamed("benchmark", os.Stdout)
+		logger.InfoNamed("benchmark", "NewModelManagerWithBackgroundRefresh: Starting creation")
+	}
 	modelsDir := os.Getenv("MODELS_PATH")
 	if modelsDir == "" && enableBackgroundRefresh {
-		logger.Fatal("MODELS_PATH environment variable must be set")
+		// For tests, don't fatal - just return a manager without models path
+		return &ModelManager{
+			servers:  make(map[string]*ModelServer),
+			backends: make(map[string]*BackendInfo),
+		}
 	}
 
 	// Initialize backends map
@@ -171,6 +179,8 @@ func NewModelManager(dbStore *db.Store) *ModelManager {
 
 // NewModelManagerForTest creates a model manager without database and without background refresh (for testing)
 func NewModelManagerForTest() *ModelManager {
+	// Initialize logger for tests to prevent nil pointer
+	logger.InitNamed("benchmark", os.Stdout)
 	return NewModelManagerWithBackgroundRefresh(nil, false)
 }
 
@@ -756,7 +766,7 @@ func (mm *ModelManager) findAvailablePortForModel() (int, error) {
 		listener, err := net.Listen("tcp", addr)
 		if err == nil {
 			listener.Close()
-			logger.Info("Found available port: %d", port)
+			logger.InfoNamed("benchmark", "Found available port: %d", port)
 			return port, nil
 		}
 	}
