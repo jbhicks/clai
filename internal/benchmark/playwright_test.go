@@ -438,6 +438,9 @@ func TestAPIDownloadsEndpoint(t *testing.T) {
 }
 
 func TestAPIServersListEndpoint(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("MODELS_PATH", tempDir)
+
 	store, err := db.New()
 	if err != nil {
 		t.Fatalf("Failed to create database: %v", err)
@@ -452,7 +455,6 @@ func TestAPIServersListEndpoint(t *testing.T) {
 		port:         0,
 	}
 
-	tempDir := t.TempDir()
 	modelPath := filepath.Join(tempDir, "test-model.gguf")
 	f, err := os.Create(modelPath)
 	if err != nil {
