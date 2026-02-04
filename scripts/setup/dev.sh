@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export MODELS_PATH=/mnt/media/models
+
 BINARY="clai"
 PID_FILE="/tmp/clai_dev.pid"
 BUILD_TRIGGER="/tmp/clai_rebuild_trigger"

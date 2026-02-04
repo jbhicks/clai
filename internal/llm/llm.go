@@ -20,6 +20,7 @@ const (
    <code language="bash">cat /path/to/file</code>
    <code language="python">print("Hello")</code>
    <code language="javascript">console.log("Hello")</code>
+   Always close code tags with </code> and never leave them unclosed.
 
 2. DO NOT use echo/print/console.log to narrate your thinking. Only use them for actual task output.
    ❌ BAD: <code language="bash">echo "Now I will read the file"</code>
@@ -28,6 +29,7 @@ const (
 3. You have filesystem access. Read files directly instead of asking the user.
 4. Execute commands as needed to complete tasks.
 5. Keep code blocks focused and purposeful.
+6. After any tool/code execution, provide the final user-facing answer as plain text (not inside a code block).
 
 **Default behavior when uncertain:**
 - If asked about project status, plans, or "what's next", read TODO.md, README.md, or AGENTS.md
@@ -93,32 +95,44 @@ func (c *Client) detectAPIFormat() {
 	}
 
 	resp, err := http.Post(c.host+"/api/chat", "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		logger.Debug("[FORMAT-DETECT] Failed to send test request: %v", err)
-		c.apiFormat = FormatOllama
-		return
-	}
-	defer resp.Body.Close()
+	if err == nil {
+		defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		logger.Debug("[FORMAT-DETECT] Failed to read response: %v", err)
-		c.apiFormat = FormatOllama
-		return
-	}
-
-	var ollamaResp Response
-	if err := json.Unmarshal(body, &ollamaResp); err == nil && ollamaResp.Message.Content != "" {
-		logger.Debug("[FORMAT-DETECT] Detected Ollama native format")
-		c.apiFormat = FormatOllama
-		return
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr == nil {
+			var ollamaResp Response
+			if err := json.Unmarshal(body, &ollamaResp); err == nil && ollamaResp.Message.Content != "" {
+				logger.Debug("[FORMAT-DETECT] Detected Ollama native format")
+				c.apiFormat = FormatOllama
+				return
+			}
+		}
+	} else {
+		logger.Debug("[FORMAT-DETECT] Ollama /api/chat request failed: %v", err)
 	}
 
-	var openAIResp OpenAIStreamChunk
-	if err := json.Unmarshal(body, &openAIResp); err == nil && len(openAIResp.Choices) > 0 {
-		logger.Debug("[FORMAT-DETECT] Detected OpenAI-compatible format")
-		c.apiFormat = FormatOpenAI
-		return
+	openAIReq := OpenAIRequest{
+		Model:    c.model,
+		Messages: testMessages,
+		Stream:   false,
+	}
+	openAIJSON, err := json.Marshal(openAIReq)
+	if err == nil {
+		openAIResp, openAIErr := http.Post(c.host+"/v1/chat/completions", "application/json", bytes.NewBuffer(openAIJSON))
+		if openAIErr == nil {
+			defer openAIResp.Body.Close()
+			body, readErr := io.ReadAll(openAIResp.Body)
+			if readErr == nil {
+				var openAIParsed OpenAIResponse
+				if err := json.Unmarshal(body, &openAIParsed); err == nil && len(openAIParsed.Choices) > 0 {
+					logger.Debug("[FORMAT-DETECT] Detected OpenAI-compatible format")
+					c.apiFormat = FormatOpenAI
+					return
+				}
+			}
+		} else {
+			logger.Debug("[FORMAT-DETECT] OpenAI /v1/chat/completions request failed: %v", openAIErr)
+		}
 	}
 
 	logger.Debug("[FORMAT-DETECT] Final API format for model %s: %d (%s)", c.model, c.apiFormat, c.APIFormatString())
@@ -126,7 +140,7 @@ func (c *Client) detectAPIFormat() {
 
 func (c *Client) getChatEndpoint() string {
 	if c.apiFormat == FormatOpenAI {
-		return c.host + "/chat/completions"
+		return c.host + "/v1/chat/completions"
 	}
 	return c.host + "/api/chat"
 }
@@ -340,12 +354,15 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 	// Prepare system prompt with tools for Hermes-style (Qwen) or include tools in request for OpenAI-style
 	systemPrompt := c.systemPrompt
 	if includeSystemPrompt && c.systemPrompt != "" {
-		if len(tools) > 0 && c.apiFormat == FormatOllama && !strings.Contains(strings.ToLower(c.model), "qwen") {
+		if len(tools) > 0 && c.apiFormat == FormatOllama {
 			toolsJSON, err := json.Marshal(tools)
 			if err != nil {
 				return Response{}, fmt.Errorf("failed to marshal tools: %w", err)
 			}
 			systemPrompt = c.systemPrompt + "\n\nAvailable tools:\n" + string(toolsJSON)
+		}
+		if len(tools) > 0 && strings.Contains(strings.ToLower(c.model), "qwen") {
+			systemPrompt = systemPrompt + "\n\nWhen tools are available, do NOT use <code> blocks. If you need to run a tool, respond with a single JSON object only (no extra text): {\"action\":\"bash\",\"command\":\"...\"} or {\"action\":\"python\",\"code\":\"...\"}. After tool execution, respond with the final answer as plain text."
 		}
 		allMessages = append([]Message{{Role: "system", Content: systemPrompt}}, messages...)
 		logger.Debug("[LLM-TOOLS] Final system prompt for model %s: %s", c.model, systemPrompt)
@@ -355,14 +372,10 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 
 	var reqBody interface{}
 	if c.apiFormat == FormatOpenAI {
-		var requestTools []Tool
-		if !strings.Contains(strings.ToLower(c.model), "qwen") {
-			requestTools = tools
-		}
 		reqBody = OpenAIRequestWithTools{
 			Model:    c.model,
 			Messages: allMessages,
-			Tools:    requestTools,
+			Tools:    tools,
 			Stream:   true,
 		}
 	} else {
@@ -514,7 +527,15 @@ func (c *Client) APIFormatString() string {
 func (c *Client) HealthCheck() error {
 	resp, err := http.Get(c.host + "/api/tags")
 	if err != nil {
-		return fmt.Errorf("failed to connect to Ollama at %s: %w", c.host, err)
+		resp, openAIErr := http.Get(c.host + "/v1/models")
+		if openAIErr != nil {
+			return fmt.Errorf("failed to connect to LLM at %s: %w", c.host, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("llm health check failed with status: %s", resp.Status)
+		}
+		return nil
 	}
 	defer resp.Body.Close()
 
@@ -559,6 +580,22 @@ func (c *Client) GetModelInfo() (*ShowModelResponse, error) {
 	}
 
 	resp, err := http.Post(c.host+"/api/show", "application/json", bytes.NewBuffer(jsonBody))
+	if err == nil {
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("model info request failed with status: %s", resp.Status)
+		}
+
+		var modelResp ShowModelResponse
+		if err := json.NewDecoder(resp.Body).Decode(&modelResp); err != nil {
+			return nil, fmt.Errorf("error decoding model info response: %w", err)
+		}
+
+		return &modelResp, nil
+	}
+
+	resp, err = http.Post(c.host+"/v1/models", "application/json", bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, err
 	}
@@ -574,4 +611,9 @@ func (c *Client) GetModelInfo() (*ShowModelResponse, error) {
 	}
 
 	return &modelResp, nil
+}
+
+// DefaultSystemPrompt exposes the fallback system prompt.
+func DefaultSystemPrompt() string {
+	return defaultSystemPrompt
 }

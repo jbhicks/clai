@@ -21,6 +21,9 @@ truncate -s 0 benchmark.log 2>/dev/null || true
 # Note: CLAI handles its own terminal setup, so minimal reset here
 stty sane 2>/dev/null || true
 
+echo "Rebuilding templates..."
+templ generate || echo "Warning: templ generate failed, continuing..."
+
 echo "Rebuilding and restarting CLAI..."
 # Run CLAI in background - entr will wait for this script to exit
 make run-simple &

@@ -147,11 +147,11 @@ templ Models() {
 			<!-- Download Status Messages -->
 			<div id="download_status"></div>
 
-			<!-- Downloads List - Uses parent SSE connection -->
-			<div id="downloads_list">
-				<div hx-get="/api/models/downloads" hx-trigger="load, sse:downloads_update" hx-swap="morph:innerHTML" hx-ext="morph">
-					<p style="color: #64748b; font-size: 13px;">Loading downloads...</p>
-				</div>
+			<!-- Downloads List - Uses main SSE connection -->
+			<div id="downloads_container">
+			<div id="downloads_list" hx-get="/api/models/downloads" hx-trigger="load, sse:downloads_update" hx-swap="morph:innerHTML" hx-target="#downloads_list">
+				<p style="color: #64748b; font-size: 13px;">Loading downloads...</p>
+			</div>
 			</div>
 
 		</div>

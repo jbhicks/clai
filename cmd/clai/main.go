@@ -76,11 +76,11 @@ func main() {
 		case "models":
 			runModelsCommand(os.Args[2:])
 			return
+		case "ask":
+			runAskCommand(os.Args[2:])
+			return
 		case "benchmark":
 			runBenchmarkCommand(os.Args[2:])
-			return
-		case "query":
-			runQueryCommand(os.Args[2:])
 			return
 		}
 	}

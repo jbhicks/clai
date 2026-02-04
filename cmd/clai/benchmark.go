@@ -1,13 +1,14 @@
 package main
 
 import (
-	"context"
-	"flag"
-	"fmt"
 	"clai/internal/benchmark"
 	"clai/internal/db"
 	"clai/internal/llm"
 	"clai/internal/logger"
+	"context"
+	"flag"
+	"fmt"
+	"github.com/joho/godotenv"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -22,12 +23,13 @@ import (
 )
 
 func runBenchmarkCommand(args []string) {
+	_ = godotenv.Load()
 	// Parse CLI flags
 	var cliMode bool
 	var testIndex int
 	var sequential bool
 	flag.BoolVar(&cliMode, "cli", false, "Run benchmarks in command-line mode (no web server)")
-	flag.IntVar(&testIndex, "test", -1, "Run specific test by index (0-based), use -1 for all tests")
+	flag.IntVar(&testIndex, "test", -1, "Run specific test by index (1-based), use -1 for all tests")
 	flag.BoolVar(&sequential, "sequential", false, "Run tests sequentially instead of parallel (slower but more stable)")
 
 	// Parse the provided args instead of os.Args
@@ -66,7 +68,7 @@ func runBenchmarkCommand(args []string) {
 
 	// Start server in a goroutine
 	go func() {
-		if err := server.StartWithPreferredPort(preferredPort); err != nil {
+		if _, err := server.StartWithPreferredPort(preferredPort); err != nil {
 			logger.Error("Server error: %v", err)
 			fmt.Fprintf(os.Stderr, "Failed to start server: %v\n", err)
 			os.Exit(1)
@@ -234,22 +236,32 @@ func runBenchmarkCLI(store *db.Store, testIndex int, sequential bool) {
 	// Store original test data for display purposes
 	var originalTest llm.ModelBenchmarkTest
 	if testIndex >= 0 {
-		if testIndex >= len(llm.ModelBenchmarkSuite) {
-			fmt.Fprintf(os.Stderr, "Test index %d out of range (0-%d)\n", testIndex, len(llm.ModelBenchmarkSuite)-1)
+		if testIndex == 0 {
+			fmt.Fprintln(os.Stderr, "Test index starts at 1. Use -1 for all tests.")
 			os.Exit(1)
 		}
-		originalTest = llm.ModelBenchmarkSuite[testIndex]
+		adjustedIndex := testIndex - 1
+		if adjustedIndex >= len(llm.ModelBenchmarkSuite) {
+			fmt.Fprintf(os.Stderr, "Test index %d out of range (1-%d)\n", testIndex, len(llm.ModelBenchmarkSuite))
+			os.Exit(1)
+		}
+		originalTest = llm.ModelBenchmarkSuite[adjustedIndex]
 	}
 
 	// Determine which tests to run
 	var tests []llm.ModelBenchmarkTest
 	if testIndex >= 0 {
-		// Run specific test by index
-		if testIndex >= len(llm.ModelBenchmarkSuite) {
-			fmt.Fprintf(os.Stderr, "Test index %d out of range (0-%d)\n", testIndex, len(llm.ModelBenchmarkSuite)-1)
+		// Run specific test by index (1-based)
+		if testIndex == 0 {
+			fmt.Fprintln(os.Stderr, "Test index starts at 1. Use -1 for all tests.")
 			os.Exit(1)
 		}
-		originalTest = llm.ModelBenchmarkSuite[testIndex]
+		adjustedIndex := testIndex - 1
+		if adjustedIndex >= len(llm.ModelBenchmarkSuite) {
+			fmt.Fprintf(os.Stderr, "Test index %d out of range (1-%d)\n", testIndex, len(llm.ModelBenchmarkSuite))
+			os.Exit(1)
+		}
+		originalTest = llm.ModelBenchmarkSuite[adjustedIndex]
 		tests = []llm.ModelBenchmarkTest{originalTest}
 	} else {
 		tests = llm.ModelBenchmarkSuite
@@ -429,6 +441,12 @@ func checkAPIHealth() bool {
 
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(host + "/health")
+	if err == nil {
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK
+	}
+
+	resp, err = client.Get(host + "/v1/models")
 	if err != nil {
 		return false
 	}

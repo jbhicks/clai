@@ -34,6 +34,12 @@ func TestCheckServerHealth(t *testing.T) {
 			want:           false,
 		},
 		{
+			name:           "loading server returns true",
+			serverResponse: http.StatusServiceUnavailable,
+			serverDelay:    0,
+			want:           true,
+		},
+		{
 			name:           "timeout returns false",
 			serverResponse: http.StatusOK,
 			serverDelay:    500 * time.Millisecond, // Longer than 200ms timeout

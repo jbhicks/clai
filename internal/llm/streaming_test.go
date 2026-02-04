@@ -5,6 +5,11 @@ import (
 	"testing"
 )
 
+type testToolCall struct {
+	Name       string          `json:"name"`
+	Parameters json.RawMessage `json:"parameters"`
+}
+
 // Test case that reproduces the streaming JSON corruption issue
 func TestStreamingJSONAssembly_Integration(t *testing.T) {
 	// Simulate the exact scenario that causes corruption
@@ -22,10 +27,10 @@ func TestStreamingJSONAssembly_Integration(t *testing.T) {
 	// This should produce corrupted JSON if we just append blindly
 	t.Logf("Testing fragmented JSON assembly with %d fragments", len(fragments))
 
-	var tc ToolCall
+	var tc testToolCall
 	for i, fragment := range fragments {
 		if i == 0 {
-			tc = ToolCall{
+			tc = testToolCall{
 				Name:       "execute_bash",
 				Parameters: json.RawMessage(fragment),
 			}
@@ -48,9 +53,9 @@ func TestStreamingJSONAssembly_Integration(t *testing.T) {
 
 	// Test case 2: Proper JSON assembly
 	t.Run("ProperAssembly", func(t *testing.T) {
-		var properTC ToolCall
+		var properTC testToolCall
 		properParams := json.RawMessage(`{"command":"ls","args":["--help"]}`)
-		properTC = ToolCall{
+		properTC = testToolCall{
 			Name:       "execute_bash",
 			Parameters: properParams,
 		}

@@ -336,3 +336,22 @@ func TestAgentFallbackToXMLWhenNoTools(t *testing.T) {
 		t.Errorf("Expected result to contain 'hello world' from XML execution, got: %s", result)
 	}
 }
+
+func TestParseToolCallsForBenchmark(t *testing.T) {
+	agent := NewAgent(&MockLLMClient{})
+
+	content := `{"id":"call_123","type":"function","function":{"name":"execute_bash","arguments":"{\"command\":\"cat internal/llm/sample.txt\"}"}}`
+	toolCalls := agent.ParseToolCallsForBenchmark(content)
+
+	if len(toolCalls) != 1 {
+		t.Fatalf("Expected 1 tool call, got %d", len(toolCalls))
+	}
+
+	if toolCalls[0].Function.Name != "execute_bash" {
+		t.Errorf("Expected tool name 'execute_bash', got: %s", toolCalls[0].Function.Name)
+	}
+
+	if !strings.Contains(toolCalls[0].Function.Arguments, "internal/llm/sample.txt") {
+		t.Errorf("Expected tool arguments to contain sample.txt path, got: %s", toolCalls[0].Function.Arguments)
+	}
+}

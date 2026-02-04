@@ -9,8 +9,8 @@ dev:
 	@echo "This provides auto-reload without tmux complexity"
 	@echo "Press Ctrl+C to stop"
 	@echo ""
-	@echo "Watching Go files for changes..."
-	@find . -name "*.go" -not -path "./vendor/*" | entr ./dev_restart.sh
+	@echo "Watching Go and Template files for changes..."
+	@find . -name "*.go" -o -name "*.templ" -not -path "./vendor/*" | entr ./dev_restart.sh
 
  dev-clean:
 	@echo "Cleaning up old development processes..."

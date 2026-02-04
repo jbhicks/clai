@@ -3,6 +3,8 @@ package benchmark
 import (
 	"clai/internal/db"
 	"clai/internal/llm"
+	"clai/internal/logger"
+	"clai/internal/tools"
 	"context"
 	"fmt"
 	"log"
@@ -134,21 +136,27 @@ func (r *Runner) runSingleTest(test llm.ModelBenchmarkTest) llm.ModelBenchmarkRe
 			fmt.Printf("\n[Tool Call: %s]\n", toolCall.Function.Name)
 			fmt.Printf("[Tool Args: %s]\n", toolCall.Function.Arguments)
 			inToolCall = true
+			result.CodeExecuted = append(result.CodeExecuted, fmt.Sprintf("tool:%s %s", toolCall.Function.Name, toolCall.Function.Arguments))
+			logger.Debug("[BENCH-STREAM] tool_call name=%s args=%s", toolCall.Function.Name, truncateForLog(toolCall.Function.Arguments, 200))
 		} else if codeBlock != nil {
 			// Print code execution info
 			fmt.Printf("\n[Executing %s code]\n", codeBlock.Language)
+			logger.Debug("[BENCH-STREAM] code_block language=%s", codeBlock.Language)
 		} else if chunk != "" && !inToolCall {
 			// Only print text chunks when not in a tool call
 			fmt.Print(chunk)
 			fullResponse.WriteString(chunk)
+			logger.Debug("[BENCH-STREAM] chunk len=%d content=%q", len(chunk), truncateForLog(chunk, 200))
 		} else if chunk != "" {
 			// Still collect all chunks for evaluation, even during tool calls
 			fullResponse.WriteString(chunk)
+			logger.Debug("[BENCH-STREAM] chunk(in tool) len=%d content=%q", len(chunk), truncateForLog(chunk, 200))
 		}
 	})
 	result.TimeElapsed = time.Since(start)
 	result.Response = response
 	result.Error = err
+	logger.Debug("[BENCH-RESULT] response_len=%d full_len=%d err=%v", len(response), fullResponse.Len(), err)
 
 	// Simple iteration count (could be improved to track actual iterations)
 	result.Iterations = 1
@@ -159,13 +167,40 @@ func (r *Runner) runSingleTest(test llm.ModelBenchmarkTest) llm.ModelBenchmarkRe
 		result.TokensPerSecond = float64(result.TokensGenerated) / result.TimeElapsed.Seconds()
 	}
 
+	if response == "" && fullResponse.Len() > 0 {
+		result.Response = fullResponse.String()
+	}
+
 	if err != nil {
 		result.FailureReason = fmt.Sprintf("Error: %v", err)
 		return result
 	}
 
+	if result.Response != "" {
+		toolCalls := agent.ParseToolCallsForBenchmark(result.Response)
+		if len(toolCalls) > 0 {
+			logger.Debug("[BENCH-TOOLS] parsed_tool_calls=%d", len(toolCalls))
+			var toolOutput strings.Builder
+			for _, toolCall := range toolCalls {
+				output, toolErr := tools.ExecuteTool(toolCall)
+				result.CodeExecuted = append(result.CodeExecuted, fmt.Sprintf("tool:%s %s", toolCall.Function.Name, toolCall.Function.Arguments))
+				if toolErr != nil {
+					toolOutput.WriteString(fmt.Sprintf("Tool execution error: %v\n", toolErr))
+					logger.Debug("[BENCH-TOOLS] tool_error name=%s err=%v", toolCall.Function.Name, toolErr)
+				} else {
+					toolOutput.WriteString(output)
+					if !strings.HasSuffix(output, "\n") {
+						toolOutput.WriteString("\n")
+					}
+					logger.Debug("[BENCH-TOOLS] tool_output name=%s len=%d", toolCall.Function.Name, len(output))
+				}
+			}
+			result.Response = toolOutput.String()
+		}
+	}
+
 	// Check if test passed
-	responseLower := strings.ToLower(response)
+	responseLower := strings.ToLower(result.Response)
 
 	// Check ShouldNotContain first
 	for _, forbidden := range test.ShouldNotContain {
@@ -193,6 +228,13 @@ func (r *Runner) runSingleTest(test llm.ModelBenchmarkTest) llm.ModelBenchmarkRe
 	// Test passed!
 	result.Passed = true
 	return result
+}
+
+func truncateForLog(value string, max int) string {
+	if len(value) <= max {
+		return value
+	}
+	return value[:max] + "..."
 }
 
 // estimateTokenCount provides a rough estimate of token count in text

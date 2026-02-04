@@ -16,6 +16,15 @@ import (
 
 // RunModelBenchmark executes all benchmark tests against a given model
 func RunModelBenchmark(t *testing.T, client LLMClientInterface) []ModelBenchmarkResult {
+	repoRoot, err := findRepoRoot()
+	if err == nil {
+		if chdirErr := os.Chdir(repoRoot); chdirErr != nil {
+			t.Logf("Warning: failed to change directory to repo root %s: %v", repoRoot, chdirErr)
+		}
+	} else {
+		t.Logf("Warning: failed to locate repo root: %v", err)
+	}
+
 	results := make([]ModelBenchmarkResult, 0, len(ModelBenchmarkSuite))
 
 	for _, test := range ModelBenchmarkSuite {
@@ -36,6 +45,32 @@ func RunModelBenchmark(t *testing.T, client LLMClientInterface) []ModelBenchmark
 	}
 
 	return results
+}
+
+func findRepoRoot() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	current := wd
+	for {
+		if fileExists(filepath.Join(current, "go.mod")) || fileExists(filepath.Join(current, ".git")) {
+			return current, nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+
+	return "", fmt.Errorf("repo root not found from %s", wd)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func runSingleBenchmark(t *testing.T, client LLMClientInterface, test ModelBenchmarkTest) ModelBenchmarkResult {
@@ -416,7 +451,7 @@ func TestModelBenchmark_CurrentModel(t *testing.T) {
 		t.Skip("Skipping benchmark test in short mode")
 	}
 
-	client := NewClient("http://localhost:8081", "test-model", "")
+	client := NewClient("http://localhost:8082", "test-model", "")
 
 	t.Logf("Testing model at: %s", client.Host())
 	t.Logf("Running %d benchmark tests...\n", len(ModelBenchmarkSuite))
@@ -427,7 +462,11 @@ func TestModelBenchmark_CurrentModel(t *testing.T) {
 	t.Log(summary)
 
 	// Export HTML report
-	htmlPath := filepath.Join("../../model_test_results",
+	repoRoot, repoErr := findRepoRoot()
+	if repoErr != nil {
+		repoRoot = "."
+	}
+	htmlPath := filepath.Join(repoRoot, "model_test_results",
 		fmt.Sprintf("benchmark_%s.html", time.Now().Format("20060102_150405")))
 	if err := ExportBenchmarkHTML(results, "Hermes-3-Llama-3.1-8B", htmlPath); err != nil {
 		t.Logf("Warning: Failed to export HTML report: %v", err)

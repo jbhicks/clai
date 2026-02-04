@@ -115,7 +115,7 @@ func TestSSEConcurrentBroadcast(t *testing.T) {
 		for received < numBroadcasts {
 			select {
 			case msg := <-client:
-				if msg != "refresh-servers" {
+				if msg != "servers_update" {
 					t.Errorf("Client %d received unexpected message: %q", i, msg)
 				}
 				received++
@@ -174,9 +174,9 @@ func TestSSEClientConnection(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Verify client was registered
-	server.sseClientsMu.Lock()
+	server.sseMutex.Lock()
 	clientCount := len(server.sseClients)
-	server.sseClientsMu.Unlock()
+	server.sseMutex.Unlock()
 
 	if clientCount != 1 {
 		t.Errorf("Expected 1 SSE client, got %d", clientCount)
@@ -196,9 +196,9 @@ func TestSSEClientConnection(t *testing.T) {
 	// Wait a bit for cleanup
 	time.Sleep(100 * time.Millisecond)
 
-	server.sseClientsMu.Lock()
+	server.sseMutex.Lock()
 	clientCount = len(server.sseClients)
-	server.sseClientsMu.Unlock()
+	server.sseMutex.Unlock()
 
 	if clientCount != 0 {
 		t.Errorf("Expected 0 SSE clients after disconnect, got %d", clientCount)

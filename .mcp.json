@@ -4,6 +4,11 @@
       "command": "/home/josh/clai/clai-mcp-server",
       "args": ["-socket", "/tmp/clai.sock"],
       "disabled": false
+    },
+    "htmx-assistant": {
+      "command": "node",
+      "args": ["/home/josh/clai/scripts/mcp/htmx-mcp-server.js"],
+      "disabled": false
     }
   }
 }

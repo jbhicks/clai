@@ -127,6 +127,7 @@ func (s *Server) StartWithPreferredPort(preferredPort int) (int, error) {
 	mux.HandleFunc("/api/servers/start", s.HandleStartServer)
 	mux.HandleFunc("/api/servers/stop", s.HandleStopServer)
 	mux.HandleFunc("/api/servers/delete", s.HandleDeleteModel)
+	mux.HandleFunc("/api/servers/chat-ui", s.HandleChatUI)
 	mux.HandleFunc("/api/servers/logs", s.HandleServerLogs)
 	mux.HandleFunc("/api/test/run", s.HandleRunTest)
 	mux.HandleFunc("/api/test/results", s.HandleGetTestResults)
@@ -2083,23 +2084,7 @@ func (s *Server) sendPromptToModel(server *ModelServer, prompt string) (string, 
 	serverURL := fmt.Sprintf("http://localhost:%d/v1/chat/completions", server.Port)
 
 	// Use the same system prompt as main CLAI for consistency
-	systemPrompt := `You are a free agent AI with full code execution capabilities. You can execute bash, python, and javascript code directly on the system.
-
-**Critical rules:**
-1. When you need to write code, wrap it in XML tags:
-   <code language="bash">cat /path/to/file</code>
-   <code language="go">package main...</code>
-   <code language="python">print("Hello")</code>
-   <code language="javascript">console.log("Hello")</code>
-
-2. DO NOT use echo/print/console.log to narrate your thinking. Only use them for actual task output.
-   ❌ BAD: <code language="bash">echo "Now I will write the program"</code>
-   ✅ GOOD: <code language="go">package main...</code>
-
-3. Keep code blocks focused and purposeful.
-4. When asked to write a program, provide complete, executable code.
-
-Answer questions clearly and provide code when needed.`
+	systemPrompt := llm.DefaultSystemPrompt()
 
 	requestBody := map[string]interface{}{
 		"messages": []map[string]string{

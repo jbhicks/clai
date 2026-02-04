@@ -35,3 +35,11 @@ go.work.sum
 # Reference documentation (not part of codebase)
 reference-docs/
 scripts/ralph-opencode/bin/
+
+# Local artifacts
+*.log
+model_test_results/
+models/
+tmp/
+*.gguf
+clai

@@ -103,7 +103,7 @@ func detectLlamaServerVersion(binaryPath string) string {
 func NewModelManagerWithBackgroundRefresh(dbStore *db.Store, enableBackgroundRefresh bool) *ModelManager {
 	modelsDir := os.Getenv("MODELS_PATH")
 	if modelsDir == "" && enableBackgroundRefresh {
-		logger.Fatal("MODELS_PATH environment variable must be set")
+		logger.Warn("MODELS_PATH environment variable not set - model scanning disabled")
 	}
 
 	// Initialize backends map
@@ -363,6 +363,8 @@ func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 // RefreshServerStatus checks all running servers and updates their status
 // This function does NOT hold locks during I/O operations to avoid blocking other operations
 func (mm *ModelManager) RefreshServerStatus() error {
+	logger.Info("RefreshServerStatus: Starting scan for running servers")
+
 	// Step 1: Scan all ports WITHOUT holding any locks (this is slow I/O)
 	type portInfo struct {
 		port        int
@@ -384,10 +386,13 @@ func (mm *ModelManager) RefreshServerStatus() error {
 	}
 	mm.mu.RUnlock()
 
+	logger.Info("RefreshServerStatus: Checking %d known ports: %v", len(knownPorts), knownPorts)
+
 	// Check known ports
 	for _, port := range knownPorts {
 		url := fmt.Sprintf("http://localhost:%d/v1/models", port)
 		if !mm.checkServerHealth(url) {
+			logger.Info("RefreshServerStatus: Port %d not responding", port)
 			continue
 		}
 
@@ -401,12 +406,14 @@ func (mm *ModelManager) RefreshServerStatus() error {
 
 		if info.modelName != "" {
 			activePortsInfo = append(activePortsInfo, info)
+			logger.Info("RefreshServerStatus: Found active server on known port %d: %s (PID %d)", port, info.modelName, info.pid)
 		}
 	}
 
-	// Step 1b: Scan for any servers we don't know about (8081-8180 range)
+	// Step 1b: Scan for any servers we don't know about (8081-8090 range)
 	// This handles externally started servers or missed registrations
-	for port := 8081; port <= 8180; port++ {
+	logger.Info("RefreshServerStatus: Scanning unknown ports 8081-8090")
+	for port := 8081; port <= 8090; port++ {
 		// Skip if we already checked this port
 		alreadyChecked := false
 		for _, knownPort := range knownPorts {
@@ -434,8 +441,11 @@ func (mm *ModelManager) RefreshServerStatus() error {
 
 		if info.modelName != "" {
 			activePortsInfo = append(activePortsInfo, info)
+			logger.Info("RefreshServerStatus: Discovered active server on unknown port %d: %s (PID %d)", port, info.modelName, info.pid)
 		}
 	}
+
+	logger.Info("RefreshServerStatus: Found %d total active servers", len(activePortsInfo))
 
 	// Step 2: Now acquire lock and update server status quickly
 	mm.mu.Lock()
@@ -445,6 +455,24 @@ func (mm *ModelManager) RefreshServerStatus() error {
 	activePorts := make(map[int]bool)
 	for _, info := range activePortsInfo {
 		activePorts[info.port] = true
+	}
+
+	// Mark previously running/loading/starting servers as stopped if their ports disappeared
+	for _, server := range mm.servers {
+		if server.Port > 0 && !activePorts[server.Port] {
+			switch server.Status {
+			case "running", "loading", "starting":
+				server.Status = "stopped"
+				server.Port = 0
+				server.PID = 0
+				server.URL = ""
+				server.APIType = ""
+				server.ContextSize = 0
+				server.CPUPercent = 0
+				server.MemoryBytes = 0
+				server.VRAMUsageBytes = 0
+			}
+		}
 	}
 
 	// Update servers based on gathered port info
@@ -509,56 +537,17 @@ func (mm *ModelManager) RefreshServerStatus() error {
 
 			// Add to servers map
 			mm.servers[modelPath] = newServer
-			logger.Info("Discovered running server for %s on port %d (PID %d)", info.modelName, info.port, info.pid)
+			logger.Info("RefreshServerStatus: Created new server entry for %s on port %d (PID %d)", info.modelName, info.port, info.pid)
 		}
 	}
 
-	// Mark any server that's not on an active port as stopped
-	// BUT don't interfere with servers in "starting" or "error" state - let waitForServerReady handle them
-	// EXCEPTION: If the process is truly dead (PID doesn't exist), mark as stopped even if "starting"
-	for _, server := range mm.servers {
-		if server.Port > 0 && !activePorts[server.Port] {
-			shouldMarkStopped := false
-
-			// Always mark stopped if not in starting/error state
-			if server.Status != "starting" && server.Status != "error" {
-				shouldMarkStopped = true
-			} else if server.PID > 0 {
-				// For starting/error state, check if process is truly dead
-				statPath := fmt.Sprintf("/proc/%d/stat", server.PID)
-				if _, err := os.Stat(statPath); os.IsNotExist(err) {
-					// Process doesn't exist - it died
-					logger.Info("Detected dead process PID %d for %s, marking as stopped", server.PID, server.ModelName)
-					shouldMarkStopped = true
-				} else if statData, err := os.ReadFile(statPath); err == nil {
-					// Check if it's a zombie
-					statStr := string(statData)
-					if closeParenIdx := strings.LastIndex(statStr, ")"); closeParenIdx > 0 {
-						fields := strings.Fields(statStr[closeParenIdx+1:])
-						if len(fields) > 0 && fields[0] == "Z" {
-							logger.Info("Detected zombie process PID %d for %s, marking as stopped", server.PID, server.ModelName)
-							shouldMarkStopped = true
-						}
-					}
-				}
-			}
-
-			if shouldMarkStopped {
-				server.Status = "stopped"
-				server.Port = 0
-				server.PID = 0
-				server.URL = ""
-				server.Backend = "" // Clear backend when stopped
-			}
-		}
-	}
-
+	logger.Info("RefreshServerStatus: Scan complete")
 	return nil
 }
 
 // getModelNameFromPort fetches the model name from a running server
 func (mm *ModelManager) getModelNameFromPort(port int) string {
-	client := &http.Client{Timeout: 500 * time.Millisecond}
+	client := &http.Client{Timeout: 200 * time.Millisecond}
 	url := fmt.Sprintf("http://localhost:%d/v1/models", port)
 	resp, err := client.Get(url)
 	if err != nil {
@@ -661,13 +650,13 @@ func (mm *ModelManager) getContextSizeFromPort(port int) int {
 
 // checkServerHealth checks if a server is responding at the given URL
 func (mm *ModelManager) checkServerHealth(url string) bool {
-	client := &http.Client{Timeout: 200 * time.Millisecond}
+	client := &http.Client{Timeout: 100 * time.Millisecond}
 	resp, err := client.Get(url)
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
+	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusServiceUnavailable
 }
 
 // checkIfServerLoading checks if a server port is responding but still loading
@@ -848,9 +837,12 @@ func (mm *ModelManager) isSystemdManaged(pid int) bool {
 	cgroupPath := fmt.Sprintf("/proc/%d/cgroup", pid)
 	data, err := ioutil.ReadFile(cgroupPath)
 	if err != nil {
+		logger.Info("isSystemdManaged: Failed to read cgroup for PID %d: %v", pid, err)
 		return false
 	}
-	return strings.Contains(string(data), "user@") && strings.Contains(string(data), ".service")
+	isManaged := strings.Contains(string(data), "user@") && strings.Contains(string(data), ".service")
+	logger.Info("isSystemdManaged: PID %d, cgroup data: %s, isManaged: %v", pid, string(data), isManaged)
+	return isManaged
 }
 
 // getSystemdServiceName extracts the systemd service name for a PID
@@ -858,8 +850,11 @@ func (mm *ModelManager) getSystemdServiceName(pid int) string {
 	cgroupPath := fmt.Sprintf("/proc/%d/cgroup", pid)
 	data, err := ioutil.ReadFile(cgroupPath)
 	if err != nil {
+		logger.Info("getSystemdServiceName: Failed to read cgroup for PID %d: %v", pid, err)
 		return ""
 	}
+
+	logger.Info("getSystemdServiceName: PID %d, cgroup data: %s", pid, string(data))
 
 	// Parse cgroup to extract service name
 	// Format: 0::/user.slice/user-1000.slice/user@1000.service/app.slice/llama-server.service
@@ -869,11 +864,13 @@ func (mm *ModelManager) getSystemdServiceName(pid int) string {
 			parts := strings.Split(line, "/")
 			for _, part := range parts {
 				if strings.HasSuffix(part, ".service") && !strings.Contains(part, "user@") {
+					logger.Info("getSystemdServiceName: Found service name: %s", part)
 					return part
 				}
 			}
 		}
 	}
+	logger.Info("getSystemdServiceName: No service name found")
 	return ""
 }
 
@@ -1116,8 +1113,8 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 
 // StopServer stops a running model server
 func (mm *ModelManager) StopServer(modelPath string) error {
-	// Step 1: Get server info with brief lock
 	mm.mu.Lock()
+
 	server, exists := mm.servers[modelPath]
 	if !exists {
 		mm.mu.Unlock()
@@ -1150,19 +1147,36 @@ func (mm *ModelManager) StopServer(modelPath string) error {
 			} else {
 				logger.Info("Stopped systemd service: %s", serviceName)
 				stoppedViaSystemd = true
+				// Wait a bit and check if process is still alive (systemd might restart it)
+				time.Sleep(500 * time.Millisecond)
+				statPath := fmt.Sprintf("/proc/%d/stat", pid)
+				if _, err := os.Stat(statPath); err == nil {
+					// Process still exists, kill it
+					logger.Info("Systemd service stopped but process %d still exists, killing it", pid)
+					if process, err := os.FindProcess(pid); err == nil {
+						if err := process.Kill(); err != nil {
+							logger.Info("Failed to kill remaining process %d: %v", pid, err)
+						} else {
+							logger.Info("Killed remaining process %d after systemctl stop", pid)
+						}
+					}
+				}
 			}
 		}
 	}
 
 	// Kill the process directly if not stopped via systemd
 	if !stoppedViaSystemd {
+		logger.Info("Attempting to kill process PID %d for %s", pid, modelName)
 		process, err := os.FindProcess(pid)
 		if err != nil {
 			stopErr = fmt.Errorf("failed to find process: %w", err)
+			logger.Info("Failed to find process PID %d: %v", pid, err)
 		} else if err := process.Kill(); err != nil {
 			stopErr = fmt.Errorf("failed to kill process: %w", err)
+			logger.Info("Failed to kill process PID %d: %v", pid, err)
 		} else {
-			logger.Info("Stopped model server: %s (PID: %d)", modelName, pid)
+			logger.Info("Successfully sent kill signal to process PID %d for %s", pid, modelName)
 		}
 	}
 
@@ -1185,7 +1199,6 @@ func (mm *ModelManager) StopServer(modelPath string) error {
 	return stopErr
 }
 
-// DeleteModel deletes a model file from disk (only if stopped)
 func (mm *ModelManager) DeleteModel(modelPath string) error {
 	mm.mu.Lock()
 	defer mm.mu.Unlock()
@@ -1375,9 +1388,42 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 	}
 	logger.Info("HandleListModels: Scanned models")
 
-	// Get cached server status (refreshed by background goroutine every 3s)
-	logger.Info("HandleListModels: Getting server status...")
-	models = s.modelManager.GetServerStatus()
+	// Get fresh server status (refresh before displaying)
+	logger.Info("HandleListModels: Refreshing server status...")
+	s.modelManager.RefreshServerStatus()
+	s.modelManager.UpdateVRAMUsage()
+	s.modelManager.UpdateCPUAndMemory()
+	serverStatuses := s.modelManager.GetServerStatus()
+
+	// Create lookup map for running servers
+	statusMap := make(map[string]*ModelServer)
+	for _, status := range serverStatuses {
+		statusMap[status.ModelPath] = status
+	}
+
+	// Merge: Update models with running server information
+	for _, model := range models {
+		if runningServer, exists := statusMap[model.ModelPath]; exists {
+			// Copy running server details to model
+			model.Status = runningServer.Status
+			model.Port = runningServer.Port
+			model.PID = runningServer.PID
+			model.URL = runningServer.URL
+			model.APIType = runningServer.APIType
+			model.Backend = runningServer.Backend
+			model.LastChecked = runningServer.LastChecked
+			model.VRAMUsageBytes = runningServer.VRAMUsageBytes
+			model.CPUPercent = runningServer.CPUPercent
+			model.MemoryBytes = runningServer.MemoryBytes
+			model.ContextSize = runningServer.ContextSize
+			model.ContextTrain = runningServer.ContextTrain
+			model.ParametersCount = runningServer.ParametersCount
+			model.VocabSize = runningServer.VocabSize
+			model.EmbeddingDim = runningServer.EmbeddingDim
+			model.ErrorMessage = runningServer.ErrorMessage
+		}
+		// Non-running models keep Status = "stopped" (default)
+	}
 	logger.Info("HandleListModels: Done with setup")
 
 	// Get available backends for the UI
@@ -1444,20 +1490,25 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		// Fetch last benchmark score for this model
 		var scoreText string
 		var scoreColor string
-		lastBenchmark, err := s.store.GetLastBenchmarkForModel(model.ModelName)
-		if err != nil || lastBenchmark == nil {
+		if s.store != nil {
+			lastBenchmark, err := s.store.GetLastBenchmarkForModel(model.ModelName)
+			if err != nil || lastBenchmark == nil {
+				scoreText = "-"
+				scoreColor = "#64748b"
+			} else {
+				scoreText = fmt.Sprintf("%.1f%%", lastBenchmark.SuccessRate)
+				// Color based on score: green (>80%), yellow (50-80%), red (<50%)
+				if lastBenchmark.SuccessRate >= 80 {
+					scoreColor = "#10b981"
+				} else if lastBenchmark.SuccessRate >= 50 {
+					scoreColor = "#f59e0b"
+				} else {
+					scoreColor = "#ef4444"
+				}
+			}
+		} else {
 			scoreText = "-"
 			scoreColor = "#64748b"
-		} else {
-			scoreText = fmt.Sprintf("%.1f%%", lastBenchmark.SuccessRate)
-			// Color based on score: green (>80%), yellow (50-80%), red (<50%)
-			if lastBenchmark.SuccessRate >= 80 {
-				scoreColor = "#10b981"
-			} else if lastBenchmark.SuccessRate >= 50 {
-				scoreColor = "#f59e0b"
-			} else {
-				scoreColor = "#ef4444"
-			}
 		}
 
 		portText := "-"
@@ -1591,7 +1642,7 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 			}
 			// Add additional buttons for running servers
 			testButton = fmt.Sprintf(`
-	<a href="/api/servers/chat-ui?port=%d" target="_blank" 
+	<a href="/api/servers/chat-ui?port=%d&host=%s" target="_blank" 
 	   style="display: inline-block; padding: 6px 12px; background: #10b981; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;"
 	   title="Open llama.cpp chat interface">
 		Chat UI
@@ -1611,7 +1662,7 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 	   style="display: inline-block; padding: 6px 12px; background: #64748b; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;">
 		Logs
 	</a>
-`, model.Port, model.ModelPath, model.Port, model.Port)
+`, model.Port, r.Host, model.ModelPath, model.Port, model.Port)
 			// Can't delete while running
 			deleteButton = `<span style="color: #64748b; font-size: 12px;">Stop first to delete</span>`
 		} else if model.Status == "stopped" || model.Status == "error" {
@@ -1833,6 +1884,8 @@ func (s *Server) HandleStartServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	logger.Info("HandleStartServer: request from %s ua=%q referer=%q model_path=%s", r.RemoteAddr, r.UserAgent(), r.Referer(), modelPath)
+
 	// Check for custom context size parameter
 	contextSize := 131072 // default
 	ctxStr := r.FormValue("context_size")
@@ -2008,8 +2061,17 @@ func (s *Server) HandleChatUI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the host from the incoming request
-	host := r.Host
+	// If host is explicitly provided, trust it (useful when behind proxies).
+	host := r.URL.Query().Get("host")
+	if host == "" {
+		// Prefer forwarded headers when running behind reverse proxies.
+		if forwarded := r.Header.Get("X-Forwarded-Host"); forwarded != "" {
+			host = forwarded
+		} else {
+			host = r.Host
+		}
+	}
+
 	// Strip the port from the host if present (e.g., "192.168.1.100:8081" -> "192.168.1.100")
 	if colonIdx := strings.LastIndex(host, ":"); colonIdx != -1 {
 		host = host[:colonIdx]
@@ -2018,6 +2080,7 @@ func (s *Server) HandleChatUI(w http.ResponseWriter, r *http.Request) {
 	// Redirect to the model server's chat UI
 	targetURL := fmt.Sprintf("http://%s:%s/", host, port)
 	http.Redirect(w, r, targetURL, http.StatusTemporaryRedirect)
+	return
 }
 
 // HandleDeleteModel handles HTTP requests to delete a model file

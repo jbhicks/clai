@@ -37,6 +37,77 @@ type Agent struct {
 	maxReflectionDepth int
 }
 
+// ParseToolCallsForBenchmark exposes tool call parsing for benchmark evaluation.
+func (a *Agent) ParseToolCallsForBenchmark(content string) []tools.ToolCall {
+	if !strings.Contains(content, "execute_") {
+		return nil
+	}
+
+	if repaired, ok := repairFragmentedToolCallJSON(content); ok {
+		content = repaired
+	}
+
+	return a.parseToolCallsFromContent(content)
+}
+
+// ExtractToolCallResults extracts computed results from tool call responses
+func (a *Agent) ExtractToolCallResults(toolCalls []tools.ToolCall) (map[string]string, error) {
+	results := make(map[string]string)
+
+	for _, toolCall := range toolCalls {
+		// Execute the tool call to get the actual computed result
+		result, err := tools.ExecuteTool(toolCall)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute tool call %s: %w", toolCall.Function.Name, err)
+		}
+
+		// Store the result keyed by tool call ID
+		results[toolCall.ID] = result
+	}
+
+	return results, nil
+}
+
+func repairFragmentedToolCallJSON(content string) (string, bool) {
+	if !strings.Contains(content, `"function"`) || !strings.Contains(content, `"arguments"`) {
+		return "", false
+	}
+
+	var builder strings.Builder
+	builder.Grow(len(content))
+
+	inString := false
+	escape := false
+	for _, r := range content {
+		switch r {
+		case '\\':
+			builder.WriteRune(r)
+			escape = !escape
+			continue
+		case '"':
+			if !escape {
+				inString = !inString
+			}
+		}
+		escape = false
+		if !inString && (r == '\n' || r == '\r' || r == '\t' || r == ' ') {
+			continue
+		}
+		builder.WriteRune(r)
+	}
+
+	repaired := builder.String()
+	if strings.Count(repaired, `{"id"`) == 0 && strings.HasPrefix(repaired, "{") {
+		return repaired, true
+	}
+
+	if strings.Count(repaired, "{") == strings.Count(repaired, "}") {
+		return repaired, true
+	}
+
+	return "", false
+}
+
 type LoopDetector struct {
 	codeHistory        []string
 	observationHistory []string
@@ -118,8 +189,8 @@ func (a *Agent) parseResponse(response string) (*AgentResponse, error) {
 	// 3. Malformed simplified: <code python (missing >)
 	// 4. Markdown: ```python
 
-	// Pattern 1: Full XML format
-	fullXMLRe := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">\s*(.+?)\s*</code>`)
+	// Pattern 1: Full XML format (allow missing closing > on </code)
+	fullXMLRe := regexp.MustCompile(`(?s)<code\s+language="([^"]+)">\s*(.+?)\s*</code\b\s*>?`)
 	if matches := fullXMLRe.FindStringSubmatch(response); len(matches) > 2 {
 		result.Language = strings.TrimSpace(matches[1])
 		result.Code = strings.TrimSpace(matches[2])
@@ -349,6 +420,48 @@ func findMatchingBracket(content string, start int, openChar, closeChar byte) in
 func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 	fmt.Printf("[CRITICAL-DEBUG] PARSE METHOD CALLED WITH: %s\n", content)
 	var toolCalls []tools.ToolCall
+
+	if strings.Contains(content, "}{") && strings.Contains(content, "\"function\"") && strings.Contains(content, "\"arguments\"") {
+		if merged := parseFragmentedToolCalls(content); len(merged) > 0 {
+			return merged
+		}
+	}
+
+	// Qwen JSON tool call format: {"action":"bash","command":"..."}
+	if strings.HasPrefix(strings.TrimSpace(content), "{") && strings.Contains(content, "\"action\"") {
+		var qwenCall struct {
+			Action  string `json:"action"`
+			Command string `json:"command"`
+			Code    string `json:"code"`
+		}
+		if err := json.Unmarshal([]byte(content), &qwenCall); err == nil && qwenCall.Action != "" {
+			funcName := ""
+			args := map[string]string{}
+			switch qwenCall.Action {
+			case "bash":
+				funcName = "execute_bash"
+				args["command"] = qwenCall.Command
+			case "python":
+				funcName = "execute_python"
+				args["code"] = qwenCall.Code
+			case "javascript":
+				funcName = "execute_javascript"
+				args["code"] = qwenCall.Code
+			}
+			if funcName != "" {
+				argsJSON, _ := json.Marshal(args)
+				toolCalls = append(toolCalls, tools.ToolCall{
+					Type: "function",
+					ID:   "json-toolcall-" + funcName,
+					Function: tools.ToolCallFunc{
+						Name:      funcName,
+						Arguments: string(argsJSON),
+					},
+				})
+				return toolCalls
+			}
+		}
+	}
 
 	// Check if content starts with tool_calls format immediately
 	if strings.HasPrefix(content, `{"tool_calls"`) {
@@ -611,6 +724,59 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 	return toolCalls
 }
 
+func parseFragmentedToolCalls(content string) []tools.ToolCall {
+	objects := splitJSONObjects(content)
+	if len(objects) < 2 {
+		return nil
+	}
+
+	var calls []tools.ToolCall
+	var current *tools.ToolCall
+
+	flush := func() {
+		if current == nil || current.Function.Name == "" {
+			return
+		}
+		calls = append(calls, *current)
+		current = nil
+	}
+
+	for _, obj := range objects {
+		var call tools.ToolCall
+		if err := json.Unmarshal([]byte(obj), &call); err != nil {
+			return nil
+		}
+
+		if call.Function.Name != "" || call.ID != "" {
+			if current != nil && call.ID != "" && call.ID != current.ID {
+				flush()
+			}
+			if current == nil {
+				current = &tools.ToolCall{Type: "function"}
+			}
+			if call.ID != "" {
+				current.ID = call.ID
+			}
+			if call.Type != "" {
+				current.Type = call.Type
+			}
+			if call.Function.Name != "" {
+				current.Function.Name = call.Function.Name
+			}
+		}
+
+		if call.Function.Arguments != "" {
+			if current == nil {
+				current = &tools.ToolCall{Type: "function"}
+			}
+			current.Function.Arguments += call.Function.Arguments
+		}
+	}
+
+	flush()
+	return calls
+}
+
 // repairFragmentedJSON attempts to fix common JSON fragmentation issues
 func repairFragmentedJSON(content string) string {
 	logger.Debug("[AGENT-PARSE-TOOL] Attempting to repair fragmented JSON")
@@ -671,9 +837,26 @@ func splitJSONObjects(jsonStr string) []string {
 	var objects []string
 	braceCount := 0
 	start := 0
+	inString := false
+	escape := false
 
 	fmt.Printf("[DEBUG] splitJSONObjects input: %s\n", jsonStr)
 	for i, char := range jsonStr {
+		if escape {
+			escape = false
+			continue
+		}
+		if char == '\\' {
+			escape = true
+			continue
+		}
+		if char == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
 		switch char {
 		case '{':
 			if braceCount == 0 {
@@ -684,7 +867,6 @@ func splitJSONObjects(jsonStr string) []string {
 		case '}':
 			braceCount--
 			if braceCount == 0 {
-				// Found a complete JSON object
 				obj := jsonStr[start : i+1]
 				objects = append(objects, obj)
 				fmt.Printf("[DEBUG] Found complete object: %s\n", obj)

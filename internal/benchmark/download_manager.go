@@ -905,7 +905,7 @@ func (s *Server) handleDownloadModel(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 
-		html += `</div></div>`
+		html += `</div>`
 
 		fmt.Fprint(w, html)
 		return
@@ -934,6 +934,205 @@ func (s *Server) handleDownloadModel(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `<div style="background: #d1fae5; border: 1px solid #10b981; color: #065f46; padding: 12px; border-radius: 6px; margin-bottom: 15px;">
 		<strong>Success:</strong> Download started for %s
 	</div>`, htmlEscape(download.Filename))
+}
+
+func renderDownloads(s *Server, downloads []*Download) string {
+	var html string
+
+	// Get toggle button HTML (simplified for now)
+	title := "Model Downloads"
+	toggleButton := `<button hx-post="/api/models/downloads/show-recent" hx-target="#downloads_list" hx-swap="morph:innerHTML">Show Recent</button>
+		<button hx-post="/api/models/downloads/show-all" hx-target="#downloads_list" hx-swap="morph:innerHTML">Show All</button>`
+
+	html = fmt.Sprintf(`<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+				<h3 style="margin: 0; font-size: 16px; color: #e2e8f0;">%s</h3>
+				<div style="display: flex; gap: 8px;">
+					%s
+					<form 
+						hx-post="/api/models/downloads/clear-all"
+						hx-target="#downloads_list"
+						hx-swap="morph:innerHTML"
+						style="margin: 0;"
+						hx-confirm="This will delete partial files for failed downloads. Continue?"
+					>
+						<button 
+							type="submit"
+							class="btn"
+							style="padding: 4px 10px; font-size: 11px; background: #64748b; border: 1px solid #94a3b8;"
+							title="Clear all completed and failed downloads (deletes partial files)"
+						>
+							Clear All
+						</button>
+					</form>
+				</div>
+			</div>
+			<style>
+			@keyframes shimmer {
+				0%% { transform: translateX(-100%%); }
+				100%% { transform: translateX(100%%); }
+			}
+			</style>
+			<div style="display: flex; flex-direction: column; gap: 12px;">`, title, toggleButton)
+
+	for _, d := range downloads {
+		statusColor := "#3b82f6" // blue for downloading
+		if d.Status == "completed" {
+			statusColor = "#10b981" // green
+		} else if d.Status == "failed" {
+			statusColor = "#ef4444" // red
+		}
+
+		progressBar := ""
+		if d.TotalBytes > 0 {
+			// Calculate ETA if we have speed (rounded to minutes to reduce flashing)
+			etaText := ""
+			if d.Speed > 0 {
+				remainingBytes := d.TotalBytes - d.BytesDownloaded
+				etaSeconds := float64(remainingBytes) / float64(d.Speed)
+				if etaSeconds < 60 {
+					etaText = fmt.Sprintf(" • ETA: <1m")
+				} else if etaSeconds < 3600 {
+					etaText = fmt.Sprintf(" • ETA: %dm", int(etaSeconds/60))
+				} else {
+					etaText = fmt.Sprintf(" • ETA: %dh %dm", int(etaSeconds/3600), (int(etaSeconds)%3600)/60)
+				}
+			}
+
+			progressBar = fmt.Sprintf(`
+				<div style="background: #0f172a; border-radius: 4px; height: 8px; margin: 8px 0; overflow: hidden; position: relative;">
+					<div style="background: %s; height: 100%%; width: %.1f%%; transition: width 0.5s ease; position: relative; overflow: hidden;">
+						<div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent); animation: shimmer 2s infinite;"></div>
+					</div>
+				</div>
+				<div style="display: flex; justify-content: space-between; font-size: 11px; color: #64748b;">
+					<span>%s / %s%s</span>
+					<span style="color: %s; font-weight: 600;">%d%%</span>
+				</div>`,
+				statusColor,
+				d.Progress,
+				formatBytes(d.BytesDownloaded),
+				formatBytes(d.TotalBytes),
+				etaText,
+				statusColor,
+				int(d.Progress), // Round to whole number to reduce flashing
+			)
+		}
+
+		speedText := ""
+		if d.Speed > 0 {
+			speedText = fmt.Sprintf(" • %s/s", formatBytes(d.Speed))
+		}
+
+		errorText := ""
+		if d.Error != "" {
+			errorText = fmt.Sprintf(`
+				<div style="color: #ef4444; font-size: 11px; margin-top: 6px; padding: 8px; background: #7f1d1d; border-radius: 4px;">
+					<strong>Error:</strong> %s
+					<form 
+						hx-post="/api/models/downloads/resume"
+						hx-vals='{"id": "%s"}'
+						hx-target="#downloads_list"
+						hx-swap="morph:innerHTML"
+						style="margin: 0; display: inline-block; margin-left: 8px;"
+					>
+						<button 
+							type="submit"
+							class="btn"
+							style="padding: 4px 12px; font-size: 10px; background: #3b82f6; border: 1px solid #60a5fa;"
+						>
+							↻ Resume
+						</button>
+					</form>
+				</div>`,
+				htmlEscape(d.Error), d.ID)
+		}
+
+		// Add Clear button for completed/failed downloads
+		clearButton := ""
+		if d.Status == "completed" || d.Status == "failed" {
+			buttonTitle := "Clear this download"
+			confirmMsg := ""
+
+			// Add warning for failed downloads with existing files
+			if d.Status == "failed" && d.FileExists {
+				buttonTitle = "Clear and delete partial file"
+				confirmMsg = ` hx-confirm="This will delete the partial file from disk. Continue?"`
+			}
+
+			clearButton = fmt.Sprintf(`
+				<form 
+					hx-post="/api/models/downloads/clear"
+					hx-vals='{"id": "%s"}'
+					hx-target="#downloads_list"
+					hx-swap="morph:innerHTML"
+					style="margin: 0; margin-top: 8px;"%s
+				>
+					<button 
+						type="submit"
+						class="btn"
+						style="padding: 4px 10px; font-size: 10px; background: #64748b; border: 1px solid #94a3b8; width: 100%%;"
+						title="%s"
+					>
+						Clear
+					</button>
+				</form>`, d.ID, confirmMsg, buttonTitle)
+		}
+
+		// File existence indicator
+		fileStatusText := ""
+		if d.Status == "completed" || d.Status == "failed" {
+			if d.FileExists {
+				fileStatusText = `<div style="color: #10b981; font-size: 10px; margin-top: 4px;">✓ File exists on disk</div>`
+			} else {
+				fileStatusText = fmt.Sprintf(`
+					<div style="color: #f59e0b; font-size: 10px; margin-top: 4px; padding: 6px; background: #78350f; border-radius: 4px;">
+						⚠️ File missing from disk
+						<form 
+							hx-post="/api/models/downloads/cleanup"
+							hx-vals='{"id": "%s"}'
+							hx-target="#downloads_list"
+							hx-swap="morph:innerHTML"
+							style="margin: 0; display: inline-block; margin-left: 8px;"
+						>
+							<button 
+								type="submit"
+								class="btn"
+								style="padding: 2px 8px; font-size: 9px; background: #f59e0b; border: 1px solid #fbbf24;"
+							>
+								Remove Record
+							</button>
+						</form>
+					</div>`, d.ID)
+			}
+		}
+
+		// No individual polling - rely entirely on SSE for updates
+		html += fmt.Sprintf(`
+			<div id="download_%s" style="background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 12px;">
+				<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
+					<div style="width: 8px; height: 8px; background: %s; border-radius: 50%%;"></div>
+					<span style="color: #e2e8f0; font-size: 13px; font-weight: 500;">%s</span>
+					<span style="color: #64748b; font-size: 11px; margin-left: auto;">%s%s</span>
+				</div>
+				%s
+				%s
+				%s
+				%s
+			</div>`,
+			d.ID,
+			statusColor,
+			htmlEscape(d.Filename),
+			d.Status,
+			speedText,
+			progressBar,
+			errorText,
+			fileStatusText,
+			clearButton,
+		)
+	}
+
+	html += `</div>`
+	return html
 }
 
 func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
@@ -1028,7 +1227,7 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 			style="padding: 4px 10px; font-size: 11px; background: #475569; border: 1px solid #64748b; margin-right: 8px;"
 			hx-get="/api/models/downloads"
 			hx-target="#downloads_list"
-			hx-swap="morph:outerHTML"
+			hx-swap="outerHTML"
 		>
 			Show Recent
 		</button>`
@@ -1039,42 +1238,41 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 			style="padding: 4px 10px; font-size: 11px; background: #475569; border: 1px solid #64748b; margin-right: 8px;"
 			hx-get="/api/models/downloads?show_all=true"
 			hx-target="#downloads_list"
-			hx-swap="morph:outerHTML"
+			hx-swap="outerHTML"
 		>
 			Show All
 		</button>`
 	}
 
-	html := fmt.Sprintf(`<div 
-		style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-		<h3 style="margin: 0; font-size: 16px; color: #e2e8f0;">%s</h3>
-		<div style="display: flex; gap: 8px;">
-			%s
-			<form 
-				hx-post="/api/models/downloads/clear-all"
-				hx-target="#downloads_list > div"  
-				hx-swap="outerHTML"
-				style="margin: 0;"
-				hx-confirm="This will delete partial files for failed downloads. Continue?"
-			>
-				<button 
-					type="submit"
-					class="btn"
-					style="padding: 4px 10px; font-size: 11px; background: #64748b; border: 1px solid #94a3b8;"
-					title="Clear all completed and failed downloads (deletes partial files)"
-				>
-					Clear All
-				</button>
-			</form>
-		</div>
-	</div>
-	<style>
-	@keyframes shimmer {
-		0%% { transform: translateX(-100%%); }
-		100%% { transform: translateX(100%%); }
-	}
-	</style>
-	<div style="display: flex; flex-direction: column; gap: 12px;">`, title, toggleButton)
+	html := fmt.Sprintf(`<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+				<h3 style="margin: 0; font-size: 16px; color: #e2e8f0;">%s</h3>
+				<div style="display: flex; gap: 8px;">
+					%s
+					<form 
+						hx-post="/api/models/downloads/clear-all"
+						hx-target="#downloads_list"
+						hx-swap="morph:innerHTML"
+						style="margin: 0;"
+						hx-confirm="This will delete partial files for failed downloads. Continue?"
+					>
+						<button 
+							type="submit"
+							class="btn"
+							style="padding: 4px 10px; font-size: 11px; background: #64748b; border: 1px solid #94a3b8;"
+							title="Clear all completed and failed downloads (deletes partial files)"
+						>
+							Clear All
+						</button>
+					</form>
+				</div>
+			</div>
+			<style>
+			@keyframes shimmer {
+				0%% { transform: translateX(-100%%); }
+				100%% { transform: translateX(100%%); }
+			}
+			</style>
+			<div style="display: flex; flex-direction: column; gap: 12px;">`, title, toggleButton)
 
 	for _, d := range downloads {
 		statusColor := "#3b82f6" // blue for downloading
@@ -1133,7 +1331,7 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 					<form 
 						hx-post="/api/models/downloads/resume"
 						hx-vals='{"id": "%s"}'
-						hx-target="#download_%s"
+						hx-target="#downloads_list"
 						hx-swap="outerHTML"
 						style="margin: 0; display: inline-block; margin-left: 8px;"
 					>
@@ -1146,7 +1344,7 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 						</button>
 					</form>
 				</div>`,
-				htmlEscape(d.Error), d.ID, d.ID)
+				htmlEscape(d.Error), d.ID)
 		}
 
 		// Add Clear button for completed/failed downloads
@@ -1165,8 +1363,8 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 				<form 
 					hx-post="/api/models/downloads/clear"
 					hx-vals='{"id": "%s"}'
-					hx-target="#downloads_list"
-					hx-swap="morph:outerHTML"
+					hx-target="#downloads_container"
+					hx-swap="morph:innerHTML"
 					style="margin: 0; margin-top: 8px;"%s
 				>
 					<button 
@@ -1193,7 +1391,7 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 							hx-post="/api/models/downloads/cleanup"
 							hx-vals='{"id": "%s"}'
 							hx-target="#downloads_list"
-							hx-swap="morph:outerHTML"
+							hx-swap="outerHTML"
 							style="margin: 0; display: inline-block; margin-left: 8px;"
 						>
 							<button 
@@ -1307,8 +1505,8 @@ func (s *Server) handleGetSingleDownload(w http.ResponseWriter, r *http.Request)
 				<form 
 					hx-post="/api/models/downloads/resume"
 					hx-vals='{"id": "%s"}'
-					hx-target="#downloads_list"
-					hx-swap="morph:outerHTML"
+					hx-target="#downloads_container"
+					hx-swap="morph:innerHTML"
 					style="margin: 0; display: inline-block; margin-left: 8px;"
 				>
 					<button 
@@ -1345,8 +1543,8 @@ func (s *Server) handleGetSingleDownload(w http.ResponseWriter, r *http.Request)
 			<form 
 				hx-post="/api/models/downloads/clear"
 				hx-vals='{"id": "%s"}'
-				hx-target="#downloads_list"
-				hx-swap="morph:outerHTML"
+			hx-target="#downloads_list"
+				hx-swap="outerHTML"
 				style="margin: 0; margin-top: 8px;"%s
 			>
 				<button 
@@ -1368,8 +1566,8 @@ func (s *Server) handleGetSingleDownload(w http.ResponseWriter, r *http.Request)
 				<form 
 					hx-post="/api/models/downloads/cleanup"
 					hx-vals='{"id": "%s"}'
-					hx-target="#downloads_list"
-					hx-swap="morph:outerHTML"
+					hx-target="#downloads_container"
+					hx-swap="morph:innerHTML"
 					style="margin: 0; display: inline-block; margin-left: 8px;"
 				>
 					<button 
@@ -1440,74 +1638,12 @@ func (s *Server) handleDownloadsSSE(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		select {
-		case download := <-clientChan:
-			// Send OOB swap event with updated download HTML
-			// Only send for active downloads
-			if download.Status == "downloading" {
-				// Render just the progress bar and stats
-				statusColor := "#3b82f6"
-
-				progressBar := ""
-				if download.TotalBytes > 0 {
-					etaText := ""
-					if download.Speed > 0 {
-						remainingBytes := download.TotalBytes - download.BytesDownloaded
-						etaSeconds := float64(remainingBytes) / float64(download.Speed)
-						if etaSeconds < 60 {
-							etaText = " • ETA: <1m"
-						} else if etaSeconds < 3600 {
-							etaText = fmt.Sprintf(" • ETA: %dm", int(etaSeconds/60))
-						} else {
-							etaText = fmt.Sprintf(" • ETA: %dh %dm", int(etaSeconds/3600), (int(etaSeconds)%3600)/60)
-						}
-					}
-
-					progressBar = fmt.Sprintf(`
-						<div style="background: #0f172a; border-radius: 4px; height: 8px; margin: 8px 0; overflow: hidden; position: relative;">
-							<div style="background: %s; height: 100%%; width: %.1f%%; transition: width 0.5s ease; position: relative; overflow: hidden;">
-								<div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent); animation: shimmer 2s infinite;"></div>
-							</div>
-						</div>
-						<div style="display: flex; justify-content: space-between; font-size: 11px; color: #64748b;">
-							<span>%s / %s%s</span>
-							<span style="color: %s; font-weight: 600;">%d%%</span>
-						</div>`,
-						statusColor,
-						download.Progress,
-						formatBytes(download.BytesDownloaded),
-						formatBytes(download.TotalBytes),
-						etaText,
-						statusColor,
-						int(download.Progress),
-					)
-				}
-
-				speedText := ""
-				if download.Speed > 0 {
-					speedText = fmt.Sprintf(" • %s/s", formatBytes(download.Speed))
-				}
-
-				// Send OOB swap event
-				// The event contains the download div with hx-swap-oob attribute
-				downloadHTML := fmt.Sprintf(`<div id="download_%s" hx-swap-oob="true">
-		<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px;">
-			<div style="width: 8px; height: 8px; background: %s; border-radius: 50%%;"></div>
-			<span style="color: #e2e8f0; font-size: 13px; font-weight: 500;">%s</span>
-			<span style="color: #64748b; font-size: 11px; margin-left: auto;">%s%s</span>
-		</div>
-		%s
-	</div>`,
-					download.ID,
-					statusColor,
-					htmlEscape(download.Filename),
-					download.Status,
-					speedText,
-					progressBar,
-				)
-
-				fmt.Fprintf(w, "event: download_update\ndata: %s\n\n", downloadHTML)
-				flusher.Flush()
-			}
+		case <-clientChan:
+			// Send full list update
+			downloads := s.modelManager.downloadManager.GetDownloads()
+			html := renderDownloads(s, downloads)
+			fmt.Fprintf(w, "event: downloads_update\ndata: %s\n\n", html)
+			flusher.Flush()
 
 		case <-ctx.Done():
 			log.Printf("SSE client disconnected from downloads stream")
