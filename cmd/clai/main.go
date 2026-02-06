@@ -153,9 +153,9 @@ func main() {
 	if modelName == "" {
 		modelName = "llama3.1-gpu:latest"
 	}
-	host := os.Getenv("OLLAMA_HOST")
-	if host == "" {
-		host = "http://localhost:8081"
+	host := forcedLLMHost
+	if envHost := os.Getenv("OLLAMA_HOST"); envHost != "" {
+		host = envHost
 	}
 	systemPrompt := os.Getenv("SYSTEM_PROMPT")
 

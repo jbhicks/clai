@@ -135,6 +135,9 @@ func (s *Server) StartWithPreferredPort(preferredPort int) (int, error) {
 	mux.HandleFunc("/api/test/result/detail", s.handleGetTestDetail)
 	mux.HandleFunc("/api/gpu/status", s.HandleGPUStatus)
 	mux.HandleFunc("/api/servers/events", s.handleServerEvents)
+	mux.HandleFunc("/api/docker/images", s.HandleListDockerImages)
+	mux.HandleFunc("/api/docker/pull", s.HandlePullDockerImage)
+	mux.HandleFunc("/api/docker/container/status", s.HandleDockerContainerStatus)
 	mux.HandleFunc("/health", s.handleHealth)
 
 	addr := fmt.Sprintf(":%d", port)

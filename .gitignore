@@ -7,6 +7,16 @@
 *.dll
 *.so
 *.dylib
+clai
+clai-test
+clai-mcp-server
+_build/
+bin/
+scripts/test/tmp/
+archive/
+debug.log
+benchmark.log
+*.log
 
 # Test binary, built with `go test -c`
 *.test

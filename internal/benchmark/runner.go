@@ -130,49 +130,73 @@ func (r *Runner) runSingleTest(test llm.ModelBenchmarkTest) llm.ModelBenchmarkRe
 
 	// Run the test with streaming
 	start := time.Now()
-	response, err := agent.RunWithStreaming(test.Query, func(chunk string, toolCall *llm.ToolCall, codeBlock *llm.CodeBlock) {
-		if toolCall != nil {
-			// Print tool call info and suppress text chunks until tool completes
-			fmt.Printf("\n[Tool Call: %s]\n", toolCall.Function.Name)
-			fmt.Printf("[Tool Args: %s]\n", toolCall.Function.Arguments)
-			inToolCall = true
-			result.CodeExecuted = append(result.CodeExecuted, fmt.Sprintf("tool:%s %s", toolCall.Function.Name, toolCall.Function.Arguments))
-			logger.Debug("[BENCH-STREAM] tool_call name=%s args=%s", toolCall.Function.Name, truncateForLog(toolCall.Function.Arguments, 200))
-		} else if codeBlock != nil {
-			// Print code execution info
-			fmt.Printf("\n[Executing %s code]\n", codeBlock.Language)
-			logger.Debug("[BENCH-STREAM] code_block language=%s", codeBlock.Language)
-		} else if chunk != "" && !inToolCall {
-			// Only print text chunks when not in a tool call
-			fmt.Print(chunk)
-			fullResponse.WriteString(chunk)
-			logger.Debug("[BENCH-STREAM] chunk len=%d content=%q", len(chunk), truncateForLog(chunk, 200))
-		} else if chunk != "" {
-			// Still collect all chunks for evaluation, even during tool calls
-			fullResponse.WriteString(chunk)
-			logger.Debug("[BENCH-STREAM] chunk(in tool) len=%d content=%q", len(chunk), truncateForLog(chunk, 200))
-		}
-	})
-	result.TimeElapsed = time.Since(start)
-	result.Response = response
-	result.Error = err
-	logger.Debug("[BENCH-RESULT] response_len=%d full_len=%d err=%v", len(response), fullResponse.Len(), err)
+
+	type streamResult struct {
+		response string
+		err      error
+	}
+
+	resultChan := make(chan streamResult, 1)
+	go func() {
+		response, err := agent.RunWithStreaming(test.Query, func(chunk string, toolCall *llm.ToolCall, codeBlock *llm.CodeBlock) {
+			if toolCall != nil {
+				// Print tool call info and suppress text chunks until tool completes
+				fmt.Printf("\n[Tool Call: %s]\n", toolCall.Function.Name)
+				fmt.Printf("[Tool Args: %s]\n", toolCall.Function.Arguments)
+				inToolCall = true
+				result.CodeExecuted = append(result.CodeExecuted, fmt.Sprintf("tool:%s %s", toolCall.Function.Name, toolCall.Function.Arguments))
+				logger.Debug("[BENCH-STREAM] tool_call name=%s args=%s", toolCall.Function.Name, truncateForLog(toolCall.Function.Arguments, 200))
+			} else if codeBlock != nil {
+				// Print code execution info
+				fmt.Printf("\n[Executing %s code]\n", codeBlock.Language)
+				logger.Debug("[BENCH-STREAM] code_block language=%s", codeBlock.Language)
+			} else if chunk != "" && !inToolCall {
+				// Only print text chunks when not in a tool call
+				fmt.Print(chunk)
+				fullResponse.WriteString(chunk)
+				logger.Debug("[BENCH-STREAM] chunk len=%d content=%q", len(chunk), truncateForLog(chunk, 200))
+			} else if chunk != "" {
+				// Still collect all chunks for evaluation, even during tool calls
+				fullResponse.WriteString(chunk)
+				logger.Debug("[BENCH-STREAM] chunk(in tool) len=%d content=%q", len(chunk), truncateForLog(chunk, 200))
+			}
+		})
+		resultChan <- streamResult{response: response, err: err}
+	}()
+
+	timeout := time.Duration(test.TimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+
+	select {
+	case streamResult := <-resultChan:
+		result.TimeElapsed = time.Since(start)
+		result.Response = streamResult.response
+		result.Error = streamResult.err
+	case <-time.After(timeout):
+		result.TimeElapsed = time.Since(start)
+		result.Error = fmt.Errorf("timeout after %s", timeout)
+		result.FailureReason = fmt.Sprintf("Timeout after %s", timeout)
+		return result
+	}
+	logger.Debug("[BENCH-RESULT] response_len=%d full_len=%d err=%v", len(result.Response), fullResponse.Len(), result.Error)
 
 	// Simple iteration count (could be improved to track actual iterations)
 	result.Iterations = 1
 
 	// Calculate token metrics
-	if response != "" {
-		result.TokensGenerated = estimateTokenCount(response)
+	if result.Response != "" {
+		result.TokensGenerated = estimateTokenCount(result.Response)
 		result.TokensPerSecond = float64(result.TokensGenerated) / result.TimeElapsed.Seconds()
 	}
 
-	if response == "" && fullResponse.Len() > 0 {
+	if result.Response == "" && fullResponse.Len() > 0 {
 		result.Response = fullResponse.String()
 	}
 
-	if err != nil {
-		result.FailureReason = fmt.Sprintf("Error: %v", err)
+	if result.Error != nil {
+		result.FailureReason = fmt.Sprintf("Error: %v", result.Error)
 		return result
 	}
 

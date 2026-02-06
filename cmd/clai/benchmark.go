@@ -186,9 +186,12 @@ func runBenchmarkCLI(store *db.Store, testIndex int, sequential bool) {
 	}
 
 	// Use the same host configuration as the main clai application
-	host := os.Getenv("OLLAMA_HOST")
-	if host == "" {
-		host = "http://localhost:8081"
+	host := forcedLLMHost
+	if envHost := os.Getenv("OLLAMA_HOST"); envHost != "" {
+		host = envHost
+	}
+	if envHost := os.Getenv("OLLAMA_HOST"); envHost != "" {
+		host = envHost
 	}
 
 	// Extract port from host URL for model validation
@@ -434,10 +437,7 @@ func checkExistingBenchmarks() bool {
 
 // checkAPIHealth verifies the LLM API server is responsive
 func checkAPIHealth() bool {
-	host := os.Getenv("OLLAMA_HOST")
-	if host == "" {
-		host = "http://localhost:8081"
-	}
+	host := forcedLLMHost
 
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(host + "/health")

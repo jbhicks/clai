@@ -120,12 +120,16 @@ templ Models() {
 				}
 				
 				// Listen to multiple events to catch datalist selections
+				// Note: Using events only, no polling (per HTMX best practices)
 				modelSearchInput.addEventListener('input', checkForModelSelection);
 				modelSearchInput.addEventListener('change', checkForModelSelection);
-				modelSearchInput.addEventListener('blur', checkForModelSelection);
 				
-				// Poll for changes (datalist selections don't always fire events)
-				setInterval(checkForModelSelection, 500);
+				// Also listen for selection via keyboard (Enter key on datalist option)
+				modelSearchInput.addEventListener('keydown', function(e) {
+					if (e.key === 'Enter') {
+						checkForModelSelection();
+					}
+				});
 				
 				// Debug: Log when HTMX makes the request
 				document.body.addEventListener('htmx:beforeRequest', function(evt) {

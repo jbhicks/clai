@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -59,6 +60,10 @@ func ExecuteCodeWithTimeout(language, code string, timeout time.Duration) (strin
 	if dangerous, reason := IsDangerousCode(code); dangerous {
 		logExecution(language, code, -1, time.Since(start).Milliseconds(), 0, reason)
 		return "", fmt.Errorf("code execution blocked: %s", reason)
+	}
+
+	if language == "python" || language == "python3" {
+		code = ensurePythonPrint(code)
 	}
 
 	if timeout > MaxTimeout {
@@ -120,6 +125,23 @@ func ExecuteCodeWithTimeout(language, code string, timeout time.Duration) (strin
 	logExecution(language, code, exitCode, duration, len(output), execError)
 
 	return result, err
+}
+
+func ensurePythonPrint(code string) string {
+	trimmed := strings.TrimSpace(code)
+	if trimmed == "" {
+		return code
+	}
+	if strings.Contains(trimmed, "\n") {
+		return code
+	}
+	if strings.HasPrefix(trimmed, "print(") {
+		return code
+	}
+	if strings.Contains(trimmed, "=") {
+		return code
+	}
+	return "print(" + trimmed + ")"
 }
 
 func TruncateForHistory(output string) string {

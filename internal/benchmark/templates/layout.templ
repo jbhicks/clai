@@ -589,47 +589,39 @@ templ Layout(title string) {
 		
 		<!-- Auto-reload on server restart during development -->
 		<script>
-			// Poll server health every 2 seconds
-			let lastServerCheck = Date.now();
-			let consecutiveFailures = 0;
+			// Use SSE to detect server restarts instead of polling
+			// Listen for SSE connection errors which indicate server is down
+			document.body.addEventListener('htmx:sseError', function(e) {
+				console.log('SSE connection error - server may be restarting');
+			});
 			
-			setInterval(async () => {
-				try {
-					const response = await fetch('/health', { 
-						method: 'HEAD',
-						cache: 'no-store'
-					});
-					if (response.ok) {
-						// Server is up
-						if (consecutiveFailures > 0) {
-							// Server just came back up after being down - reload!
-							console.log('Server restarted, reloading page...');
-							window.location.reload();
-						}
-						consecutiveFailures = 0;
-					} else {
-						consecutiveFailures++;
-					}
-				} catch (e) {
-					// Server might be restarting
-					consecutiveFailures++;
+			document.body.addEventListener('htmx:sseClose', function(e) {
+				console.log('SSE connection closed - server may be restarting');
+			});
+			
+			// When SSE reconnects successfully after being down, reload the page
+			let wasDisconnected = false;
+			document.body.addEventListener('htmx:sseOpen', function(e) {
+				if (wasDisconnected) {
+					console.log('SSE reconnected after disconnect - server restarted, reloading...');
+					window.location.reload();
 				}
-			}, 2000);
+			});
+			
+			document.body.addEventListener('htmx:sseBeforeMessage', function(e) {
+				wasDisconnected = false;
+			});
 		</script>
 
-		<!-- HTMX: Process dynamically loaded content -->
+		<!-- HTMX: Initialize components on dynamic content load -->
 		<script>
-			// When new content is loaded via HTMX, process it so hx-* attributes work
+			// HTMX automatically processes elements with hx-* attributes
+			// Only need to initialize custom components that aren't HTMX-enhanced
 			document.body.addEventListener('htmx:load', function(evt) {
-				console.log('HTMX loaded new content - processing forms');
-				// Process all forms in the loaded element
-				const forms = evt.detail.elt.querySelectorAll('form[hx-post], form[hx-delete]');
-				forms.forEach(form => {
-					console.log('Processing form:', form.getAttribute('hx-post') || form.getAttribute('hx-delete'));
-					htmx.process(form);
-				});
+				console.log('HTMX loaded new content - initializing components');
 				
 				// Attach memory estimation event listeners to all forms
+				// (This is custom functionality, not HTMX-related)
 				initMemoryEstimation();
 			});
 			

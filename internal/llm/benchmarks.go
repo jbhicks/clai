@@ -45,8 +45,8 @@ var ModelBenchmarkSuite = []ModelBenchmarkTest{
 		Name:             "Count Files by Extension",
 		Query:            "How many .go files are in /home/josh/clai/internal/llm directory? Give me just the number.",
 		ExpectedBehavior: "code",
-		ShouldContain:    []string{"18"},                                   // There are 18 .go files in the directory
-		ShouldNotContain: []string{"I don't have access", "I cannot", "0"}, // 0 would be wrong
+		ShouldContain:    []string{"20"}, // There are 20 .go files in the directory
+		ShouldNotContain: []string{"I don't have access", "I cannot"},
 		MaxIterations:    5,
 		TimeoutSeconds:   30,
 	},

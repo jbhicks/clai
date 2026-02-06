@@ -94,6 +94,7 @@ func runSingleBenchmark(t *testing.T, client LLMClientInterface, test ModelBench
 3. You have filesystem access. Read files directly instead of asking the user.
 4. Execute commands as needed to complete tasks.
 5. Keep code blocks focused and purposeful.
+6. When using execute_python, always wrap arithmetic expressions in print(...), e.g. print(15 * 23 + 47), to ensure output is returned.
 
 Answer questions clearly and execute code when needed to provide accurate information.`
 

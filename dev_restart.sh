@@ -25,12 +25,29 @@ echo "Rebuilding templates..."
 templ generate || echo "Warning: templ generate failed, continuing..."
 
 echo "Rebuilding and restarting CLAI..."
-# Run CLAI in background - entr will wait for this script to exit
-make run-simple &
+
+# Check if we should run web-only mode (for web UI development)
+if [ "$CLAI_WEB_DEV" = "1" ]; then
+    echo "Running in web-only development mode..."
+    # Build first
+    make build
+    # Run benchmark server (web UI only, no TUI)
+    ./clai benchmark &
+else
+    # Run full CLAI with TUI (default)
+    make run-simple &
+fi
+
 CLAI_PID=$!
 
 # Wait a moment for CLAI to start
-sleep 2
+sleep 3
+
+# Verify server is running
+if ! ss -tlnp | grep -q ":8080"; then
+    echo "WARNING: Server may not have started on port 8080"
+    echo "Check debug.log for errors"
+fi
 
 # Exit so entr can wait for next file change
 # CLAI continues running in background

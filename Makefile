@@ -10,7 +10,22 @@ dev:
 	@echo "Press Ctrl+C to stop"
 	@echo ""
 	@echo "Watching Go and Template files for changes..."
+	@echo "Both .go and .templ changes will trigger full rebuild and restart"
 	@find . -name "*.go" -o -name "*.templ" -not -path "./vendor/*" | entr ./dev_restart.sh
+
+dev-web:
+	@if ! command -v entr >/dev/null 2>&1; then \
+		echo "Error: entr is not installed."; \
+		echo "Install with: sudo pacman -S entr (or your package manager)"; \
+		exit 1; \
+	fi
+	@echo "Starting CLAI Web UI with entr auto-reload (no TUI)..."
+	@echo "Web UI will be available at http://localhost:8080"
+	@echo "Logs will be in benchmark.log"
+	@echo "Press Ctrl+C to stop"
+	@echo ""
+	@echo "Watching Go and Template files for changes..."
+	@CLAI_WEB_DEV=1 find . -name "*.go" -o -name "*.templ" -not -path "./vendor/*" | entr ./dev_restart.sh
 
  dev-clean:
 	@echo "Cleaning up old development processes..."
@@ -76,4 +91,11 @@ run-simple:
 	@echo "Logs will be in debug.log and benchmark.log"
 	@echo "Press Ctrl+C to stop"
 	@CLAI_DEV=1 make run
+
+benchmark: build
+	@echo "Running unified benchmark suite..."
+	@./clai benchmark --cli
+
+logs:
+	@tail -f debug.log
 

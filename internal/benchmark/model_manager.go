@@ -1,6 +1,7 @@
 package benchmark
 
 import (
+	"clai/internal/benchmark/templates"
 	"clai/internal/db"
 	"clai/internal/gpu"
 	"clai/internal/logger"
@@ -65,9 +66,10 @@ type ModelManager struct {
 	modelsDir       string
 	backends        map[string]*BackendInfo // key: backend type ("rocm", "vulkan")
 	downloadManager *DownloadManager
-	stopRefresh     chan struct{} // Signal to stop background refresh
-	lastStateHash   string        // Hash of server states for change detection
-	onStateChange   func()        // Callback when state changes
+	stopRefresh     chan struct{}   // Signal to stop background refresh
+	lastStateHash   string          // Hash of server states for change detection
+	onStateChange   func()          // Callback when state changes
+	dockerLauncher  *DockerLauncher // Docker launcher for container-based models
 }
 
 // detectLlamaServerVersion runs llama-server --version and extracts the version number
@@ -135,6 +137,7 @@ func NewModelManagerWithBackgroundRefresh(dbStore *db.Store, enableBackgroundRef
 		backends:        backends,
 		downloadManager: NewDownloadManager(modelsDir, dbStore),
 		stopRefresh:     make(chan struct{}),
+		dockerLauncher:  NewDockerLauncher(),
 	}
 
 	// Only start background refresh if enabled (disabled for tests)
@@ -874,6 +877,97 @@ func (mm *ModelManager) getSystemdServiceName(pid int) string {
 	return ""
 }
 
+// sanitizeUnitName converts a model filename into a valid systemd unit name
+func sanitizeUnitName(name string) string {
+	// Remove .gguf extension
+	name = strings.TrimSuffix(name, ".gguf")
+	// Replace non-alphanumeric characters with hyphens
+	reg := regexp.MustCompile(`[^a-zA-Z0-9]+`)
+	name = reg.ReplaceAllString(name, "-")
+	// Trim hyphens from start and end
+	name = strings.Trim(name, "-")
+	return name
+}
+
+// createSystemdServiceFile creates a systemd user service file for a model
+func (mm *ModelManager) createSystemdServiceFile(modelName string, binaryPath string, args []string, port int, backend string) (string, error) {
+	unitName := "clai-model-" + sanitizeUnitName(modelName)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	serviceDir := filepath.Join(homeDir, ".config/systemd/user")
+	servicePath := filepath.Join(serviceDir, unitName+".service")
+
+	// Ensure directory exists
+	if err := os.MkdirAll(serviceDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create systemd user directory: %w", err)
+	}
+
+	// Escape arguments for systemd ExecStart
+	escapedArgs := make([]string, len(args))
+	for i, arg := range args {
+		if strings.ContainsAny(arg, " \"'") {
+			escapedArgs[i] = fmt.Sprintf("\"%s\"", strings.ReplaceAll(arg, "\"", "\\\""))
+		} else {
+			escapedArgs[i] = arg
+		}
+	}
+
+	// Determine environment variables based on backend
+	envVars := []string{
+		"PATH=/home/josh/therock-install/bin:/home/josh/therock-install/llvm/bin:/usr/bin",
+	}
+
+	// Backend-specific environment variables
+	if backend == "rocm" {
+		envVars = append(envVars, "LD_LIBRARY_PATH=/opt/rocm/lib")
+		// ROCBLAS_USE_HIPBLASLT: per Strix Halo reference repo, can improve stability/performance
+		// Set to 1 by default (enabled), can be disabled by setting env var externally
+		if os.Getenv("ROCBLAS_USE_HIPBLASLT") == "" {
+			envVars = append(envVars, "ROCBLAS_USE_HIPBLASLT=1")
+		} else {
+			envVars = append(envVars, fmt.Sprintf("ROCBLAS_USE_HIPBLASLT=%s", os.Getenv("ROCBLAS_USE_HIPBLASLT")))
+		}
+	}
+
+	envLines := ""
+	for _, env := range envVars {
+		envLines += fmt.Sprintf("Environment=%s\n", env)
+	}
+
+	// Create logs directory in user's home instead of using /tmp
+	logsDir := filepath.Join(homeDir, ".local", "share", "clai", "logs")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create logs directory: %w", err)
+	}
+
+	logFilePath := filepath.Join(logsDir, fmt.Sprintf("llama-server-%d.log", port))
+
+	content := fmt.Sprintf(`[Unit]
+Description=CLAI Model Server: %s
+After=network.target
+
+[Service]
+Type=exec
+%sExecStart=%s %s
+Restart=on-failure
+RestartSec=5
+StandardOutput=file:%s
+StandardError=append:%s
+
+[Install]
+WantedBy=default.target
+`, modelName, envLines, binaryPath, strings.Join(escapedArgs, " "), logFilePath, logFilePath)
+
+	if err := os.WriteFile(servicePath, []byte(content), 0644); err != nil {
+		return "", fmt.Errorf("failed to write systemd service file: %w", err)
+	}
+
+	return unitName, nil
+}
+
 // StartServer starts a model server on an available port with default context size
 func (mm *ModelManager) StartServer(modelPath string) error {
 	return mm.StartServerWithBackend(modelPath, 131072, 999, "rocm") // Default to ROCm, 999 = all GPU layers
@@ -935,7 +1029,6 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 	}
 
 	binaryPath := backendInfo.Path
-	logFile := filepath.Join("/tmp", fmt.Sprintf("llama-server-%d.log", port))
 
 	args := []string{
 		"-m", modelPath,
@@ -944,6 +1037,7 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 		"-c", fmt.Sprintf("%d", contextSize),
 		"-ngl", fmt.Sprintf("%d", ngl),
 		"-fa", "on",
+		"--no-mmap", // Disable memory mapping for stability (per Strix Halo optimization)
 		"-b", "2048",
 		"-ub", "512",
 		"--verbose", // Enable verbose logging for detailed tensor loading progress
@@ -956,24 +1050,50 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 		args = append(args, "--jinja")
 	}
 
-	cmd := exec.Command(binaryPath, args...)
-
-	// Redirect output to log file
-	logF, err := os.Create(logFile)
+	// Create systemd service file
+	unitName, err := mm.createSystemdServiceFile(modelName, binaryPath, args, port, backend)
 	if err != nil {
-		return fmt.Errorf("failed to create log file: %w", err)
-	}
-	cmd.Stdout = logF
-	cmd.Stderr = logF
-
-	// Start the process
-	if err := cmd.Start(); err != nil {
-		logF.Close()
-		return fmt.Errorf("failed to start server: %w", err)
+		return fmt.Errorf("failed to create systemd service: %w", err)
 	}
 
-	pid := cmd.Process.Pid
-	logger.Info("Started model server: %s on port %d (PID: %d)", modelName, port, pid)
+	// Reload systemd, enable and start service
+	logger.Info("Starting model via systemd: %s", unitName)
+	commands := [][]string{
+		{"systemctl", "--user", "daemon-reload"},
+		{"systemctl", "--user", "enable", unitName + ".service"},
+		{"systemctl", "--user", "start", unitName + ".service"},
+	}
+
+	for _, c := range commands {
+		if output, err := exec.Command(c[0], c[1:]...).CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to execute %s: %w (output: %s)", strings.Join(c, " "), err, string(output))
+		}
+	}
+
+	// Wait a moment for the service to actually start so we can get its PID
+	time.Sleep(1 * time.Second)
+
+	// Get PID via systemctl
+	pidCmd := exec.Command("systemctl", "--user", "show", "--property", "MainPID", "--value", unitName+".service")
+	pidOutput, err := pidCmd.Output()
+	pid := 0
+	if err == nil {
+		fmt.Sscanf(strings.TrimSpace(string(pidOutput)), "%d", &pid)
+	}
+
+	if pid == 0 {
+		// Fallback to finding PID via port
+		pid = mm.findPIDForPort(port)
+	}
+
+	logger.Info("Started model server via systemd: %s on port %d (PID: %d)", modelName, port, pid)
+
+	// Automatically set this model as default for the CLI
+	if err := UpdateEnvFile(modelName, fmt.Sprintf("http://localhost:%d", port)); err != nil {
+		logger.Warn("Failed to update CLI config with started model: %v", err)
+	} else {
+		logger.Info("Updated CLI config to use model %s", modelName)
+	}
 
 	// Step 3: Acquire lock briefly to update state
 	mm.mu.Lock()
@@ -981,9 +1101,11 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 	server, exists = mm.servers[modelPath]
 	if !exists {
 		mm.mu.Unlock()
-		// Kill the process we just started since server was removed
-		cmd.Process.Kill()
-		logF.Close()
+		// Stop the service we just started since server was removed
+		exec.Command("systemctl", "--user", "stop", unitName+".service").Run()
+		exec.Command("systemctl", "--user", "disable", unitName+".service").Run()
+		homeDir, _ := os.UserHomeDir()
+		os.Remove(filepath.Join(homeDir, ".config/systemd/user", unitName+".service"))
 		return fmt.Errorf("model was removed while starting")
 	}
 
@@ -1004,6 +1126,115 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 	go mm.waitForServerReady(modelPath, port, 2*time.Hour)
 
 	return nil
+}
+
+// StartServerWithDocker starts a model server using Docker containers
+func (mm *ModelManager) StartServerWithDocker(modelPath string, contextSize int, ngl int, imageTag string) error {
+	// Step 1: Get server info and port with brief lock
+	mm.mu.Lock()
+	server, exists := mm.servers[modelPath]
+	if !exists {
+		mm.mu.Unlock()
+		return fmt.Errorf("model not found: %s", modelPath)
+	}
+
+	if server.Status == "running" {
+		port := server.Port
+		mm.mu.Unlock()
+		return fmt.Errorf("server already running on port %d", port)
+	}
+
+	// Check if this is a split model and verify all parts exist
+	isSplit := server.IsSplitModel
+	splitComplete := server.SplitIsComplete
+	partsFound := server.SplitPartsFound
+	totalParts := server.SplitTotalParts
+
+	// Find available port
+	port, err := mm.findAvailablePortForModel()
+	if err != nil {
+		mm.mu.Unlock()
+		return err
+	}
+
+	// Copy data we need for I/O operations
+	modelName := server.ModelName
+	mm.mu.Unlock()
+
+	// Verify split model is complete before starting
+	if isSplit && !splitComplete {
+		return fmt.Errorf("cannot start split model: only %d of %d parts found - download all parts first", partsFound, totalParts)
+	}
+
+	// Step 2: Do ALL I/O operations WITHOUT holding lock
+
+	// Check if Docker image exists locally, pull if needed
+	if !mm.dockerLauncher.ImageExistsLocally(imageTag) {
+		logger.Info("Docker image %s not found locally, pulling...", imageTag)
+		if err := mm.dockerLauncher.PullImage(imageTag); err != nil {
+			return fmt.Errorf("failed to pull Docker image: %w", err)
+		}
+	}
+
+	// Start the Docker container
+	containerID, err := mm.dockerLauncher.StartContainer(modelPath, modelName, port, contextSize, ngl, imageTag)
+	if err != nil {
+		return fmt.Errorf("failed to start Docker container: %w", err)
+	}
+
+	logger.Info("Started model server via Docker: %s on port %d (Container: %s)", modelName, port, containerID[:12])
+
+	// Automatically set this model as default for the CLI
+	if err := UpdateEnvFile(modelName, fmt.Sprintf("http://localhost:%d", port)); err != nil {
+		logger.Warn("Failed to update CLI config with started model: %v", err)
+	} else {
+		logger.Info("Updated CLI config to use model %s", modelName)
+	}
+
+	// Step 3: Acquire lock briefly to update state
+	mm.mu.Lock()
+	// Check again that server still exists (safety check)
+	server, exists = mm.servers[modelPath]
+	if !exists {
+		mm.mu.Unlock()
+		// Stop the container we just started since server was removed
+		containerName := fmt.Sprintf("clai-model-%s", sanitizeContainerName(modelName))
+		mm.dockerLauncher.StopContainer(containerName)
+		return fmt.Errorf("model was removed while starting")
+	}
+
+	// Update server info
+	server.Port = port
+	server.PID = 0 // Docker doesn't use PID in the same way
+	server.Status = "starting"
+	server.Backend = "docker-" + imageTag // Store which Docker image was used
+	server.ErrorMessage = ""              // Clear any previous errors when starting
+	server.URL = fmt.Sprintf("http://localhost:%d", port)
+	mm.mu.Unlock()
+
+	// Notify state change so UI updates immediately
+	mm.notifyStateChange()
+
+	// Wait for server to be ready (in background)
+	go mm.waitForServerReady(modelPath, port, 2*time.Hour)
+
+	return nil
+}
+
+// GetDockerImages returns all available Docker images
+func (mm *ModelManager) GetDockerImages() map[string]*DockerImageInfo {
+	if mm.dockerLauncher == nil {
+		return make(map[string]*DockerImageInfo)
+	}
+	return mm.dockerLauncher.GetAvailableImages()
+}
+
+// PullDockerImage pulls a Docker image from the registry
+func (mm *ModelManager) PullDockerImage(imageTag string) error {
+	if mm.dockerLauncher == nil {
+		return fmt.Errorf("docker launcher not initialized")
+	}
+	return mm.dockerLauncher.PullImage(imageTag)
 }
 
 // waitForServerReady polls the server until it's ready or timeout
@@ -1129,44 +1360,76 @@ func (mm *ModelManager) StopServer(modelPath string) error {
 	// Copy data we need for I/O operations
 	pid := server.PID
 	modelName := server.ModelName
+	backend := server.Backend
 	mm.mu.Unlock()
 
 	// Step 2: Do ALL I/O operations WITHOUT holding lock
 	var stopErr error
 	var stoppedViaSystemd bool
+	var stoppedViaDocker bool
 
-	// Check if process is managed by systemd and stop via systemctl
-	if mm.isSystemdManaged(pid) {
-		serviceName := mm.getSystemdServiceName(pid)
+	// Check if this is a Docker-based server
+	if strings.HasPrefix(backend, "docker-") {
+		containerName := fmt.Sprintf("clai-model-%s", sanitizeContainerName(modelName))
+		logger.Info("Stopping Docker container: %s", containerName)
+		if err := mm.dockerLauncher.StopContainer(containerName); err != nil {
+			logger.Info("Warning: failed to stop Docker container %s: %v", containerName, err)
+			stopErr = err
+		} else {
+			stoppedViaDocker = true
+			logger.Info("Successfully stopped Docker container: %s", containerName)
+		}
+	} else {
+		// Traditional systemd/process-based stop
+		// Determine if we should use systemd (either it is managed or it's one of our clai-model-* services)
+		serviceName := ""
+		if mm.isSystemdManaged(pid) {
+			serviceName = mm.getSystemdServiceName(pid)
+		}
+
+		// If we don't have a PID or it's not managed, try to find a clai-model service by model name
+		if serviceName == "" {
+			unitName := "clai-model-" + sanitizeUnitName(modelName)
+			// Check if the service file exists
+			homeDir, _ := os.UserHomeDir()
+			servicePath := filepath.Join(homeDir, ".config/systemd/user", unitName+".service")
+			if _, err := os.Stat(servicePath); err == nil {
+				serviceName = unitName + ".service"
+			}
+		}
+
 		if serviceName != "" {
-			logger.Info("Detected systemd-managed service: %s, using systemctl to stop", serviceName)
-			cmd := exec.Command("systemctl", "--user", "stop", serviceName)
-			if err := cmd.Run(); err != nil {
-				logger.Info("Warning: failed to stop systemd service %s: %v, falling back to kill", serviceName, err)
-				// Fall through to kill if systemctl fails
-			} else {
-				logger.Info("Stopped systemd service: %s", serviceName)
-				stoppedViaSystemd = true
-				// Wait a bit and check if process is still alive (systemd might restart it)
-				time.Sleep(500 * time.Millisecond)
-				statPath := fmt.Sprintf("/proc/%d/stat", pid)
-				if _, err := os.Stat(statPath); err == nil {
-					// Process still exists, kill it
-					logger.Info("Systemd service stopped but process %d still exists, killing it", pid)
-					if process, err := os.FindProcess(pid); err == nil {
-						if err := process.Kill(); err != nil {
-							logger.Info("Failed to kill remaining process %d: %v", pid, err)
-						} else {
-							logger.Info("Killed remaining process %d after systemctl stop", pid)
-						}
-					}
+			logger.Info("Stopping systemd service: %s", serviceName)
+			// Disable and stop the service
+			commands := [][]string{
+				{"systemctl", "--user", "stop", serviceName},
+				{"systemctl", "--user", "disable", serviceName},
+			}
+
+			for _, c := range commands {
+				if output, err := exec.Command(c[0], c[1:]...).CombinedOutput(); err != nil {
+					logger.Info("Warning: failed to execute %s: %v (output: %s)", strings.Join(c, " "), err, string(output))
+					// Continue anyway
 				}
+			}
+
+			stoppedViaSystemd = true
+
+			// If it's one of our managed services, clean up the file
+			if strings.HasPrefix(serviceName, "clai-model-") {
+				homeDir, _ := os.UserHomeDir()
+				servicePath := filepath.Join(homeDir, ".config/systemd/user", serviceName)
+				if err := os.Remove(servicePath); err != nil {
+					logger.Info("Warning: failed to remove service file %s: %v", servicePath, err)
+				}
+				// Sequence: Stop -> Disable -> Remove -> Daemon-reload
+				exec.Command("systemctl", "--user", "daemon-reload").Run()
 			}
 		}
 	}
 
-	// Kill the process directly if not stopped via systemd
-	if !stoppedViaSystemd {
+	// Kill the process directly if not stopped via systemd/docker and we have a PID
+	if !stoppedViaSystemd && !stoppedViaDocker && pid > 0 {
 		logger.Info("Attempting to kill process PID %d for %s", pid, modelName)
 		process, err := os.FindProcess(pid)
 		if err != nil {
@@ -1429,65 +1692,9 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 	// Get available backends for the UI
 	backends := s.modelManager.GetBackends()
 
-	w.Header().Set("Content-Type", "text/html")
-
-	// Generate HTML with out-of-band swap to replace entire servers_list div
-	html := `<div id="servers_list" hx-swap-oob="true">
-	<table style="width: 100%; border-collapse: collapse;">
-		<thead>
-			<tr style="border-bottom: 1px solid #334155;">
-				<th style="text-align: left; padding: 12px; color: #94a3b8;">Model</th>
-				<th style="text-align: left; padding: 12px; color: #94a3b8;">Status</th>
-				<th style="text-align: left; padding: 12px; color: #94a3b8;">Backend</th>
-				<th style="text-align: left; padding: 12px; color: #94a3b8;">Port</th>
-				<th style="text-align: left; padding: 12px; color: #94a3b8;" title="Context window size (tokens)">Context</th>
-				<th style="text-align: left; padding: 12px; color: #94a3b8;" title="GPU-accessible memory (VRAM + System RAM)">Memory</th>
-				<th style="text-align: left; padding: 12px; color: #94a3b8;" title="Last benchmark score (% of tests passed)">Score</th>
-				<th style="text-align: left; padding: 12px; color: #94a3b8;">Actions</th>
-			</tr>
-		</thead>
-		<tbody>
-	`
-
-	for i, model := range models {
-		statusColor := "#94a3b8"
-		statusText := model.Status
-		statusTooltip := ""
-		statusHTML := ""
-		switch model.Status {
-		case "running":
-			statusColor = "#10b981"
-			statusText = "🟢 Running"
-		case "loading":
-			statusColor = "#f59e0b"
-			statusText = "⏳ Loading..."
-			statusTooltip = "Model is loading into memory"
-		case "starting":
-			statusColor = "#f59e0b"
-			statusText = "Starting..."
-		case "stopped":
-			statusColor = "#64748b"
-			statusText = "Stopped"
-		case "error":
-			statusColor = "#ef4444"
-			statusText = "Error"
-			if model.ErrorMessage != "" {
-				statusTooltip = "Click to view error details"
-				// Make error clickable to show modal with full error
-				// Use data attributes to avoid complex escaping issues
-				escapedModelName := htmlEscape(model.ModelName)
-				escapedError := htmlEscape(model.ErrorMessage)
-				statusHTML = fmt.Sprintf(`<span style="color: %s; font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: underline;" class="error-status" data-model-name="%s" data-error-message="%s">%s ⓘ</span>`,
-					statusColor, escapedModelName, escapedError, statusText)
-			}
-		}
-
-		// Default status HTML if not set above
-		if statusHTML == "" {
-			statusHTML = fmt.Sprintf(`<span style="color: %s; font-size: 13px; font-weight: 500;">%s</span>`, statusColor, statusText)
-		}
-
-		// Fetch last benchmark score for this model
+	// Get scores and CLI default
+	scores := make(map[string]templates.ScoreInfo)
+	for _, model := range models {
 		var scoreText string
 		var scoreColor string
 		if s.store != nil {
@@ -1497,7 +1704,6 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 				scoreColor = "#64748b"
 			} else {
 				scoreText = fmt.Sprintf("%.1f%%", lastBenchmark.SuccessRate)
-				// Color based on score: green (>80%), yellow (50-80%), red (<50%)
 				if lastBenchmark.SuccessRate >= 80 {
 					scoreColor = "#10b981"
 				} else if lastBenchmark.SuccessRate >= 50 {
@@ -1510,365 +1716,42 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 			scoreText = "-"
 			scoreColor = "#64748b"
 		}
-
-		portText := "-"
-		if model.Port > 0 {
-			portText = fmt.Sprintf("%d", model.Port)
-		}
-
-		// Backend display - only show for running/loading/starting/error states
-		backendText := "-"
-		backendColor := "#64748b"
-		if (model.Status == "running" || model.Status == "loading" || model.Status == "starting" || model.Status == "error") && model.Backend != "" {
-			backendText = model.Backend
-			if model.Backend == "rocm" {
-				backendText = "ROCm"
-				backendColor = "#ef4444" // Red for ROCm
-			} else if model.Backend == "vulkan" {
-				backendText = "Vulkan"
-				backendColor = "#a855f7" // Purple for Vulkan
-			}
-		}
-
-		contextText := "-"
-		contextTooltip := ""
-		if model.Status == "running" || model.Status == "loading" {
-			if model.ContextSize > 0 {
-				// Format active context size in K (thousands)
-				if model.ContextSize >= 1000 {
-					contextText = fmt.Sprintf("%dK", model.ContextSize/1000)
-				} else {
-					contextText = fmt.Sprintf("%d", model.ContextSize)
-				}
-			}
-
-			// Add training context and model details to tooltip
-			if model.ContextTrain > 0 {
-				tooltipParts := []string{}
-				tooltipParts = append(tooltipParts, fmt.Sprintf("Active: %s", contextText))
-
-				// Training context
-				trainText := fmt.Sprintf("%dK", model.ContextTrain/1000)
-				tooltipParts = append(tooltipParts, fmt.Sprintf("Training: %s", trainText))
-
-				// Parameters
-				if model.ParametersCount > 0 {
-					params := float64(model.ParametersCount) / 1e9
-					tooltipParts = append(tooltipParts, fmt.Sprintf("Params: %.1fB", params))
-				}
-
-				// Model size
-				if model.ModelSizeBytes > 0 {
-					tooltipParts = append(tooltipParts, fmt.Sprintf("Size: %s", gpu.FormatBytes(model.ModelSizeBytes)))
-				}
-
-				// Vocab and embedding
-				if model.VocabSize > 0 {
-					tooltipParts = append(tooltipParts, fmt.Sprintf("Vocab: %dK", model.VocabSize/1000))
-				}
-				if model.EmbeddingDim > 0 {
-					tooltipParts = append(tooltipParts, fmt.Sprintf("Embed: %d", model.EmbeddingDim))
-				}
-
-				contextTooltip = strings.Join(tooltipParts, " | ")
-			} else {
-				contextTooltip = "Context window size (tokens)"
-			}
-		}
-
-		vramText := "-"
-		memoryTooltip := ""
-		if (model.Status == "running" || model.Status == "loading") && model.VRAMUsageBytes > 0 {
-			vramText = gpu.FormatBytes(model.VRAMUsageBytes)
-			// Add helpful tooltip based on size
-			// Models using >1GB are likely using GTT (system RAM)
-			// Models using <1GB are likely using actual VRAM
-			if model.VRAMUsageBytes > 1024*1024*1024 {
-				memoryTooltip = "Primarily using system RAM (GTT) - large model"
-			} else {
-				memoryTooltip = "Primarily using GPU VRAM - small model/embedding"
-			}
-		} else if model.ModelSizeBytes > 0 {
-			// For stopped models, show file size instead of "-"
-			vramText = gpu.FormatBytes(model.ModelSizeBytes)
-			memoryTooltip = "Model file size (start server to see actual memory usage)"
-		}
-
-		actionButton := ""
-		benchmarkButton := ""
-		testButton := ""
-		deleteButton := ""
-
-		// Generate stable ID for this model (use index)
-		modelID := fmt.Sprintf("%d", i)
-
-		if model.Status == "running" || model.Status == "loading" {
-			actionButton = fmt.Sprintf(`
-	<form style="display: inline;" hx-post="/api/servers/stop">
-		<input type="hidden" name="model_path" value="%s" />
-		<button 
-			type="submit" 
-			style="padding: 6px 12px; background: #dc2626; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
-			hx-indicator="#stop-spinner-%s"
-		>
-			<span id="stop-spinner-%s" class="spinner htmx-indicator"></span>
-			<span>Stop</span>
-		</button>
-	</form>
-`, model.ModelPath, modelID, modelID)
-
-			// Only show Run Benchmark for fully loaded models
-			if model.Status == "running" {
-				benchmarkButton = fmt.Sprintf(`
-	<form style="display: inline;" hx-post="/api/benchmark/run" hx-target="#benchmark_status_%s" hx-swap="innerHTML">
-		<input type="hidden" name="model_path" value="%s" />
-		<button 
-			type="submit" 
-			style="padding: 6px 12px; background: #7c3aed; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
-			hx-indicator="#benchmark-spinner-%s"
-		>
-			<span id="benchmark-spinner-%s" class="spinner htmx-indicator"></span>
-			<span>Run Benchmark</span>
-		</button>
-	</form>
-	<div id="benchmark_status_%s"></div>
-`, modelID, model.ModelPath, modelID, modelID, modelID)
-			} else {
-				// Loading state - show disabled message
-				benchmarkButton = fmt.Sprintf(`
-	<span style="color: #64748b; font-size: 12px; font-style: italic;">Wait for model to load...</span>
-	<div id="benchmark_status_%s"></div>
-`, modelID)
-			}
-			// Add additional buttons for running servers
-			testButton = fmt.Sprintf(`
-	<a href="/api/servers/chat-ui?port=%d&host=%s" target="_blank" 
-	   style="display: inline-block; padding: 6px 12px; background: #10b981; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;"
-	   title="Open llama.cpp chat interface">
-		Chat UI
-	</a>
-	<form style="display: inline;" hx-post="/api/servers/set-default">
-		<input type="hidden" name="model_path" value="%s" />
-		<input type="hidden" name="port" value="%d" />
-		<button 
-			type="submit" 
-			style="padding: 6px 12px; background: #f59e0b; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
-			title="Set this model as default for clai CLI"
-		>
-			Set as Default
-		</button>
-	</form>
-	<a href="/api/servers/logs?port=%d" target="_blank" 
-	   style="display: inline-block; padding: 6px 12px; background: #64748b; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;">
-		Logs
-	</a>
-`, model.Port, r.Host, model.ModelPath, model.Port, model.Port)
-			// Can't delete while running
-			deleteButton = `<span style="color: #64748b; font-size: 12px;">Stop first to delete</span>`
-		} else if model.Status == "stopped" || model.Status == "error" {
-			// Show Start button (or Retry for errors)
-			buttonText := "Start"
-			if model.Status == "error" {
-				buttonText = "Retry"
-			}
-
-			// Build backend selector options
-			var backendOptionsBuilder strings.Builder
-			defaultBackend := "rocm" // Default selection
-			for backendType := range backends {
-				selected := ""
-				if backendType == defaultBackend {
-					selected = "selected"
-				}
-				displayName := backendType
-				if backendType == "rocm" {
-					displayName = "ROCm"
-				} else if backendType == "vulkan" {
-					displayName = "Vulkan"
-				}
-				backendOptionsBuilder.WriteString(fmt.Sprintf(`<option value="%s" %s>%s</option>`,
-					backendType, selected, displayName))
-			}
-			backendOptions := backendOptionsBuilder.String()
-
-			// If no backends available, show error
-			if backendOptions == "" {
-				actionButton = `<span style="color: #ef4444; font-size: 12px;">No backends available - check llama-server installation</span>`
-			} else {
-				actionButton = fmt.Sprintf(`
-		<form 
-			style="display: flex; flex-direction: column; gap: 8px;" 
-			hx-post="/api/servers/start"
-			data-model-size="%d"
-			data-parameters="%d"
-		>
-			<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-				<input type="hidden" name="model_path" value="%s" />
-				<select 
-					name="backend" 
-					style="padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;"
-					title="Backend to use for inference"
-				>
-					%s
-				</select>
-				<select 
-					name="context_size" 
-					style="padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;"
-					title="Context window size - smaller contexts load faster and use less memory"
-				>
-					<option value="">Default (131K)</option>
-					<option value="2048">2K - Minimal</option>
-					<option value="4096">4K - Small</option>
-					<option value="8192">8K - Standard</option>
-					<option value="16384">16K - Medium</option>
-					<option value="32768">32K - Large</option>
-					<option value="65536">65K - Very Large</option>
-					<option value="131072">131K - Huge</option>
-				</select>
-				<select 
-					name="ngl" 
-					style="padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;"
-					title="GPU layers - fewer layers = less VRAM usage"
-				>
-					<option value="999">Auto (All Layers)</option>
-					<option value="0">CPU Only (0 Layers)</option>
-					<option value="10">10 Layers</option>
-					<option value="20">20 Layers</option>
-					<option value="30">30 Layers</option>
-					<option value="40">40 Layers</option>
-					<option value="50">50 Layers ⭐</option>
-					<option value="60">60 Layers</option>
-					<option value="70">70 Layers</option>
-					<option value="80">80 Layers</option>
-				</select>
-				<button 
-					type="submit" 
-					style="padding: 6px 12px; background: #2563eb; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px;"
-					hx-indicator="#start-spinner-%s"
-				>
-					<span id="start-spinner-%s" class="spinner htmx-indicator"></span>
-					<span>%s</span>
-				</button>
-			</div>
-			<div class="memory-estimate" style="margin-top: 4px;">
-				<!-- Memory estimate will be dynamically populated by JavaScript -->
-			</div>
-		</form>
-	`, model.ModelSizeBytes, model.ParametersCount, model.ModelPath, backendOptions, modelID, modelID, buttonText)
-			}
-			// Allow delete when stopped or error
-			deleteConfirmMsg := fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove the file from disk.", model.ModelName)
-			if model.IsSplitModel && model.SplitTotalParts > 1 {
-				if model.SplitIsComplete {
-					deleteConfirmMsg = fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove all %d part files from disk.", model.ModelName, model.SplitTotalParts)
-				} else {
-					deleteConfirmMsg = fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove the %d downloaded part file(s) from disk. %d part(s) are still missing.",
-						model.ModelName, model.SplitPartsFound, model.SplitTotalParts-model.SplitPartsFound)
-				}
-			}
-
-			deleteButton = fmt.Sprintf(`
-			<form style="display: inline;" hx-delete="/api/servers/delete" hx-confirm="%s">
-				<input type="hidden" name="model_path" value="%s" />
-				<button 
-					type="submit" 
-					style="padding: 6px 12px; background: #991b1b; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px;"
-					hx-indicator="#delete-spinner-%s"
-				>
-					<span id="delete-spinner-%s" class="spinner htmx-indicator"></span>
-					<span>Delete</span>
-				</button>
-			</form>
-		`, deleteConfirmMsg, model.ModelPath, modelID, modelID)
-		} else {
-			actionButton = `<span style="color: #64748b;">Please wait...</span>`
-		}
-
-		// Format model name with split model indicator if applicable
-		modelNameDisplay := model.ModelName
-		modelNameTooltip := ""
-		if model.IsSplitModel {
-			if model.SplitIsComplete {
-				modelNameDisplay = fmt.Sprintf("%s <span style=\"color: #10b981; font-size: 11px;\">(%d parts)</span>",
-					model.ModelName, model.SplitTotalParts)
-				modelNameTooltip = fmt.Sprintf("Split model with %d parts - all parts present", model.SplitTotalParts)
-			} else {
-				modelNameDisplay = fmt.Sprintf("%s <span style=\"color: #f59e0b; font-size: 11px;\">(%d/%d parts)</span>",
-					model.ModelName, model.SplitPartsFound, model.SplitTotalParts)
-				modelNameTooltip = fmt.Sprintf("Split model: %d of %d parts found - download remaining parts to start",
-					model.SplitPartsFound, model.SplitTotalParts)
-
-				// If split model is incomplete, disable Start button
-				if model.Status == "stopped" {
-					actionButton = `<span style="color: #f59e0b; font-size: 12px;">Download all parts first</span>`
-					deleteButton = "" // Don't show delete for incomplete downloads
-				}
-			}
-		}
-
-		// Add toggle button for logs if model is starting, loading, or running
-		logsToggleButton := ""
-		if model.Status == "running" || model.Status == "loading" || model.Status == "starting" {
-			logsToggleButton = fmt.Sprintf(`
-				<button 
-					onclick="document.getElementById('logs-%s').classList.toggle('hidden')" 
-					style="padding: 6px 12px; background: #475569; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
-				>
-					📋 Logs
-				</button>
-			`, modelID)
-		}
-
-		html += fmt.Sprintf(`
-		<tr style="border-bottom: 1px solid #1e293b;">
-			<td style="padding: 14px 12px; color: #e2e8f0; font-size: 13px; font-family: monospace;" title="%s">%s</td>
-			<td style="padding: 14px 12px;" title="%s">%s</td>
-			<td style="padding: 14px 12px; color: %s; font-size: 13px; font-weight: 500;">%s</td>
-			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;">%s</td>
-			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;" title="%s">%s</td>
-			<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;" title="%s">%s</td>
-			<td style="padding: 14px 12px; color: %s; font-size: 13px; font-weight: 500;">%s</td>
-			<td style="padding: 14px 12px;">%s%s%s%s%s</td>
-		</tr>
-	`, modelNameTooltip, modelNameDisplay, statusTooltip, statusHTML, backendColor, backendText, portText, contextTooltip, contextText, memoryTooltip, vramText, scoreColor, scoreText, actionButton, benchmarkButton, testButton, logsToggleButton, deleteButton)
-
-		// Add collapsible log viewer row with SSE updates
-		// Show logs automatically for starting/loading/error states, hidden for running
-		if model.Status == "running" || model.Status == "loading" || model.Status == "starting" || model.Status == "error" {
-			// Auto-show logs for starting, loading, and error states
-			hiddenClass := ""
-			if model.Status == "running" {
-				hiddenClass = "hidden"
-			}
-
-			html += fmt.Sprintf(`
-		<tr id="logs-%s" class="%s" style="border-bottom: 1px solid #1e293b;">
-			<td colspan="8" style="padding: 0;">
-				<div style="background: #0f172a; padding: 12px; margin: 8px; border-radius: 4px; border: 1px solid #334155;">
-					<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-						<span style="color: #94a3b8; font-size: 12px; font-weight: 500;">Server Logs (Last 50 lines - Live)</span>
-						<a href="/api/servers/logs?port=%d" target="_blank" 
-						   style="color: #60a5fa; font-size: 12px; text-decoration: none;">
-							View Full Logs ↗
-						</a>
-					</div>
-					<div hx-ext="sse" sse-connect="/api/servers/logs/stream?port=%d" sse-swap="log_update">
-						<pre id="log-content-%d" style="background: #020617; color: #e2e8f0; padding: 12px; border-radius: 4px; font-size: 11px; font-family: monospace; overflow-x: auto; max-height: 400px; overflow-y: auto; margin: 0;">Connecting to log stream...</pre>
-					</div>
-				</div>
-			</td>
-		</tr>
-	`, modelID, hiddenClass, model.Port, model.Port, model.Port)
-		}
+		scores[model.ModelName] = templates.ScoreInfo{Text: scoreText, Color: scoreColor}
 	}
 
-	html += `
-		</tbody>
-	</table>
-	</div>
-	`
+	cliDefault := os.Getenv("OLLAMA_MODEL")
 
-	w.Write([]byte(html))
+	// Convert to templates types to avoid type mismatch
+	templateModels := make([]*templates.ModelServer, len(models))
+	for i, m := range models {
+		templateModels[i] = (*templates.ModelServer)(m)
+	}
+
+	templateBackends := make(map[string]*templates.BackendInfo)
+	for k, v := range backends {
+		templateBackends[k] = (*templates.BackendInfo)(v)
+	}
+
+	// Get Docker images for the UI
+	dockerImages := s.modelManager.GetDockerImages()
+	templateDockerImages := make(map[string]*templates.DockerImageInfo)
+	for k, v := range dockerImages {
+		templateDockerImages[k] = (*templates.DockerImageInfo)(v)
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	data := templates.ModelTableData{
+		Models:          templateModels,
+		Backends:        templateBackends,
+		CLIDefaultModel: cliDefault,
+		Scores:          scores,
+		DockerImages:    templateDockerImages,
+	}
+
+	if err := templates.ModelsTable(data).Render(r.Context(), w); err != nil {
+		logger.Info("Error rendering models table: %v", err)
+		http.Error(w, "Failed to render template", http.StatusInternalServerError)
+	}
 }
 
 // HandleStartServer starts a model server and broadcasts SSE update
@@ -1916,14 +1799,36 @@ func (s *Server) HandleStartServer(w http.ResponseWriter, r *http.Request) {
 		logger.Info("DEBUG: No ngl parameter provided, using default (all layers)")
 	}
 
-	// Check for backend parameter (rocm or vulkan)
-	backend := r.FormValue("backend")
-	if backend == "" {
-		backend = "rocm" // default to ROCm
+	// Parse runtime parameter (new unified format: "native:rocm" or "docker:rocm-7.2")
+	runtime := r.FormValue("runtime")
+	if runtime == "" {
+		// Fallback to old backend parameter for backward compatibility
+		backend := r.FormValue("backend")
+		if backend == "" {
+			backend = "rocm"
+		}
+		runtime = "native:" + backend
+		logger.Info("No runtime specified, using backward-compatible default: %s", runtime)
 	}
-	logger.Info("Using backend: %s for %s", backend, modelPath)
 
-	if err := s.modelManager.StartServerWithBackend(modelPath, contextSize, ngl, backend); err != nil {
+	var err error
+	if strings.HasPrefix(runtime, "docker:") {
+		// Docker launcher
+		dockerImage := strings.TrimPrefix(runtime, "docker:")
+		logger.Info("Using Docker runtime: %s for %s", dockerImage, modelPath)
+		err = s.modelManager.StartServerWithDocker(modelPath, contextSize, ngl, dockerImage)
+	} else if strings.HasPrefix(runtime, "native:") {
+		// Native/systemd launcher
+		backend := strings.TrimPrefix(runtime, "native:")
+		logger.Info("Using native runtime: %s for %s", backend, modelPath)
+		err = s.modelManager.StartServerWithBackend(modelPath, contextSize, ngl, backend)
+	} else {
+		// Legacy fallback - treat as native backend
+		logger.Info("Using legacy runtime format: %s for %s", runtime, modelPath)
+		err = s.modelManager.StartServerWithBackend(modelPath, contextSize, ngl, runtime)
+	}
+
+	if err != nil {
 		logger.Info("Error starting server for %s: %v", modelPath, err)
 		http.Error(w, fmt.Sprintf("Failed to start server: %v", err), http.StatusInternalServerError)
 		return
@@ -1972,21 +1877,8 @@ func (s *Server) HandleStopServer(w http.ResponseWriter, r *http.Request) {
 	s.HandleListModels(w, r)
 }
 
-// HandleSetDefaultModel handles HTTP requests to set a model as default in clai CLI config
-func (s *Server) HandleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	modelPath := r.FormValue("model_path")
-	port := r.FormValue("port")
-
-	if modelPath == "" || port == "" {
-		http.Error(w, "model_path and port required", http.StatusBadRequest)
-		return
-	}
-
+// UpdateEnvFile updates the .env file with new OLLAMA_MODEL and OLLAMA_HOST values
+func UpdateEnvFile(modelName string, hostURL string) error {
 	// Path to .env file in clai directory
 	envPath := filepath.Join(filepath.Dir(os.Args[0]), ".env")
 	// If running from source (go run), try parent directory
@@ -1997,20 +1889,16 @@ func (s *Server) HandleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
 	// Read current .env content
 	content, err := os.ReadFile(envPath)
 	if err != nil {
-		logger.Info("Error reading .env: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to read config: %v", err), http.StatusInternalServerError)
-		return
+		return fmt.Errorf("error reading .env: %w", err)
 	}
 
 	// Parse and update environment variables
 	lines := strings.Split(string(content), "\n")
-	modelName := filepath.Base(modelPath)
+
 	// Remove .gguf extension for cleaner model name
 	if strings.HasSuffix(modelName, ".gguf") {
 		modelName = strings.TrimSuffix(modelName, ".gguf")
 	}
-
-	hostURL := fmt.Sprintf("http://localhost:%s", port)
 
 	var newLines []string
 	foundModel := false
@@ -2039,7 +1927,32 @@ func (s *Server) HandleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
 	// Write back to .env
 	newContent := strings.Join(newLines, "\n")
 	if err := os.WriteFile(envPath, []byte(newContent), 0644); err != nil {
-		logger.Info("Error writing .env: %v", err)
+		return fmt.Errorf("error writing .env: %w", err)
+	}
+
+	return nil
+}
+
+// HandleSetDefaultModel handles HTTP requests to set a model as default in clai CLI config
+func (s *Server) HandleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	modelPath := r.FormValue("model_path")
+	portStr := r.FormValue("port")
+
+	if modelPath == "" || portStr == "" {
+		http.Error(w, "model_path and port required", http.StatusBadRequest)
+		return
+	}
+
+	modelName := filepath.Base(modelPath)
+	hostURL := fmt.Sprintf("http://localhost:%s", portStr)
+
+	if err := UpdateEnvFile(modelName, hostURL); err != nil {
+		logger.Info("Error updating config: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to update config: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -2050,7 +1963,7 @@ func (s *Server) HandleSetDefaultModel(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprintf(w, `<div style="padding: 8px; background: #10b981; color: white; border-radius: 4px; margin-bottom: 8px;">
 		✓ Set as default! Model: %s, Port: %s
-	</div>`, modelName, port)
+	</div>`, modelName, portStr)
 }
 
 // HandleChatUI redirects to the llama.cpp chat UI using the correct hostname
@@ -2222,4 +2135,73 @@ func (s *Server) HandleServerLogsStream(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+}
+
+// HandleListDockerImages returns all available Docker images as JSON
+func (s *Server) HandleListDockerImages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	images := s.modelManager.GetDockerImages()
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(images); err != nil {
+		logger.Info("Error encoding Docker images: %v", err)
+		http.Error(w, "Failed to encode images", http.StatusInternalServerError)
+	}
+}
+
+// HandlePullDockerImage pulls a Docker image from the registry
+func (s *Server) HandlePullDockerImage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	imageTag := r.FormValue("image_tag")
+	if imageTag == "" {
+		http.Error(w, "image_tag required", http.StatusBadRequest)
+		return
+	}
+
+	logger.Info("Pulling Docker image: %s", imageTag)
+
+	if err := s.modelManager.PullDockerImage(imageTag); err != nil {
+		logger.Info("Error pulling Docker image %s: %v", imageTag, err)
+		http.Error(w, fmt.Sprintf("Failed to pull image: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"status":"success","message":"Image %s pulled successfully"}`, imageTag)
+}
+
+// HandleDockerContainerStatus returns the status of a Docker container
+func (s *Server) HandleDockerContainerStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	containerName := r.URL.Query().Get("container")
+	if containerName == "" {
+		http.Error(w, "container name required", http.StatusBadRequest)
+		return
+	}
+
+	running, err := s.modelManager.dockerLauncher.GetContainerStatus(containerName)
+	if err != nil {
+		logger.Info("Error getting container status for %s: %v", containerName, err)
+		http.Error(w, fmt.Sprintf("Failed to get status: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	status := "stopped"
+	if running {
+		status = "running"
+	}
+	fmt.Fprintf(w, `{"container":"%s","status":"%s"}`, containerName, status)
 }

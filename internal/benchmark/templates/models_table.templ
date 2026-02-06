@@ -1,0 +1,515 @@
+package templates
+
+import (
+	"clai/internal/gpu"
+	"fmt"
+	"strings"
+	"sort"
+)
+
+// ModelServer represents a running or available model server
+// Redefined here to avoid cyclic dependency with internal/benchmark
+type ModelServer struct {
+	ModelPath       string  `json:"model_path"`
+	ModelName       string  `json:"model_name"`
+	Port            int     `json:"port"`
+	PID             int     `json:"pid"`
+	Status          string  `json:"status"`        // "running", "loading", "stopped", "starting", "error"
+	ErrorMessage    string  `json:"error_message"` // Error details when status is "error"
+	URL             string  `json:"url"`
+	APIType         string  `json:"api_type"`
+	Backend         string  `json:"backend"` // "rocm" or "vulkan"
+	LastChecked     int64   `json:"last_checked"`
+	VRAMUsageBytes  int64   `json:"vram_usage_bytes"` // VRAM used by this server in bytes
+	CPUPercent      float64 `json:"cpu_percent"`      // CPU usage percentage
+	MemoryBytes     int64   `json:"memory_bytes"`     // RAM (RSS) used by this process in bytes
+	ContextSize     int     `json:"context_size"`     // Active context window size (n_ctx)
+	ContextTrain    int     `json:"context_train"`    // Training context size (n_ctx_train)
+	ParametersCount int64   `json:"parameters_count"` // Total parameters (n_params)
+	ModelSizeBytes  int64   `json:"model_size_bytes"` // Model file size in bytes
+	VocabSize       int     `json:"vocab_size"`       // Vocabulary size (n_vocab)
+	EmbeddingDim    int     `json:"embedding_dim"`    // Embedding dimensions (n_embd)
+
+	// Split model metadata
+	IsSplitModel    bool     `json:"is_split_model"`    // True if this is a multi-part GGUF model
+	SplitPartNumber int      `json:"split_part_number"` // Current part number (1-based)
+	SplitTotalParts int      `json:"split_total_parts"` // Total number of parts
+	SplitPartsFound int      `json:"split_parts_found"` // Number of parts found on disk
+	SplitAllParts   []string `json:"split_all_parts"`   // Paths to all parts (for tracking)
+	SplitIsComplete bool     `json:"split_is_complete"` // True if all parts are present
+}
+
+// BackendInfo holds information about a llama-server backend
+type BackendInfo struct {
+	Path    string `json:"path"`
+	Version string `json:"version"`
+	Type    string `json:"type"` // "rocm" or "vulkan"
+}
+
+// DockerImageInfo holds information about available Docker images
+type DockerImageInfo struct {
+	Name        string `json:"name"`
+	Tag         string `json:"tag"`
+	FullImage   string `json:"full_image"`
+	Backend     string `json:"backend"` // "rocm" or "vulkan"
+	Description string `json:"description"`
+}
+
+type ModelTableData struct {
+	Models          []*ModelServer
+	Backends        map[string]*BackendInfo
+	CLIDefaultModel string
+	Scores          map[string]ScoreInfo
+	DockerImages    map[string]*DockerImageInfo
+}
+
+type ScoreInfo struct {
+	Text  string
+	Color string
+}
+
+templ ModelsTable(data ModelTableData) {
+	<div id="servers_list" hx-swap-oob="true">
+		<table style="width: 100%; border-collapse: collapse;">
+			<thead>
+				<tr style="border-bottom: 1px solid #334155;">
+					<th style="text-align: left; padding: 12px; color: #94a3b8;">Model</th>
+					<th style="text-align: left; padding: 12px; color: #94a3b8;">Status</th>
+					<th style="text-align: left; padding: 12px; color: #94a3b8;">Backend</th>
+					<th style="text-align: left; padding: 12px; color: #94a3b8;">Port</th>
+					<th style="text-align: left; padding: 12px; color: #94a3b8;" title="Context window size (tokens)">Context</th>
+					<th style="text-align: left; padding: 12px; color: #94a3b8;" title="GPU-accessible memory (VRAM + System RAM)">Memory</th>
+					<th style="text-align: left; padding: 12px; color: #94a3b8;" title="Last benchmark score (% of tests passed)">Score</th>
+					<th style="text-align: left; padding: 12px; color: #94a3b8;">Actions</th>
+				</tr>
+			</thead>
+			<tbody>
+				for i, model := range data.Models {
+					@ModelRow(i, model, data)
+				}
+			</tbody>
+		</table>
+	</div>
+}
+
+templ ModelRow(i int, model *ModelServer, data ModelTableData) {
+	{{
+		modelID := fmt.Sprintf("%d", i)
+		statusColor := "#94a3b8"
+		statusText := model.Status
+		statusTooltip := ""
+		
+		switch model.Status {
+		case "running":
+			statusColor = "#10b981"
+			statusText = "🟢 Running"
+		case "loading":
+			statusColor = "#f59e0b"
+			statusText = "⏳ Loading..."
+			statusTooltip = "Model is loading into memory"
+		case "starting":
+			statusColor = "#f59e0b"
+			statusText = "Starting..."
+		case "stopped":
+			statusColor = "#64748b"
+			statusText = "Stopped"
+		case "error":
+			statusColor = "#ef4444"
+			statusText = "Error"
+			if model.ErrorMessage != "" {
+				statusTooltip = "Click to view error details"
+			}
+		}
+
+		score := data.Scores[model.ModelName]
+		
+		portText := "-"
+		if model.Port > 0 {
+			portText = fmt.Sprintf("%d", model.Port)
+		}
+
+		backendText := "-"
+		backendColor := "#64748b"
+		if (model.Status == "running" || model.Status == "loading" || model.Status == "starting" || model.Status == "error") && model.Backend != "" {
+			backendText = model.Backend
+			if model.Backend == "rocm" {
+				backendText = "ROCm"
+				backendColor = "#ef4444"
+			} else if model.Backend == "vulkan" {
+				backendText = "Vulkan"
+				backendColor = "#a855f7"
+			}
+			if info, exists := data.Backends[model.Backend]; exists && info.Version != "" {
+				backendText = fmt.Sprintf("%s (%s)", backendText, info.Version)
+			}
+		}
+
+		contextText := "-"
+		contextTooltip := ""
+		if model.Status == "running" || model.Status == "loading" {
+			if model.ContextSize > 0 {
+				if model.ContextSize >= 1000 {
+					contextText = fmt.Sprintf("%dK", model.ContextSize/1000)
+				} else {
+					contextText = fmt.Sprintf("%d", model.ContextSize)
+				}
+			}
+
+			if model.ContextTrain > 0 {
+				tooltipParts := []string{}
+				tooltipParts = append(tooltipParts, fmt.Sprintf("Active: %s", contextText))
+				trainText := fmt.Sprintf("%dK", model.ContextTrain/1000)
+				tooltipParts = append(tooltipParts, fmt.Sprintf("Training: %s", trainText))
+				if model.ParametersCount > 0 {
+					params := float64(model.ParametersCount) / 1e9
+					tooltipParts = append(tooltipParts, fmt.Sprintf("Params: %.1fB", params))
+				}
+				if model.ModelSizeBytes > 0 {
+					tooltipParts = append(tooltipParts, fmt.Sprintf("Size: %s", gpu.FormatBytes(model.ModelSizeBytes)))
+				}
+				if model.VocabSize > 0 {
+					tooltipParts = append(tooltipParts, fmt.Sprintf("Vocab: %dK", model.VocabSize/1000))
+				}
+				if model.EmbeddingDim > 0 {
+					tooltipParts = append(tooltipParts, fmt.Sprintf("Embed: %d", model.EmbeddingDim))
+				}
+				contextTooltip = strings.Join(tooltipParts, " | ")
+			} else {
+				contextTooltip = "Context window size (tokens)"
+			}
+		}
+
+		vramText := "-"
+		memoryTooltip := ""
+		if (model.Status == "running" || model.Status == "loading") && model.VRAMUsageBytes > 0 {
+			vramText = gpu.FormatBytes(model.VRAMUsageBytes)
+			if model.VRAMUsageBytes > 1024*1024*1024 {
+				memoryTooltip = "Primarily using system RAM (GTT) - large model"
+			} else {
+				memoryTooltip = "Primarily using GPU VRAM - small model/embedding"
+			}
+		} else if model.ModelSizeBytes > 0 {
+			vramText = gpu.FormatBytes(model.ModelSizeBytes)
+			memoryTooltip = "Model file size (start server to see actual memory usage)"
+		}
+
+		modelNameDisplay := model.ModelName
+		modelNameTooltip := ""
+		if model.IsSplitModel {
+			if model.SplitIsComplete {
+				modelNameDisplay = fmt.Sprintf("%s <span style=\"color: #10b981; font-size: 11px;\">(%d parts)</span>",
+					model.ModelName, model.SplitTotalParts)
+				modelNameTooltip = fmt.Sprintf("Split model with %d parts - all parts present", model.SplitTotalParts)
+			} else {
+				modelNameDisplay = fmt.Sprintf("%s <span style=\"color: #f59e0b; font-size: 11px;\">(%d/%d parts)</span>",
+					model.ModelName, model.SplitPartsFound, model.SplitTotalParts)
+				modelNameTooltip = fmt.Sprintf("Split model: %d of %d parts found - download remaining parts to start",
+					model.SplitPartsFound, model.SplitTotalParts)
+			}
+		}
+
+		isDefault := model.ModelName == data.CLIDefaultModel
+	}}
+
+	<tr style="border-bottom: 1px solid #1e293b;">
+		<td style="padding: 14px 12px; color: #e2e8f0; font-size: 13px; font-family: monospace;" title={ modelNameTooltip }>
+			@templ.Raw(modelNameDisplay)
+			if isDefault {
+				<span style="margin-left: 8px; padding: 2px 6px; background: #2563eb; color: white; border-radius: 4px; font-size: 10px; font-weight: bold; font-family: sans-serif;">CLI DEFAULT</span>
+			}
+		</td>
+		<td style="padding: 14px 12px;" title={ statusTooltip }>
+			if model.Status == "error" && model.ErrorMessage != "" {
+				<span style={ fmt.Sprintf("color: %s; font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: underline;", statusColor) } 
+					class="error-status" 
+					data-model-name={ model.ModelName } 
+					data-error-message={ model.ErrorMessage }>
+					{ statusText } ⓘ
+				</span>
+			} else {
+				<span style={ fmt.Sprintf("color: %s; font-size: 13px; font-weight: 500;", statusColor) }>
+					{ statusText }
+				</span>
+			}
+		</td>
+		<td style={ fmt.Sprintf("padding: 14px 12px; color: %s; font-size: 13px; font-weight: 500;", backendColor) }>
+			{ backendText }
+		</td>
+		<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;">
+			{ portText }
+		</td>
+		<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;" title={ contextTooltip }>
+			{ contextText }
+		</td>
+		<td style="padding: 14px 12px; color: #cbd5e1; font-size: 13px;" title={ memoryTooltip }>
+			{ vramText }
+		</td>
+		<td style={ fmt.Sprintf("padding: 14px 12px; color: %s; font-size: 13px; font-weight: 500;", score.Color) }>
+			{ score.Text }
+		</td>
+		<td style="padding: 14px 12px;">
+			@ActionButtons(modelID, model, data)
+		</td>
+	</tr>
+
+	if model.Status == "running" || model.Status == "loading" || model.Status == "starting" || model.Status == "error" {
+		if model.Port > 0 {
+			{{ 
+				hiddenClass := ""
+				if model.Status == "running" {
+					hiddenClass = "hidden"
+				}
+			}}
+			<tr id={ fmt.Sprintf("logs-%s", modelID) } class={ hiddenClass } style="border-bottom: 1px solid #1e293b;">
+				<td colspan="8" style="padding: 0;">
+					<div style="background: #0f172a; padding: 12px; margin: 8px; border-radius: 4px; border: 1px solid #334155;">
+						<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+							<span style="color: #94a3b8; font-size: 12px; font-weight: 500;">Server Logs (Last 50 lines - Live)</span>
+							<a href={ templ.SafeURL(fmt.Sprintf("/api/servers/logs?port=%d", model.Port)) } target="_blank" 
+							   style="color: #60a5fa; font-size: 12px; text-decoration: none;">
+								View Full Logs ↗
+							</a>
+						</div>
+						<div hx-ext="sse" sse-connect={ fmt.Sprintf("/api/servers/logs/stream?port=%d", model.Port) }>
+							<pre id={ fmt.Sprintf("log-content-%d", model.Port) } sse-swap="log_update" style="background: #020617; color: #e2e8f0; padding: 12px; border-radius: 4px; font-size: 11px; font-family: monospace; overflow-x: auto; max-height: 400px; overflow-y: auto; margin: 0;">Connecting to log stream...</pre>
+						</div>
+					</div>
+				</td>
+			</tr>
+		}
+	}
+}
+
+templ ActionButtons(modelID string, model *ModelServer, data ModelTableData) {
+	if model.Status == "running" || model.Status == "loading" {
+		<form style="display: inline;" hx-post="/api/servers/stop">
+			<input type="hidden" name="model_path" value={ model.ModelPath } />
+			<button 
+				type="submit" 
+				style="padding: 6px 12px; background: #dc2626; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
+				hx-indicator={ fmt.Sprintf("#stop-spinner-%s", modelID) }
+			>
+				<span id={ fmt.Sprintf("stop-spinner-%s", modelID) } class="spinner htmx-indicator"></span>
+				<span>Stop</span>
+			</button>
+		</form>
+
+		if model.Status == "running" {
+			<form style="display: inline;" hx-post="/api/benchmark/run" hx-target={ fmt.Sprintf("#benchmark_status_%s", modelID) } hx-swap="innerHTML">
+				<input type="hidden" name="model_path" value={ model.ModelPath } />
+				<button 
+					type="submit" 
+					style="padding: 6px 12px; background: #7c3aed; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
+					hx-indicator={ fmt.Sprintf("#benchmark-spinner-%s", modelID) }
+				>
+					<span id={ fmt.Sprintf("benchmark-spinner-%s", modelID) } class="spinner htmx-indicator"></span>
+					<span>Run Benchmark</span>
+				</button>
+			</form>
+			<div id={ fmt.Sprintf("benchmark_status_%s", modelID) }></div>
+		} else {
+			<span style="color: #64748b; font-size: 12px; font-style: italic;">Wait for model to load...</span>
+			<div id={ fmt.Sprintf("benchmark_status_%s", modelID) }></div>
+		}
+
+		<a href={ templ.SafeURL(fmt.Sprintf("/api/servers/chat-ui?port=%d&host=localhost", model.Port)) } target="_blank" 
+		   style="display: inline-block; padding: 6px 12px; background: #10b981; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;"
+		   title="Open llama.cpp chat interface">
+			Chat UI
+		</a>
+		<form style="display: inline;" hx-post="/api/servers/set-default">
+			<input type="hidden" name="model_path" value={ model.ModelPath } />
+			<input type="hidden" name="port" value={ fmt.Sprintf("%d", model.Port) } />
+			<button 
+				type="submit" 
+				style="padding: 6px 12px; background: #f59e0b; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
+				title="Set this model as default for clai CLI"
+			>
+				Set as Default
+			</button>
+		</form>
+		<a href={ templ.SafeURL(fmt.Sprintf("/api/servers/logs?port=%d", model.Port)) } target="_blank" 
+		   style="display: inline-block; padding: 6px 12px; background: #64748b; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;">
+			Logs
+		</a>
+		
+		<button 
+			onclick="this.closest('tr').nextElementSibling.classList.toggle('hidden')" 
+			type="button"
+			style="padding: 6px 12px; background: #475569; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
+		>
+			📋 Logs
+		</button>
+
+	} else if model.Status == "stopped" || model.Status == "error" {
+		if model.IsSplitModel && !model.SplitIsComplete {
+			<span style="color: #f59e0b; font-size: 12px;">Download all parts first</span>
+		} else {
+			{{ 
+				buttonText := "Start"
+				if model.Status == "error" {
+					buttonText = "Retry"
+				}
+				
+				backendTypes := make([]string, 0, len(data.Backends))
+				for bt := range data.Backends {
+					backendTypes = append(backendTypes, bt)
+				}
+				sort.Strings(backendTypes)
+			}}
+			
+			{{ 
+				// Build unified runtime list: native backends + Docker images
+				runtimes := make([]struct{
+					Type string  // "native" or "docker"
+					Name string
+					Value string
+					Desc string
+				}, 0)
+				
+				// Add native backends
+				for bt := range data.Backends {
+					displayName := bt
+					if bt == "rocm" { displayName = "ROCm" }
+					if bt == "vulkan" { displayName = "Vulkan" }
+					version := ""
+					if data.Backends[bt] != nil {
+						version = data.Backends[bt].Version
+					}
+					if version != "" {
+						displayName = fmt.Sprintf("%s (%s)", displayName, version)
+					}
+					runtimes = append(runtimes, struct{
+						Type string
+						Name string
+						Value string
+						Desc string
+					}{
+						Type: "native",
+						Name: displayName,
+						Value: bt,
+						Desc: "Native",
+					})
+				}
+				
+				// Add Docker images
+				for name, img := range data.DockerImages {
+					runtimes = append(runtimes, struct{
+						Type string
+						Name string
+						Value string
+						Desc string
+					}{
+						Type: "docker",
+						Name: img.Name,
+						Value: name,
+						Desc: img.Description,
+					})
+				}
+			}}
+			
+			if len(runtimes) == 0 {
+				<span style="color: #ef4444; font-size: 12px;">No runtimes available</span>
+			} else {
+				<form 
+					style="display: flex; flex-direction: column; gap: 8px;" 
+					hx-post="/api/servers/start"
+					data-model-size={ fmt.Sprintf("%d", model.ModelSizeBytes) }
+					data-parameters={ fmt.Sprintf("%d", model.ParametersCount) }
+				>
+					<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+						<input type="hidden" name="model_path" value={ model.ModelPath } />
+						
+						<!-- Runtime Selection - Single dropdown for all options -->
+						<select 
+							name="runtime" 
+							style="padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer; max-width: 300px;"
+							title="Select runtime: Native backends or Docker containers"
+						>
+							<optgroup label="Native Backends">
+								for _, rt := range runtimes {
+									if rt.Type == "native" {
+										<option value={ "native:" + rt.Value }>{ rt.Name }</option>
+									}
+								}
+							</optgroup>
+							if len(data.DockerImages) > 0 {
+								<optgroup label="Docker Containers">
+									for _, rt := range runtimes {
+										if rt.Type == "docker" {
+											<option value={ "docker:" + rt.Value }>{ rt.Name } - { rt.Desc }</option>
+										}
+									}
+								</optgroup>
+							}
+						</select>
+						<select 
+							name="context_size" 
+							style="padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;"
+							title="Context window size - smaller contexts load faster and use less memory"
+						>
+							<option value="">Default (131K)</option>
+							<option value="2048">2K - Minimal</option>
+							<option value="4096">4K - Small</option>
+							<option value="8192">8K - Standard</option>
+							<option value="16384">16K - Medium</option>
+							<option value="32768">32K - Large</option>
+							<option value="65536">65K - Very Large</option>
+							<option value="131072">131K - Huge</option>
+						</select>
+						<select 
+							name="ngl" 
+							style="padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;"
+							title="GPU layers - fewer layers = less VRAM usage"
+						>
+							<option value="999">Auto (All Layers)</option>
+							<option value="0">CPU Only (0 Layers)</option>
+							<option value="10">10 Layers</option>
+							<option value="20">20 Layers</option>
+							<option value="30">30 Layers</option>
+							<option value="40">40 Layers</option>
+							<option value="50">50 Layers ⭐</option>
+							<option value="60">60 Layers</option>
+							<option value="70">70 Layers</option>
+							<option value="80">80 Layers</option>
+						</select>
+						<button 
+							type="submit" 
+							style="padding: 6px 12px; background: #2563eb; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px;"
+							hx-indicator={ fmt.Sprintf("#start-spinner-%s", modelID) }
+						>
+							<span id={ fmt.Sprintf("start-spinner-%s", modelID) } class="spinner htmx-indicator"></span>
+							<span>{ buttonText }</span>
+						</button>
+					</div>
+					<div class="memory-estimate" style="margin-top: 4px;"></div>
+				</form>
+			}
+
+			{{
+				deleteConfirmMsg := fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove the file from disk.", model.ModelName)
+				if model.IsSplitModel && model.SplitTotalParts > 1 {
+					if model.SplitIsComplete {
+						deleteConfirmMsg = fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove all %d part files from disk.", model.ModelName, model.SplitTotalParts)
+					} else {
+						deleteConfirmMsg = fmt.Sprintf("Are you sure you want to delete %s? This will permanently remove the %d downloaded part file(s) from disk. %d part(s) are still missing.",
+							model.ModelName, model.SplitPartsFound, model.SplitTotalParts-model.SplitPartsFound)
+					}
+				}
+			}}
+			<form style="display: inline;" hx-delete="/api/servers/delete" hx-confirm={ deleteConfirmMsg }>
+				<input type="hidden" name="model_path" value={ model.ModelPath } />
+				<button 
+					type="submit" 
+					style="padding: 6px 12px; background: #991b1b; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px;"
+					hx-indicator={ fmt.Sprintf("#delete-spinner-%s", modelID) }
+				>
+					<span id={ fmt.Sprintf("delete-spinner-%s", modelID) } class="spinner htmx-indicator"></span>
+					<span>Delete</span>
+				</button>
+			</form>
+		}
+	} else {
+		<span style="color: #64748b;">Please wait...</span>
+	}
+}

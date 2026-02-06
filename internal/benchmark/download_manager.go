@@ -1244,14 +1244,22 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 		</button>`
 	}
 
-	html := fmt.Sprintf(`<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+	// Wrap in the downloads_list div to preserve SSE trigger
+	showAllAttr := ""
+	if showAll {
+		showAllAttr = "?show_all=true"
+	}
+
+	html := fmt.Sprintf(`
+		<div id="downloads_list" hx-get="/api/models/downloads%s" hx-trigger="sse:downloads_update" hx-swap="morph:outerHTML">
+			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
 				<h3 style="margin: 0; font-size: 16px; color: #e2e8f0;">%s</h3>
 				<div style="display: flex; gap: 8px;">
 					%s
 					<form 
 						hx-post="/api/models/downloads/clear-all"
 						hx-target="#downloads_list"
-						hx-swap="morph:innerHTML"
+						hx-swap="morph:outerHTML"
 						style="margin: 0;"
 						hx-confirm="This will delete partial files for failed downloads. Continue?"
 					>
@@ -1272,7 +1280,8 @@ func (s *Server) handleGetDownloads(w http.ResponseWriter, r *http.Request) {
 				100%% { transform: translateX(100%%); }
 			}
 			</style>
-			<div style="display: flex; flex-direction: column; gap: 12px;">`, title, toggleButton)
+			<div style="display: flex; flex-direction: column; gap: 12px;">`,
+		showAllAttr, title, toggleButton)
 
 	for _, d := range downloads {
 		statusColor := "#3b82f6" // blue for downloading

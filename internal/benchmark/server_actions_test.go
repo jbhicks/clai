@@ -289,11 +289,10 @@ func TestHandleListModels_HTMXCompatibility(t *testing.T) {
 	}
 	f.Close()
 
-	// Create server with custom models directory
-	mm := &ModelManager{
-		servers:   make(map[string]*ModelServer),
-		modelsDir: tempDir,
-	}
+	// Create server with properly initialized model manager
+	// Use NewModelManagerForTest to ensure all fields are initialized
+	mm := NewModelManagerForTest()
+	mm.modelsDir = tempDir
 
 	server := &Server{
 		modelManager: mm,

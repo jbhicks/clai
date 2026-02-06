@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -418,7 +419,6 @@ func findMatchingBracket(content string, start int, openChar, closeChar byte) in
 }
 
 func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
-	fmt.Printf("[CRITICAL-DEBUG] PARSE METHOD CALLED WITH: %s\n", content)
 	var toolCalls []tools.ToolCall
 
 	if strings.Contains(content, "}{") && strings.Contains(content, "\"function\"") && strings.Contains(content, "\"arguments\"") {
@@ -466,7 +466,6 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 	// Check if content starts with tool_calls format immediately
 	if strings.HasPrefix(content, `{"tool_calls"`) {
 		logger.Debug("[AGENT-PARSE-TOOL] Detected OpenAI tool_calls format at start")
-		fmt.Printf("[AGENT-PARSE-TOOL] ENTERING DIRECT PARSING PATH\n")
 		// Try direct JSON parsing first
 		var openaiResp struct {
 			ToolCalls []struct {
@@ -773,6 +772,12 @@ func parseFragmentedToolCalls(content string) []tools.ToolCall {
 		}
 	}
 
+	if current != nil && current.Function.Name != "" && current.Function.Arguments != "" {
+		if unescaped, err := strconv.Unquote(current.Function.Arguments); err == nil {
+			current.Function.Arguments = unescaped
+		}
+	}
+
 	flush()
 	return calls
 }
@@ -840,7 +845,6 @@ func splitJSONObjects(jsonStr string) []string {
 	inString := false
 	escape := false
 
-	fmt.Printf("[DEBUG] splitJSONObjects input: %s\n", jsonStr)
 	for i, char := range jsonStr {
 		if escape {
 			escape = false
@@ -861,7 +865,7 @@ func splitJSONObjects(jsonStr string) []string {
 		case '{':
 			if braceCount == 0 {
 				start = i
-				fmt.Printf("[DEBUG] Starting new object at position %d\n", i)
+
 			}
 			braceCount++
 		case '}':
@@ -869,12 +873,11 @@ func splitJSONObjects(jsonStr string) []string {
 			if braceCount == 0 {
 				obj := jsonStr[start : i+1]
 				objects = append(objects, obj)
-				fmt.Printf("[DEBUG] Found complete object: %s\n", obj)
+
 			}
 		}
 	}
 
-	fmt.Printf("[DEBUG] splitJSONObjects found %d objects\n", len(objects))
 	return objects
 }
 
@@ -1085,8 +1088,6 @@ func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (stri
 		var streamedToolCalls []tools.ToolCall
 		var fullContent strings.Builder
 
-		fmt.Printf("[DEBUG] Starting streaming for iteration %d\n", iteration)
-
 		streamChan := make(chan string, 100)
 		_, err := a.client.SendMessageStreamWithTools(a.messages, tools.GetAvailableTools(), streamChan, true)
 		if err != nil {
@@ -1095,17 +1096,22 @@ func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (stri
 
 		// Process streaming chunks and collect tool calls
 		for chunk := range streamChan {
-			logger.Debug("[AGENT-STREAM-CHUNK] Received chunk: %q", chunk)
 			fullContent.WriteString(chunk)
 
 			// Check if chunk contains tool calls
-			if strings.Contains(chunk, `"tool_calls"`) {
+			if strings.Contains(chunk, `"tool_calls"`) || strings.Contains(chunk, `"function"`) {
 				// Parse tool calls from accumulated content
 				accumulatedContent := fullContent.String()
 				candidateToolCalls := a.parseToolCallsFromContent(accumulatedContent)
 
 				// Stream any new tool calls to UI and collect them
 				for _, tc := range candidateToolCalls {
+					if tc.Function.Arguments != "" {
+						var args map[string]interface{}
+						if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+							continue
+						}
+					}
 					// Check if we already have this tool call (avoid duplicates)
 					found := false
 					for _, existing := range streamedToolCalls {
@@ -1127,11 +1133,15 @@ func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (stri
 		}
 
 		content := fullContent.String()
-		fmt.Printf("[DEBUG] Streaming completed for iteration %d: content_length=%d, tool_calls_collected=%d\n", iteration, len(content), len(streamedToolCalls))
-
 		// Parse final content for additional tool calls (in case we missed any)
 		additionalToolCalls := a.parseToolCallsFromContent(content)
 		for _, tc := range additionalToolCalls {
+			if tc.Function.Arguments != "" {
+				var args map[string]interface{}
+				if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+					continue
+				}
+			}
 			// Check for duplicates
 			found := false
 			for _, existing := range streamedToolCalls {
@@ -1147,25 +1157,16 @@ func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (stri
 			}
 		}
 
-		fmt.Printf("[DEBUG] Final tool call count after streaming: %d\n", len(streamedToolCalls))
-
 		if len(streamedToolCalls) > 0 {
-			fmt.Printf("[DEBUG] Processing %d tool calls after streaming\n", len(streamedToolCalls))
-
 			// Add assistant message with tool calls (this ensures the model can see what tools it called)
 			a.AddMessage("assistant", content)
-			fmt.Printf("[DEBUG] Added assistant message with content length: %d\n", len(content))
 
 			// Execute each tool call and add tool results
 			for _, toolCall := range streamedToolCalls {
-				fmt.Printf("[DEBUG] Executing tool: %s\n", toolCall.Function.Name)
-
 				toolResult, err := tools.ExecuteTool(toolCall)
 				if err != nil {
-					fmt.Printf("[DEBUG] Tool execution failed: %v\n", err)
 					a.AddMessage("tool", fmt.Sprintf("Tool execution error: %v", err), toolCall.ID)
 				} else {
-					fmt.Printf("[DEBUG] Tool result: %s\n", toolResult)
 					a.AddMessage("tool", toolResult, toolCall.ID)
 				}
 			}

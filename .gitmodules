@@ -19,3 +19,6 @@
 [submodule "reference/bubbles"]
 	path = reference/bubbles
 	url = https://github.com/charmbracelet/bubbles
+[submodule "reference-repos/amd-strix-halo-toolboxes"]
+	path = reference-repos/amd-strix-halo-toolboxes
+	url = https://github.com/kyuz0/amd-strix-halo-toolboxes.git

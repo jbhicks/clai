@@ -30,6 +30,7 @@ const (
 4. Execute commands as needed to complete tasks.
 5. Keep code blocks focused and purposeful.
 6. After any tool/code execution, provide the final user-facing answer as plain text (not inside a code block).
+7. When using execute_python, always wrap arithmetic expressions in print(...), e.g. print(15 * 23 + 47), to ensure output is returned.
 
 **Default behavior when uncertain:**
 - If asked about project status, plans, or "what's next", read TODO.md, README.md, or AGENTS.md
@@ -152,6 +153,37 @@ type Message struct {
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
+func sanitizeMessages(messages []Message) []Message {
+	if len(messages) == 0 {
+		return messages
+	}
+
+	sanitized := make([]Message, len(messages))
+	copy(sanitized, messages)
+
+	for i, msg := range sanitized {
+		if msg.Role == "assistant" {
+			continue
+		}
+		if msg.Content != "" {
+			continue
+		}
+
+		switch msg.Role {
+		case "tool":
+			sanitized[i].Content = "[no tool output]"
+		case "user":
+			sanitized[i].Content = "[empty user message]"
+		case "system":
+			sanitized[i].Content = "[empty system message]"
+		default:
+			sanitized[i].Content = "[empty message]"
+		}
+	}
+
+	return sanitized
+}
+
 type Tool = tools.Tool
 type ToolFunction = tools.ToolFunction
 type ToolCall = tools.ToolCall
@@ -230,6 +262,7 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 	} else {
 		allMessages = messages
 	}
+	allMessages = sanitizeMessages(allMessages)
 
 	var reqBody interface{}
 	if c.apiFormat == FormatOpenAI {
@@ -280,9 +313,12 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 
 		if c.apiFormat == FormatOpenAI {
 			logger.Info("[LLM-OPENAI-STREAM] Starting OpenAI stream reading (no tools)")
+			var contentChunks int
+			var linesRead int
 
 			for scanner.Scan() {
 				line := scanner.Text()
+				linesRead++
 				line = strings.TrimSpace(line)
 
 				if line == "" {
@@ -296,7 +332,7 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 				data := strings.TrimPrefix(line, "data: ")
 
 				if data == "[DONE]" {
-					logger.Info("[LLM-OPENAI-STREAM] Received [DONE] marker")
+					logger.Info("[LLM-OPENAI-STREAM] Received [DONE] marker (lines=%d content_chunks=%d)", linesRead, contentChunks)
 					return
 				}
 
@@ -310,6 +346,7 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 					choice := chunk.Choices[0]
 					if choice.Delta.Content != "" {
 						streamChan <- choice.Delta.Content
+						contentChunks++
 					}
 
 					if choice.FinishReason != "" && choice.FinishReason != "null" {
@@ -321,7 +358,7 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 			if err := scanner.Err(); err != nil {
 				logger.Info("[LLM-OPENAI-ERROR] Scanner error: %v", err)
 			}
-			logger.Info("[LLM-OPENAI-STREAM] Stream reading completed")
+			logger.Info("[LLM-OPENAI-STREAM] Stream reading completed (lines=%d content_chunks=%d)", linesRead, contentChunks)
 		} else {
 			for scanner.Scan() {
 				raw := scanner.Bytes()
@@ -369,6 +406,7 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 	} else {
 		allMessages = messages
 	}
+	allMessages = sanitizeMessages(allMessages)
 
 	var reqBody interface{}
 	if c.apiFormat == FormatOpenAI {
@@ -421,10 +459,13 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 
 		if c.apiFormat == FormatOpenAI {
 			logger.Info("[LLM-OPENAI-STREAM] Starting OpenAI SSE response reading (with tools)")
+			var contentChunks int
+			var toolCallChunks int
+			var linesRead int
 
 			for scanner.Scan() {
 				line := scanner.Text()
-				logger.Info("[LLM-OPENAI-STREAM] Read line: %q", line)
+				linesRead++
 
 				if !strings.HasPrefix(line, "data: ") {
 					continue
@@ -433,7 +474,7 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 				data := strings.TrimPrefix(line, "data: ")
 
 				if data == "[DONE]" {
-					logger.Info("[LLM-OPENAI-STREAM] Stream complete")
+					logger.Info("[LLM-OPENAI-STREAM] Stream complete (lines=%d content_chunks=%d tool_call_chunks=%d)", linesRead, contentChunks, toolCallChunks)
 					return
 				}
 
@@ -447,15 +488,15 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 					delta := chunk.Choices[0].Delta
 
 					if delta.Content != "" {
-						logger.Info("[LLM-OPENAI-STREAM] Sending content chunk: %q", delta.Content)
 						streamChan <- delta.Content
+						contentChunks++
 					}
 
 					if len(delta.ToolCalls) > 0 {
 						for _, toolCall := range delta.ToolCalls {
 							toolCallJSON, _ := json.Marshal(toolCall)
-							logger.Info("[LLM-OPENAI-STREAM] Sending tool call chunk: %q", string(toolCallJSON))
 							streamChan <- string(toolCallJSON)
+							toolCallChunks++
 						}
 					}
 				}
@@ -464,7 +505,7 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 			if err := scanner.Err(); err != nil {
 				logger.Error("[LLM-OPENAI-STREAM] Scanner error: %v", err)
 			} else {
-				logger.Info("[LLM-OPENAI-STREAM] Scanner finished without error (may indicate empty response or connection closed)")
+				logger.Info("[LLM-OPENAI-STREAM] Scanner finished without error (lines=%d content_chunks=%d tool_call_chunks=%d)", linesRead, contentChunks, toolCallChunks)
 			}
 		} else {
 			// Ollama/Hermes-style streaming

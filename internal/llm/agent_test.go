@@ -204,6 +204,33 @@ func TestAgentToolCallJSONParsing(t *testing.T) {
 	}
 }
 
+func TestAgentParseFragmentedToolCalls(t *testing.T) {
+	content := `{"id":"call_1","type":"function","function":{"name":"execute_bash","arguments":"{"}}` +
+		`{"id":"","type":"","function":{"name":"","arguments":"command"}}` +
+		`{"id":"","type":"","function":{"name":"","arguments":"\":"}}` +
+		`{"id":"","type":"","function":{"name":"","arguments":"\"cat"}}` +
+		`{"id":"","type":"","function":{"name":"","arguments":" internal"}}` +
+		`{"id":"","type":"","function":{"name":"","arguments":"/"}}` +
+		`{"id":"","type":"","function":{"name":"","arguments":"llm"}}` +
+		`{"id":"","type":"","function":{"name":"","arguments":"/sample"}}` +
+		`{"id":"","type":"","function":{"name":"","arguments":".txt"}}` +
+		`{"id":"","type":"","function":{"name":"","arguments":"\""}}` +
+		`{"id":"","type":"","function":{"name":"","arguments":"}"}}`
+
+	toolCalls := parseFragmentedToolCalls(content)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(toolCalls))
+	}
+
+	if toolCalls[0].Function.Name != "execute_bash" {
+		t.Fatalf("expected tool call execute_bash, got %s", toolCalls[0].Function.Name)
+	}
+
+	if !strings.Contains(toolCalls[0].Function.Arguments, "internal/llm/sample.txt") {
+		t.Fatalf("expected arguments to contain sample path, got %s", toolCalls[0].Function.Arguments)
+	}
+}
+
 func TestAgentAddMessageWithToolCallID(t *testing.T) {
 	agent := NewAgent(nil)
 

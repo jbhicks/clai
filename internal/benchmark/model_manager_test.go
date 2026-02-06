@@ -14,6 +14,41 @@ import (
 	"time"
 )
 
+func TestSanitizeUnitName(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{
+			name: "Meta-Llama-3-8B.gguf",
+			want: "Meta-Llama-3-8B",
+		},
+		{
+			name: "model.name.with.dots.gguf",
+			want: "model-name-with-dots",
+		},
+		{
+			name: "model_with_underscores",
+			want: "model-with-underscores",
+		},
+		{
+			name: "model with spaces",
+			want: "model-with-spaces",
+		},
+		{
+			name: "---model---",
+			want: "model",
+		},
+	}
+
+	for _, tt := range tests {
+		got := sanitizeUnitName(tt.name)
+		if got != tt.want {
+			t.Errorf("sanitizeUnitName(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestCheckServerHealth(t *testing.T) {
 	tests := []struct {
 		name           string
