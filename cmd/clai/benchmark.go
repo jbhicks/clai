@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -119,37 +118,6 @@ func runBenchmarkCommand(args []string) {
 
 	// Wait forever (until Ctrl+C)
 	select {}
-}
-
-// checkServerRunning checks if the server was already running before this start
-func checkServerRunning() bool {
-	lockFile := getLockFilePath()
-	if _, err := os.Stat(lockFile); err == nil {
-		// Lock file exists, server was already running
-		return true
-	}
-	return false
-}
-
-// writeLockFile writes a lock file with the current port
-func writeLockFile(port int) {
-	lockFile := getLockFilePath()
-	content := fmt.Sprintf("%d", port)
-	if err := os.WriteFile(lockFile, []byte(content), 0644); err != nil {
-		logger.Warn("Failed to write lock file: %v", err)
-	}
-}
-
-// removeLockFile removes the lock file
-func removeLockFile() {
-	lockFile := getLockFilePath()
-	os.Remove(lockFile)
-}
-
-// getLockFilePath returns the path to the lock file
-func getLockFilePath() string {
-	tmpDir := os.TempDir()
-	return filepath.Join(tmpDir, "clai-benchmark.lock")
 }
 
 // getPreferredPort reads the preferred port from lock file, or returns 8080

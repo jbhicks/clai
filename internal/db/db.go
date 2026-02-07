@@ -49,7 +49,7 @@ func New() (*Store, error) {
 		return nil, err
 	}
 
-	logger.Info("[DB] Opened database at %s", dbPath)
+	logger.Info("Opened database at %s", dbPath)
 	return store, nil
 }
 
@@ -201,7 +201,7 @@ func (s *Store) SaveConversation(conv *Conversation) error {
 			return fmt.Errorf("failed to get last insert id: %w", err)
 		}
 		conv.ID = int(id)
-		logger.Info("[DB] Created conversation %d: %s", conv.ID, conv.Title)
+		logger.Info("Created conversation %d: %s", conv.ID, conv.Title)
 	} else {
 		conv.UpdatedAt = now
 		_, err := s.db.Exec(
@@ -211,7 +211,7 @@ func (s *Store) SaveConversation(conv *Conversation) error {
 		if err != nil {
 			return fmt.Errorf("failed to update conversation: %w", err)
 		}
-		logger.Info("[DB] Updated conversation %d", conv.ID)
+		logger.Info("Updated conversation %d", conv.ID)
 	}
 
 	return nil
@@ -236,7 +236,7 @@ func (s *Store) GetLatestConversation() (*Conversation, error) {
 		return nil, fmt.Errorf("failed to unmarshal messages: %w", err)
 	}
 
-	logger.Info("[DB] Loaded conversation %d with %d messages", conv.ID, len(conv.Messages))
+	logger.Info("Loaded conversation %d with %d messages", conv.ID, len(conv.Messages))
 	return &conv, nil
 }
 
@@ -290,7 +290,7 @@ func (s *Store) DeleteConversation(id int) error {
 	if err != nil {
 		return fmt.Errorf("failed to delete conversation: %w", err)
 	}
-	logger.Info("[DB] Deleted conversation %d", id)
+	logger.Info("Deleted conversation %d", id)
 	return nil
 }
 
@@ -318,7 +318,7 @@ func (s *Store) SaveExecutionLog(conversationID int, language, code string, exit
 		return fmt.Errorf("failed to insert execution log: %w", err)
 	}
 
-	logger.Info("[DB] Saved execution log for conversation %d", conversationID)
+	logger.Info("Saved execution log for conversation %d", conversationID)
 	return nil
 }
 
@@ -332,7 +332,7 @@ func (s *Store) SaveSetting(key, value string) error {
 	if err != nil {
 		return fmt.Errorf("failed to save setting %s: %w", key, err)
 	}
-	logger.Debug("[DB] Saved setting: %s = %s", key, value)
+	logger.Debug("Saved setting: %s = %s", key, value)
 	return nil
 }
 

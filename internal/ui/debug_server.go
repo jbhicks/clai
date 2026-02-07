@@ -28,10 +28,15 @@ type DebugServerMsg struct {
 }
 
 func StartDebugServer(debugChan chan DebugServerMsg) error {
-	os.Remove(SocketPath)
+	logger.Info("[DEBUG] Attempting to start debug server on %s", SocketPath)
+	if _, err := os.Stat(SocketPath); err == nil {
+		logger.Info("[DEBUG] Removing existing socket file")
+		os.Remove(SocketPath)
+	}
 
 	listener, err := net.Listen("unix", SocketPath)
 	if err != nil {
+		logger.Error("[DEBUG] Failed to listen on unix socket: %v", err)
 		return err
 	}
 

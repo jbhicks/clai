@@ -1,36 +1,46 @@
 dev:
-	@if ! command -v entr >/dev/null 2>&1; then \
-		echo "Error: entr is not installed."; \
-		echo "Install with: sudo pacman -S entr (or your package manager)"; \
+	@if ! command -v templ >/dev/null 2>&1; then \
+		echo "Error: templ is not installed."; \
+		echo "Install with: go install github.com/a-h/templ/cmd/templ@latest"; \
 		exit 1; \
 	fi
-	@echo "Starting CLAI with entr auto-reload..."
-	@echo "Logs will be in debug.log and benchmark.log"
-	@echo "This provides auto-reload without tmux complexity"
-	@echo "Press Ctrl+C to stop"
-	@echo ""
-	@echo "Watching Go and Template files for changes..."
-	@echo "Both .go and .templ changes will trigger full rebuild and restart"
-	@find . -name "*.go" -o -name "*.templ" -not -path "./vendor/*" | entr ./dev_restart.sh
-
-dev-web:
-	@if ! command -v entr >/dev/null 2>&1; then \
-		echo "Error: entr is not installed."; \
-		echo "Install with: sudo pacman -S entr (or your package manager)"; \
+	@if ! command -v inotifywait >/dev/null 2>&1; then \
+		echo "Error: inotifywait is not installed."; \
+		echo "Install with: sudo pacman -S inotify-tools (or your package manager)"; \
 		exit 1; \
 	fi
-	@echo "Starting CLAI Web UI with entr auto-reload (no TUI)..."
+	@echo "Starting CLAI service with auto-reload..."
 	@echo "Web UI will be available at http://localhost:8080"
-	@echo "Logs will be in benchmark.log"
+	@echo "Logs will be shown below (press Ctrl+C to stop)"
+	@echo ""
+	@echo "Watching Go and Template files for changes..."
+	@echo "=================================================="
+	@./dev_restart.sh
+
+dev-tui:
+	@if ! command -v templ >/dev/null 2>&1; then \
+		echo "Error: templ is not installed."; \
+		echo "Install with: go install github.com/a-h/templ/cmd/templ@latest"; \
+		exit 1; \
+	fi
+	@if ! command -v inotifywait >/dev/null 2>&1; then \
+		echo "Error: inotifywait is not installed."; \
+		echo "Install with: sudo pacman -S inotify-tools (or your package manager)"; \
+		exit 1; \
+	fi
+	@echo "Starting CLAI TUI with auto-reload..."
+	@echo "This will clear the screen for the TUI interface"
 	@echo "Press Ctrl+C to stop"
 	@echo ""
 	@echo "Watching Go and Template files for changes..."
-	@CLAI_WEB_DEV=1 find . -name "*.go" -o -name "*.templ" -not -path "./vendor/*" | entr ./dev_restart.sh
+	@echo "=================================================="
+	@CLAI_TUI_DEV=1 ./dev_restart.sh
 
  dev-clean:
 	@echo "Cleaning up old development processes..."
-	@pkill -f "inotifywait.*clai" 2>/dev/null || echo "No inotifywait processes found"
-	@pkill -f "dev\.sh" 2>/dev/null || echo "No dev.sh processes found"
+	@pkill -f "templ generate" 2>/dev/null || echo "No templ processes found"
+	@pkill -f "dev_restart.sh" 2>/dev/null || echo "No dev restart processes found"
+	@pkill -f "clai service" 2>/dev/null || echo "No service processes found"
 	@pkill -f "clai benchmark" 2>/dev/null || echo "No benchmark processes found"
 	@for pid in $$(ps aux | grep "/clai" | grep -v "make" | grep -v "grep" | awk '{print $$2}'); do \
 		kill -9 $$pid 2>/dev/null || true; \

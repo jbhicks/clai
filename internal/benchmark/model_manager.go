@@ -5,6 +5,7 @@ import (
 	"clai/internal/db"
 	"clai/internal/gpu"
 	"clai/internal/logger"
+	"clai/internal/types"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -21,43 +22,11 @@ import (
 	"time"
 )
 
-// ModelServer represents a running or available model server
-type ModelServer struct {
-	ModelPath       string  `json:"model_path"`
-	ModelName       string  `json:"model_name"`
-	Port            int     `json:"port"`
-	PID             int     `json:"pid"`
-	Status          string  `json:"status"`        // "running", "loading", "stopped", "starting", "error"
-	ErrorMessage    string  `json:"error_message"` // Error details when status is "error"
-	URL             string  `json:"url"`
-	APIType         string  `json:"api_type"`
-	Backend         string  `json:"backend"` // "rocm" or "vulkan"
-	LastChecked     int64   `json:"last_checked"`
-	VRAMUsageBytes  int64   `json:"vram_usage_bytes"` // VRAM used by this server in bytes
-	CPUPercent      float64 `json:"cpu_percent"`      // CPU usage percentage
-	MemoryBytes     int64   `json:"memory_bytes"`     // RAM (RSS) used by this process in bytes
-	ContextSize     int     `json:"context_size"`     // Active context window size (n_ctx)
-	ContextTrain    int     `json:"context_train"`    // Training context size (n_ctx_train)
-	ParametersCount int64   `json:"parameters_count"` // Total parameters (n_params)
-	ModelSizeBytes  int64   `json:"model_size_bytes"` // Model file size in bytes
-	VocabSize       int     `json:"vocab_size"`       // Vocabulary size (n_vocab)
-	EmbeddingDim    int     `json:"embedding_dim"`    // Embedding dimensions (n_embd)
+// ModelServer is now defined in internal/types
+type ModelServer = types.ModelServer
 
-	// Split model metadata
-	IsSplitModel    bool     `json:"is_split_model"`    // True if this is a multi-part GGUF model
-	SplitPartNumber int      `json:"split_part_number"` // Current part number (1-based)
-	SplitTotalParts int      `json:"split_total_parts"` // Total number of parts
-	SplitPartsFound int      `json:"split_parts_found"` // Number of parts found on disk
-	SplitAllParts   []string `json:"split_all_parts"`   // Paths to all parts (for tracking)
-	SplitIsComplete bool     `json:"split_is_complete"` // True if all parts are present
-}
-
-// BackendInfo holds information about a llama-server backend
-type BackendInfo struct {
-	Path    string `json:"path"`
-	Version string `json:"version"`
-	Type    string `json:"type"` // "rocm" or "vulkan"
-}
+// BackendInfo is now defined in internal/types
+type BackendInfo = types.BackendInfo
 
 // ModelManager handles starting/stopping model servers
 type ModelManager struct {
@@ -243,7 +212,7 @@ func (mm *ModelManager) notifyStateChange() {
 	mm.mu.Unlock()
 
 	if changed && callback != nil {
-		logger.Info("Server state changed, triggering SSE broadcast")
+		logger.Debug("Server state changed, triggering SSE broadcast")
 		callback()
 	}
 }
@@ -366,7 +335,7 @@ func (mm *ModelManager) ScanAvailableModels() ([]*ModelServer, error) {
 // RefreshServerStatus checks all running servers and updates their status
 // This function does NOT hold locks during I/O operations to avoid blocking other operations
 func (mm *ModelManager) RefreshServerStatus() error {
-	logger.Info("RefreshServerStatus: Starting scan for running servers")
+	logger.Debug("RefreshServerStatus: Starting scan for running servers")
 
 	// Step 1: Scan all ports WITHOUT holding any locks (this is slow I/O)
 	type portInfo struct {
@@ -389,13 +358,13 @@ func (mm *ModelManager) RefreshServerStatus() error {
 	}
 	mm.mu.RUnlock()
 
-	logger.Info("RefreshServerStatus: Checking %d known ports: %v", len(knownPorts), knownPorts)
+	logger.Debug("RefreshServerStatus: Checking %d known ports: %v", len(knownPorts), knownPorts)
 
 	// Check known ports
 	for _, port := range knownPorts {
 		url := fmt.Sprintf("http://localhost:%d/v1/models", port)
 		if !mm.checkServerHealth(url) {
-			logger.Info("RefreshServerStatus: Port %d not responding", port)
+			logger.Debug("RefreshServerStatus: Port %d not responding", port)
 			continue
 		}
 
@@ -409,13 +378,13 @@ func (mm *ModelManager) RefreshServerStatus() error {
 
 		if info.modelName != "" {
 			activePortsInfo = append(activePortsInfo, info)
-			logger.Info("RefreshServerStatus: Found active server on known port %d: %s (PID %d)", port, info.modelName, info.pid)
+			logger.Debug("RefreshServerStatus: Found active server on known port %d: %s (PID %d)", port, info.modelName, info.pid)
 		}
 	}
 
 	// Step 1b: Scan for any servers we don't know about (8081-8090 range)
 	// This handles externally started servers or missed registrations
-	logger.Info("RefreshServerStatus: Scanning unknown ports 8081-8090")
+	logger.Debug("RefreshServerStatus: Scanning unknown ports 8081-8090")
 	for port := 8081; port <= 8090; port++ {
 		// Skip if we already checked this port
 		alreadyChecked := false
@@ -444,11 +413,58 @@ func (mm *ModelManager) RefreshServerStatus() error {
 
 		if info.modelName != "" {
 			activePortsInfo = append(activePortsInfo, info)
-			logger.Info("RefreshServerStatus: Discovered active server on unknown port %d: %s (PID %d)", port, info.modelName, info.pid)
+			logger.Debug("RefreshServerStatus: Discovered active server on unknown port %d: %s (PID %d)", port, info.modelName, info.pid)
 		}
 	}
 
-	logger.Info("RefreshServerStatus: Found %d total active servers", len(activePortsInfo))
+	// Step 1c: Check for Docker containers that might be running but not responding on HTTP yet
+	// This handles containers that are still loading or have network issues
+	logger.Debug("RefreshServerStatus: Checking for orphaned Docker containers")
+	if mm.dockerLauncher != nil {
+		containers, err := mm.dockerLauncher.ListContainers()
+		if err == nil {
+			for _, containerName := range containers {
+				// Extract model name from container name (clai-model-<sanitized_model_name>)
+				if strings.HasPrefix(containerName, "clai-model-") {
+					// Check if container is running
+					running, _ := mm.dockerLauncher.GetContainerStatus(containerName)
+					if !running {
+						continue
+					}
+
+					// Try to get port mapping for this container
+					port, _ := mm.getPortFromContainerName(containerName)
+					if port > 0 {
+						// Check if we already have this port in activePortsInfo
+						portExists := false
+						for _, info := range activePortsInfo {
+							if info.port == port {
+								portExists = true
+								break
+							}
+						}
+
+						if !portExists {
+							// Get model name from container
+							modelName := mm.getModelNameFromContainer(containerName)
+							if modelName != "" {
+								info := portInfo{
+									port:        port,
+									modelName:   modelName,
+									pid:         0, // Will be populated later
+									contextSize: 0,
+								}
+								activePortsInfo = append(activePortsInfo, info)
+								logger.Debug("RefreshServerStatus: Found Docker container without HTTP response: %s on port %d", containerName, port)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	logger.Debug("RefreshServerStatus: Found %d total active servers", len(activePortsInfo))
 
 	// Step 2: Now acquire lock and update server status quickly
 	mm.mu.Lock()
@@ -540,12 +556,60 @@ func (mm *ModelManager) RefreshServerStatus() error {
 
 			// Add to servers map
 			mm.servers[modelPath] = newServer
-			logger.Info("RefreshServerStatus: Created new server entry for %s on port %d (PID %d)", info.modelName, info.port, info.pid)
+			logger.Debug("RefreshServerStatus: Created new server entry for %s on port %d (PID %d)", info.modelName, info.port, info.pid)
 		}
 	}
 
-	logger.Info("RefreshServerStatus: Scan complete")
+	logger.Debug("RefreshServerStatus: Scan complete")
 	return nil
+}
+
+// getPortFromContainerName extracts the port from a container name by inspecting the container
+func (mm *ModelManager) getPortFromContainerName(containerName string) (int, error) {
+	cmd := exec.Command("docker", "inspect", "-f", "{{range $p, $conf := .NetworkSettings.Ports}}{{if $conf}}{{index $conf 0).HostPort}}{{end}}{{end}}", containerName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get container port: %w", err)
+	}
+
+	portStr := strings.TrimSpace(string(output))
+	if portStr == "" {
+		return 0, fmt.Errorf("no port mapping found")
+	}
+
+	var port int
+	if _, err := fmt.Sscanf(portStr, "%d", &port); err != nil {
+		return 0, fmt.Errorf("failed to parse port: %w", err)
+	}
+
+	return port, nil
+}
+
+// getModelNameFromContainer extracts the model name from a container by inspecting its environment or command
+func (mm *ModelManager) getModelNameFromContainer(containerName string) string {
+	// Try to get the command from the container
+	cmd := exec.Command("docker", "inspect", "-f", "{{.Config.Cmd}}", containerName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+
+	// Parse the command to extract the model path
+	cmdStr := string(output)
+	// Look for -m flag followed by model path
+	if idx := strings.Index(cmdStr, "-m"); idx >= 0 {
+		rest := cmdStr[idx+2:]
+		// Find the next flag or end of string
+		endIdx := strings.Index(rest, "-")
+		if endIdx < 0 {
+			endIdx = len(rest)
+		}
+		modelPath := strings.TrimSpace(rest[:endIdx])
+		// Extract just the filename
+		return filepath.Base(modelPath)
+	}
+
+	return ""
 }
 
 // getModelNameFromPort fetches the model name from a running server
@@ -754,17 +818,17 @@ func (mm *ModelManager) UpdateVRAMUsage() error {
 	processes, err := gpu.GetProcessGPUMemory()
 	if err != nil {
 		// Don't fail if GPU info isn't available, just log
-		logger.Info("UpdateVRAMUsage: Failed to get GPU process info: %v", err)
+		logger.Debug("UpdateVRAMUsage: Failed to get GPU process info: %v", err)
 		return nil
 	}
 
-	logger.Info("UpdateVRAMUsage: Found %d GPU processes", len(processes))
+	logger.Debug("UpdateVRAMUsage: Found %d GPU processes", len(processes))
 
 	// Create a map of PID -> VRAM usage for quick lookup
 	pidToVRAM := make(map[int]int64)
 	for _, proc := range processes {
 		pidToVRAM[proc.PID] = proc.VRAMUsed
-		logger.Info("UpdateVRAMUsage: GPU Process - PID: %d, Name: %s, VRAM: %d bytes", proc.PID, proc.ProcessName, proc.VRAMUsed)
+		logger.Debug("UpdateVRAMUsage: GPU Process - PID: %d, Name: %s, VRAM: %d bytes", proc.PID, proc.ProcessName, proc.VRAMUsed)
 	}
 
 	// Update VRAM for all running servers
@@ -773,12 +837,12 @@ func (mm *ModelManager) UpdateVRAMUsage() error {
 
 	for _, server := range mm.servers {
 		if server.PID > 0 {
-			logger.Info("UpdateVRAMUsage: Checking server %s (PID: %d)", server.ModelName, server.PID)
+			logger.Debug("UpdateVRAMUsage: Checking server %s (PID: %d)", server.ModelName, server.PID)
 			if vram, exists := pidToVRAM[server.PID]; exists {
 				server.VRAMUsageBytes = vram
-				logger.Info("UpdateVRAMUsage: Updated server %s VRAM to %d bytes", server.ModelName, vram)
+				logger.Debug("UpdateVRAMUsage: Updated server %s VRAM to %d bytes", server.ModelName, vram)
 			} else {
-				logger.Info("UpdateVRAMUsage: No VRAM data found for PID %d", server.PID)
+				logger.Debug("UpdateVRAMUsage: No VRAM data found for PID %d", server.PID)
 			}
 		}
 	}
@@ -1184,6 +1248,10 @@ func (mm *ModelManager) StartServerWithDocker(modelPath string, contextSize int,
 
 	logger.Info("Started model server via Docker: %s on port %d (Container: %s)", modelName, port, containerID[:12])
 
+	// Get host PID of the container for VRAM tracking
+	containerName := fmt.Sprintf("clai-model-%s", sanitizeContainerName(modelName))
+	pid, _ := mm.dockerLauncher.GetContainerPID(containerName)
+
 	// Automatically set this model as default for the CLI
 	if err := UpdateEnvFile(modelName, fmt.Sprintf("http://localhost:%d", port)); err != nil {
 		logger.Warn("Failed to update CLI config with started model: %v", err)
@@ -1198,14 +1266,13 @@ func (mm *ModelManager) StartServerWithDocker(modelPath string, contextSize int,
 	if !exists {
 		mm.mu.Unlock()
 		// Stop the container we just started since server was removed
-		containerName := fmt.Sprintf("clai-model-%s", sanitizeContainerName(modelName))
 		mm.dockerLauncher.StopContainer(containerName)
 		return fmt.Errorf("model was removed while starting")
 	}
 
 	// Update server info
 	server.Port = port
-	server.PID = 0 // Docker doesn't use PID in the same way
+	server.PID = pid // Store the host PID
 	server.Status = "starting"
 	server.Backend = "docker-" + imageTag // Store which Docker image was used
 	server.ErrorMessage = ""              // Clear any previous errors when starting
@@ -1306,7 +1373,7 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 		server.Status = "error"
 
 		// Try to read the last 20 lines of the log file to get the actual error
-		logFile := filepath.Join("/tmp", fmt.Sprintf("llama-server-%d.log", port))
+		logFile, _ := getLogPath(port)
 		logContent := ""
 		if data, err := os.ReadFile(logFile); err == nil {
 			lines := strings.Split(string(data), "\n")
@@ -1349,16 +1416,55 @@ func (mm *ModelManager) StopServer(modelPath string) error {
 	server, exists := mm.servers[modelPath]
 	if !exists {
 		mm.mu.Unlock()
+		// Check if this might be a Docker container that was orphaned
+		// Try to find and stop it by model name derived from path
+		modelName := filepath.Base(modelPath)
+		containerName := fmt.Sprintf("clai-model-%s", sanitizeContainerName(modelName))
+		if mm.dockerLauncher != nil {
+			if running, _ := mm.dockerLauncher.GetContainerStatus(containerName); running {
+				logger.Info("StopServer: Found orphaned Docker container for %s, stopping it", modelPath)
+				if err := mm.dockerLauncher.StopContainer(containerName); err != nil {
+					logger.Info("StopServer: Failed to stop orphaned container %s: %v", containerName, err)
+					return fmt.Errorf("model not found in registry and failed to stop orphaned container: %s", modelPath)
+				}
+				logger.Info("StopServer: Successfully stopped orphaned Docker container for %s", modelPath)
+				return nil
+			}
+		}
 		return fmt.Errorf("model not found: %s", modelPath)
 	}
 
-	if server.Status != "running" && server.PID == 0 {
+	if server.Status != "running" && server.Status != "loading" && server.Status != "starting" && server.PID == 0 && server.Port == 0 {
+		// Check if there's a Docker container running anyway
+		modelName := server.ModelName
+		backend := server.Backend
 		mm.mu.Unlock()
+
+		if strings.HasPrefix(backend, "docker-") && mm.dockerLauncher != nil {
+			containerName := fmt.Sprintf("clai-model-%s", sanitizeContainerName(modelName))
+			if running, _ := mm.dockerLauncher.GetContainerStatus(containerName); running {
+				logger.Info("StopServer: Stopping Docker container for stopped server entry: %s", containerName)
+				if err := mm.dockerLauncher.StopContainer(containerName); err != nil {
+					logger.Info("StopServer: Failed to stop container %s: %v", containerName, err)
+					return err
+				}
+				// Update server status back to stopped
+				mm.mu.Lock()
+				if s, exists := mm.servers[modelPath]; exists {
+					s.Status = "stopped"
+					s.Port = 0
+					s.PID = 0
+				}
+				mm.mu.Unlock()
+				return nil
+			}
+		}
 		return fmt.Errorf("server not running")
 	}
 
-	// Copy data we need for I/O operations
+	// copied earlier for I/O
 	pid := server.PID
+	port := server.Port
 	modelName := server.ModelName
 	backend := server.Backend
 	mm.mu.Unlock()
@@ -1383,7 +1489,7 @@ func (mm *ModelManager) StopServer(modelPath string) error {
 		// Traditional systemd/process-based stop
 		// Determine if we should use systemd (either it is managed or it's one of our clai-model-* services)
 		serviceName := ""
-		if mm.isSystemdManaged(pid) {
+		if pid > 0 && mm.isSystemdManaged(pid) {
 			serviceName = mm.getSystemdServiceName(pid)
 		}
 
@@ -1425,6 +1531,13 @@ func (mm *ModelManager) StopServer(modelPath string) error {
 				// Sequence: Stop -> Disable -> Remove -> Daemon-reload
 				exec.Command("systemctl", "--user", "daemon-reload").Run()
 			}
+		}
+	}
+
+	// Keep log files for debugging; do not remove them on stop
+	if port > 0 {
+		if logPath, err := getLogPath(port); err == nil {
+			logger.Info("Preserving log file: %s", logPath)
 		}
 	}
 
@@ -1612,6 +1725,15 @@ func (mm *ModelManager) calculateTotalSize(paths []string) int64 {
 	return totalSize
 }
 
+// getLogPath returns the path to the log file for a given port
+func getLogPath(port int) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".local", "share", "clai", "logs", fmt.Sprintf("llama-server-%d.log", port)), nil
+}
+
 // GetServerStatus returns the current status of all servers
 func (mm *ModelManager) GetServerStatus() []*ModelServer {
 	mm.mu.RLock()
@@ -1643,16 +1765,16 @@ func (mm *ModelManager) GetServerByModelPath(modelPath string) (*ModelServer, bo
 
 // HandleListModels returns all available models and their server status as HTML
 func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
-	logger.Info("HandleListModels: Starting...")
+	logger.Debug("HandleListModels: Starting...")
 	models, err := s.modelManager.ScanAvailableModels()
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to scan models: %v", err), http.StatusInternalServerError)
 		return
 	}
-	logger.Info("HandleListModels: Scanned models")
+	logger.Debug("HandleListModels: Scanned models")
 
 	// Get fresh server status (refresh before displaying)
-	logger.Info("HandleListModels: Refreshing server status...")
+	logger.Debug("HandleListModels: Refreshing server status...")
 	s.modelManager.RefreshServerStatus()
 	s.modelManager.UpdateVRAMUsage()
 	s.modelManager.UpdateCPUAndMemory()
@@ -1687,7 +1809,7 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 		}
 		// Non-running models keep Status = "stopped" (default)
 	}
-	logger.Info("HandleListModels: Done with setup")
+	logger.Debug("HandleListModels: Done with setup")
 
 	// Get available backends for the UI
 	backends := s.modelManager.GetBackends()
@@ -1724,7 +1846,34 @@ func (s *Server) HandleListModels(w http.ResponseWriter, r *http.Request) {
 	// Convert to templates types to avoid type mismatch
 	templateModels := make([]*templates.ModelServer, len(models))
 	for i, m := range models {
-		templateModels[i] = (*templates.ModelServer)(m)
+		templateModels[i] = &templates.ModelServer{
+			ModelPath:       m.ModelPath,
+			ModelName:       m.ModelName,
+			Port:            m.Port,
+			PID:             m.PID,
+			Status:          m.Status,
+			ErrorMessage:    m.ErrorMessage,
+			URL:             m.URL,
+			APIType:         m.APIType,
+			Backend:         m.Backend,
+			LastChecked:     m.LastChecked,
+			VRAMUsageBytes:  m.VRAMUsageBytes,
+			CPUPercent:      m.CPUPercent,
+			MemoryBytes:     m.MemoryBytes,
+			ContextSize:     m.ContextSize,
+			ContextTrain:    m.ContextTrain,
+			ParametersCount: m.ParametersCount,
+			ModelSizeBytes:  m.ModelSizeBytes,
+			VocabSize:       m.VocabSize,
+			EmbeddingDim:    m.EmbeddingDim,
+			NGL:             m.NGL,
+			IsSplitModel:    m.IsSplitModel,
+			SplitPartNumber: m.SplitPartNumber,
+			SplitTotalParts: m.SplitTotalParts,
+			SplitPartsFound: m.SplitPartsFound,
+			SplitAllParts:   m.SplitAllParts,
+			SplitIsComplete: m.SplitIsComplete,
+		}
 	}
 
 	templateBackends := make(map[string]*templates.BackendInfo)
@@ -1847,12 +1996,14 @@ func (s *Server) HandleStartServer(w http.ResponseWriter, r *http.Request) {
 
 // HandleStopServer stops a model server and broadcasts SSE update
 func (s *Server) HandleStopServer(w http.ResponseWriter, r *http.Request) {
+	logger.Info("HandleStopServer: Received request to stop server")
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	modelPath := r.FormValue("model_path")
+	logger.Info("HandleStopServer: Stopping model at path: %s", modelPath)
 	if modelPath == "" {
 		http.Error(w, "model_path required", http.StatusBadRequest)
 		return
@@ -2035,13 +2186,17 @@ func (s *Server) HandleServerLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	port, err := fmt.Sscanf(portStr, "%d", new(int))
+	port, err := strconv.Atoi(portStr)
 	if err != nil || port == 0 {
 		http.Error(w, "Invalid port parameter", http.StatusBadRequest)
 		return
 	}
 
-	logFile := filepath.Join("/tmp", fmt.Sprintf("llama-server-%s.log", portStr))
+	logFile, err := getLogPath(port)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get log path: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	// Check if log file exists
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {
@@ -2050,10 +2205,20 @@ func (s *Server) HandleServerLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read log file
-	content, err := ioutil.ReadFile(logFile)
+	content, err := os.ReadFile(logFile)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to read log file: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	// Handle tailing if requested
+	if tailStr := r.URL.Query().Get("tail"); tailStr != "" {
+		if limit, err := strconv.Atoi(tailStr); err == nil && limit > 0 {
+			lines := strings.Split(string(content), "\n")
+			if len(lines) > limit {
+				content = []byte(strings.Join(lines[len(lines)-limit:], "\n"))
+			}
+		}
 	}
 
 	// Return as plain text with proper content type
@@ -2076,7 +2241,11 @@ func (s *Server) HandleServerLogsStream(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	logFile := filepath.Join("/tmp", fmt.Sprintf("llama-server-%d.log", port))
+	logFile, err := getLogPath(port)
+	if err != nil {
+		http.Error(w, "Internal error", http.StatusInternalServerError)
+		return
+	}
 
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -2111,7 +2280,10 @@ func (s *Server) HandleServerLogsStream(w http.ResponseWriter, r *http.Request) 
 
 		// Send SSE event
 		fmt.Fprintf(w, "event: log_update\n")
-		fmt.Fprintf(w, "data: %s\n\n", logContent)
+		for _, line := range strings.Split(logContent, "\n") {
+			fmt.Fprintf(w, "data: %s\n", line)
+		}
+		fmt.Fprintf(w, "\n")
 		flusher.Flush()
 		return nil
 	}

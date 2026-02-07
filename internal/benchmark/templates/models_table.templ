@@ -29,6 +29,7 @@ type ModelServer struct {
 	ModelSizeBytes  int64   `json:"model_size_bytes"` // Model file size in bytes
 	VocabSize       int     `json:"vocab_size"`       // Vocabulary size (n_vocab)
 	EmbeddingDim    int     `json:"embedding_dim"`    // Embedding dimensions (n_embd)
+	NGL             int     `json:"ngl"`              // GPU layers (n_gpu_layers)
 
 	// Split model metadata
 	IsSplitModel    bool     `json:"is_split_model"`    // True if this is a multi-part GGUF model
@@ -69,7 +70,7 @@ type ScoreInfo struct {
 }
 
 templ ModelsTable(data ModelTableData) {
-	<div id="servers_list" hx-swap-oob="true">
+	<div id="servers_list">
 		<table style="width: 100%; border-collapse: collapse;">
 			<thead>
 				<tr style="border-bottom: 1px solid #334155;">
@@ -256,11 +257,17 @@ templ ModelRow(i int, model *ModelServer, data ModelTableData) {
 		if model.Port > 0 {
 			{{ 
 				hiddenClass := ""
+				// Always show logs immediately for starting, loading, or error states
+				// Only hide for running if we want a cleaner view (but user requested immediate visibility)
 				if model.Status == "running" {
 					hiddenClass = "hidden"
 				}
 			}}
-			<tr id={ fmt.Sprintf("logs-%s", modelID) } class={ hiddenClass } style="border-bottom: 1px solid #1e293b;">
+			<tr id={ fmt.Sprintf("logs-%s", modelID) } class={ hiddenClass } style="border-bottom: 1px solid #1e293b;"
+				if model.Status != "running" {
+					hx-ext="sse" sse-connect={ fmt.Sprintf("/api/servers/logs/stream?port=%d", model.Port) }
+				}
+			>
 				<td colspan="8" style="padding: 0;">
 					<div style="background: #0f172a; padding: 12px; margin: 8px; border-radius: 4px; border: 1px solid #334155;">
 						<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -270,8 +277,17 @@ templ ModelRow(i int, model *ModelServer, data ModelTableData) {
 								View Full Logs ↗
 							</a>
 						</div>
-						<div hx-ext="sse" sse-connect={ fmt.Sprintf("/api/servers/logs/stream?port=%d", model.Port) }>
-							<pre id={ fmt.Sprintf("log-content-%d", model.Port) } sse-swap="log_update" style="background: #020617; color: #e2e8f0; padding: 12px; border-radius: 4px; font-size: 11px; font-family: monospace; overflow-x: auto; max-height: 400px; overflow-y: auto; margin: 0;">Connecting to log stream...</pre>
+						<div class="log-stream-container">
+							<pre id={ fmt.Sprintf("log-content-%d", model.Port) } 
+								sse-swap="log_update" 
+								hx-on="htmx:sseMessage: const el = document.getElementById(this.id); el.scrollTop = el.scrollHeight;"
+								style="background: #020617; color: #e2e8f0; padding: 12px; border-radius: 4px; font-size: 11px; font-family: monospace; overflow-x: auto; max-height: 400px; overflow-y: auto; margin: 0;">
+								if model.Status == "running" {
+									Click "📋 Logs" to connect to live stream...
+								} else {
+									Connecting to log stream...
+								}
+							</pre>
 						</div>
 					</div>
 				</td>
@@ -312,7 +328,7 @@ templ ActionButtons(modelID string, model *ModelServer, data ModelTableData) {
 			<div id={ fmt.Sprintf("benchmark_status_%s", modelID) }></div>
 		}
 
-		<a href={ templ.SafeURL(fmt.Sprintf("/api/servers/chat-ui?port=%d&host=localhost", model.Port)) } target="_blank" 
+		<a href={ templ.SafeURL(fmt.Sprintf("/api/servers/chat-ui?port=%d", model.Port)) } target="_blank" 
 		   style="display: inline-block; padding: 6px 12px; background: #10b981; border: none; border-radius: 4px; color: white; text-decoration: none; font-size: 13px; margin-right: 8px;"
 		   title="Open llama.cpp chat interface">
 			Chat UI
@@ -334,7 +350,7 @@ templ ActionButtons(modelID string, model *ModelServer, data ModelTableData) {
 		</a>
 		
 		<button 
-			onclick="this.closest('tr').nextElementSibling.classList.toggle('hidden')" 
+			onclick={ toggleLogs(model.Port) } 
 			type="button"
 			style="padding: 6px 12px; background: #475569; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px; margin-right: 8px;"
 		>
@@ -414,6 +430,8 @@ templ ActionButtons(modelID string, model *ModelServer, data ModelTableData) {
 				<form 
 					style="display: flex; flex-direction: column; gap: 8px;" 
 					hx-post="/api/servers/start"
+					hx-target="#servers_list"
+					hx-swap="outerHTML"
 					data-model-size={ fmt.Sprintf("%d", model.ModelSizeBytes) }
 					data-parameters={ fmt.Sprintf("%d", model.ParametersCount) }
 				>
@@ -511,5 +529,18 @@ templ ActionButtons(modelID string, model *ModelServer, data ModelTableData) {
 		}
 	} else {
 		<span style="color: #64748b;">Please wait...</span>
+	}
+}
+
+script toggleLogs(port int) {
+	const row = this.closest('tr').nextElementSibling;
+	row.classList.toggle('hidden');
+	if (!row.classList.contains('hidden')) {
+		const container = row.querySelector('.log-stream-container');
+		if (!container.getAttribute('sse-connect')) {
+			container.setAttribute('hx-ext', 'sse');
+			container.setAttribute('sse-connect', `/api/servers/logs/stream?port=${port}`);
+			htmx.process(container);
+		}
 	}
 }

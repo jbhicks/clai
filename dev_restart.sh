@@ -1,54 +1,85 @@
 #!/bin/bash
-# CLAI Development Watch Script using entr
-# Simple version that entr calls to restart CLAI
+# CLAI Development Watch Script - Simple and Reliable
+# Does NOT use templ --watch to avoid temp file issues
 
-# Clean up any existing processes
-pkill -TERM -f "go run ./cmd/clai" 2>/dev/null || true
-pkill -TERM -f "make run" 2>/dev/null || true
-pkill -TERM -f "./clai benchmark" 2>/dev/null || true
-for pid in $(ps aux | grep "/clai" | grep -v "grep" | awk '{print $2}'); do
-    kill -TERM $pid 2>/dev/null || true
-done
+echo "=================================================="
+echo "CLAI Development Mode"
+echo "=================================================="
 
-# Clean up socket
-rm -f /tmp/clai.sock 2>/dev/null || true
+# Cleanup function
+cleanup() {
+    echo ""
+    echo "Shutting down..."
+    pkill -TERM -f "./clai service" 2>/dev/null || true
+    pkill -TERM -f "./clai" 2>/dev/null || true
+    rm -f /tmp/clai.sock 2>/dev/null || true
+    exit 0
+}
 
-# Truncate logs
-truncate -s 0 debug.log 2>/dev/null || true
-truncate -s 0 benchmark.log 2>/dev/null || true
+trap cleanup SIGINT SIGTERM
 
-# Reset terminal (just in case)
-# Note: CLAI handles its own terminal setup, so minimal reset here
-stty sane 2>/dev/null || true
-
-echo "Rebuilding templates..."
-templ generate || echo "Warning: templ generate failed, continuing..."
-
-echo "Rebuilding and restarting CLAI..."
-
-# Check if we should run web-only mode (for web UI development)
-if [ "$CLAI_WEB_DEV" = "1" ]; then
-    echo "Running in web-only development mode..."
-    # Build first
-    make build
-    # Run benchmark server (web UI only, no TUI)
-    ./clai benchmark &
+# Check if we should run TUI mode
+if [ "$CLAI_TUI_DEV" = "1" ]; then
+    echo "Mode: TUI (screen will clear)"
+    echo "Press Ctrl+C to stop"
+    echo "=================================================="
+    echo ""
+    
+    while true; do
+        # Generate templates (NO --watch to avoid temp file issues)
+        templ generate 2>&1 | grep -v "Processing file\|File not updated" || true
+        
+        # Build
+        echo "Building..."
+        if go build -o clai ./cmd/clai 2>&1; then
+            echo "Starting TUI..."
+            CLAI_DEV=1 ./clai
+            echo ""
+            echo "TUI exited. Restarting in 2s..."
+        else
+            echo "Build failed. Fix errors and save to retry."
+        fi
+        
+        # Wait for file changes using inotifywait
+        echo "Waiting for changes..."
+        inotifywait -e modify,move,create,delete -r . --include '.*\.(go|templ)$' 2>/dev/null || sleep 2
+        echo ""
+        echo "Changes detected, rebuilding..."
+        echo "=================================================="
+    done
 else
-    # Run full CLAI with TUI (default)
-    make run-simple &
+    echo "Mode: Service (Web UI on http://localhost:8080)"
+    echo "Logs will appear below"
+    echo "Press Ctrl+C to stop"
+    echo "=================================================="
+    echo ""
+    
+    while true; do
+        # Generate templates (NO --watch to avoid temp file issues)
+        templ generate 2>&1 | grep -v "Processing file\|File not updated" || true
+        
+        # Build
+        echo "Building..."
+        if go build -o clai ./cmd/clai 2>&1; then
+            echo "Starting service..."
+            echo ""
+            ./clai service &
+            SERVICE_PID=$!
+            
+            # Wait for file changes or service exit
+            inotifywait -e modify,move,create,delete -r . --include '.*\.(go|templ)$' 2>/dev/null
+            
+            # Kill service
+            kill $SERVICE_PID 2>/dev/null || true
+            wait $SERVICE_PID 2>/dev/null || true
+            
+            echo ""
+            echo "Changes detected, restarting..."
+            echo "=================================================="
+            echo ""
+        else
+            echo "Build failed. Fix errors and save to retry."
+            inotifywait -e modify,move,create,delete -r . --include '.*\.(go|templ)$' 2>/dev/null
+        fi
+    done
 fi
-
-CLAI_PID=$!
-
-# Wait a moment for CLAI to start
-sleep 3
-
-# Verify server is running
-if ! ss -tlnp | grep -q ":8080"; then
-    echo "WARNING: Server may not have started on port 8080"
-    echo "Check debug.log for errors"
-fi
-
-# Exit so entr can wait for next file change
-# CLAI continues running in background
-exit 0

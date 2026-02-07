@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 	"clai/internal/llm"
 	"clai/internal/logger"
 	"clai/internal/tools"
+	"clai/internal/types"
 )
 
 // Server represents the benchmark web server
@@ -81,17 +83,8 @@ func (s *Server) Start() (int, error) {
 	return s.StartWithPreferredPort(0)
 }
 
-// StartWithPreferredPort starts the web server, preferring the given port
-func (s *Server) StartWithPreferredPort(preferredPort int) (int, error) {
-	logger.Info("BENCHMARK SERVER: StartWithPreferredPort called with preferredPort=%d", preferredPort)
-	port, err := findAvailablePort(preferredPort)
-	if err != nil {
-		logger.Info("BENCHMARK SERVER: findAvailablePort failed: %v", err)
-		return 0, err
-	}
-	logger.Info("BENCHMARK SERVER: found available port: %d", port)
-	s.port = port
-
+// Router returns the http.Handler for the benchmark server
+func (s *Server) Router() http.Handler {
 	mux := http.NewServeMux()
 
 	// Static routes
@@ -129,6 +122,11 @@ func (s *Server) StartWithPreferredPort(preferredPort int) (int, error) {
 	mux.HandleFunc("/api/servers/delete", s.HandleDeleteModel)
 	mux.HandleFunc("/api/servers/chat-ui", s.HandleChatUI)
 	mux.HandleFunc("/api/servers/logs", s.HandleServerLogs)
+	mux.HandleFunc("/api/servers/logs/stream", s.HandleServerLogsStream)
+	mux.HandleFunc("/api/servers/set-default", s.HandleSetDefaultModel)
+	mux.HandleFunc("/api/benchmark/run", s.HandleRunBenchmark)
+	mux.HandleFunc("/api/benchmark/results", s.HandleGetBenchmarkResults)
+	mux.HandleFunc("/api/benchmark/clear", s.handleClearBenchmarkResults)
 	mux.HandleFunc("/api/test/run", s.HandleRunTest)
 	mux.HandleFunc("/api/test/results", s.HandleGetTestResults)
 	mux.HandleFunc("/api/test/results/detailed", s.handleGetDetailedTestResults)
@@ -138,13 +136,41 @@ func (s *Server) StartWithPreferredPort(preferredPort int) (int, error) {
 	mux.HandleFunc("/api/docker/images", s.HandleListDockerImages)
 	mux.HandleFunc("/api/docker/pull", s.HandlePullDockerImage)
 	mux.HandleFunc("/api/docker/container/status", s.HandleDockerContainerStatus)
+	mux.HandleFunc("/api/service/status", s.handleServiceStatus)
+	mux.HandleFunc("/api/service/shutdown", s.handleServiceShutdown)
 	mux.HandleFunc("/health", s.handleHealth)
 
-	addr := fmt.Sprintf(":%d", port)
-	logger.Info("BENCHMARK SERVER: About to call http.ListenAndServe on %s", addr)
-	logger.Info("Starting benchmark server on http://localhost%s\n", addr)
+	return mux
+}
 
-	return port, http.ListenAndServe(addr, mux)
+// StartWithPreferredPort starts the web server, preferring the given port
+func (s *Server) StartWithPreferredPort(preferredPort int) (int, error) {
+	port, err := findAvailablePort(preferredPort)
+	if err != nil {
+		logger.Error("Failed to find available port: %v", err)
+		return 0, err
+	}
+	s.port = port
+
+	mux := s.Router()
+
+	addr := fmt.Sprintf(":%d", port)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		logger.Error("Failed to listen on %s: %v", addr, err)
+		return 0, err
+	}
+
+	logger.Info("Web UI available at http://localhost%s", addr)
+
+	// Start serving in background
+	go func() {
+		if err := http.Serve(listener, mux); err != nil && err != http.ErrServerClosed {
+			logger.Error("HTTP server error: %v", err)
+		}
+	}()
+
+	return port, nil
 }
 
 // GetPort returns the port the server is running on
@@ -158,19 +184,67 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok"))
 }
 
+// handleServiceStatus returns the current status of the background service
+func (s *Server) handleServiceStatus(w http.ResponseWriter, r *http.Request) {
+	status := types.NewServiceStatus()
+
+	// Determine current activity from model manager/download manager
+	servers := s.modelManager.GetServerStatus()
+	for _, srv := range servers {
+		if srv.Status == "loading" || srv.Status == "starting" {
+			status.Activity = fmt.Sprintf("Loading model: %s", srv.ModelName)
+			break
+		}
+	}
+
+	if status.Activity == "Idle" && s.modelManager.downloadManager != nil {
+		downloads := s.modelManager.downloadManager.GetDownloads()
+		for _, dl := range downloads {
+			if dl.Status == "downloading" {
+				status.Activity = fmt.Sprintf("Downloading model: %s (%.1f%%)", dl.Filename, dl.Progress)
+				break
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
+func (s *Server) handleServiceShutdown(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Shutting down..."))
+
+	// Shutdown gracefully in a goroutine
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		logger.Info("Shutdown signal received via API, exiting...")
+		os.Exit(0)
+	}()
+}
+
 // handleServerEvents streams server status updates via SSE
-// Uses Pattern 1: sse-swap - SSE sends content directly, no hx-get needed
+// Uses Pattern 2: SSE triggers hx-get for components
 func (s *Server) handleServerEvents(w http.ResponseWriter, r *http.Request) {
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable buffering for Nginx/proxies
 
 	// Create client channel for event signals
 	clientChan := make(chan string, 10)
 
 	// Register client
 	s.sseMutex.Lock()
+	if s.sseClients == nil {
+		s.sseClients = make(map[chan string]bool)
+	}
 	s.sseClients[clientChan] = true
 	clientCount := len(s.sseClients)
 	s.sseMutex.Unlock()
@@ -182,40 +256,40 @@ func (s *Server) handleServerEvents(w http.ResponseWriter, r *http.Request) {
 		s.sseMutex.Lock()
 		delete(s.sseClients, clientChan)
 		remainingClients := len(s.sseClients)
-		close(clientChan)
 		s.sseMutex.Unlock()
+
+		// Close channel outside of mutex
+		close(clientChan)
 		logger.Info("SSE client disconnected, remaining clients: %d", remainingClients)
 	}()
 
 	// Keep connection alive and send updates
+	ticker := time.NewTicker(10 * time.Second) // Faster heartbeat for tests
+	defer ticker.Stop()
+
+	// Flush initial headers immediately
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
 	for {
 		select {
 		case eventName := <-clientChan:
-			// Generate HTML content based on event type
-			var htmlContent string
-			switch eventName {
-			case "servers_update":
-				htmlContent = s.renderServersListHTML()
-			case "benchmark_update":
-				htmlContent = s.renderBenchmarkResultsHTML()
-			default:
-				htmlContent = ""
+			// Signal clients to refresh via hx-get triggers
+			// HTMX expects: event: eventname\ndata: \n\n
+			logger.Debug("SSE: Sending %s trigger", eventName)
+			fmt.Fprintf(w, "event: %s\ndata: \n\n", eventName)
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
 			}
-
-			// Send SSE event with content to swap directly
-			// HTMX expects: event: eventname\ndata: HTML content\n\n
-			if htmlContent != "" {
-				logger.Info("SSE: Sending %s event (%d bytes)", eventName, len(htmlContent))
-				fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventName, htmlContent)
-			} else {
-				logger.Info("SSE: Sending %s event (no content)", eventName)
-				fmt.Fprintf(w, "event: %s\ndata: \n\n", eventName)
-			}
+		case <-ticker.C:
+			// Send keep-alive comment
+			fmt.Fprintf(w, ": keep-alive\n\n")
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
 		case <-r.Context().Done():
-			logger.Info("SSE: Client context done, closing connection")
+			logger.Debug("SSE: Client context done, closing connection")
 			return
 		}
 	}
@@ -333,26 +407,26 @@ func (s *Server) renderBenchmarkResultsHTML() string {
 }
 
 // broadcastServerUpdate sends a server list update to all SSE clients
-// Triggers clients to refresh their server list via sse-swap
+// Triggers clients to refresh their server list via hx-get
 func (s *Server) broadcastServerUpdate() {
 	s.sseMutex.RLock()
 	defer s.sseMutex.RUnlock()
 
-	logger.Info("Broadcasting servers_update event to %d SSE clients", len(s.sseClients))
+	logger.Debug("Broadcasting refresh triggers to %d SSE clients", len(s.sseClients))
 
 	if len(s.sseClients) == 0 {
-		logger.Info("No SSE clients connected, skipping broadcast")
 		return
 	}
 
-	// Signal clients to refresh - they'll receive HTML content in SSE data
-	msg := "servers_update"
-	for clientChan := range s.sseClients {
-		select {
-		case clientChan <- msg:
-			logger.Info("Sent servers_update event to client")
-		default:
-			logger.Info("Client buffer full, skipping")
+	// Trigger both server list and GPU status refresh
+	events := []string{"servers_list", "gpu_status"}
+	for _, eventName := range events {
+		for clientChan := range s.sseClients {
+			select {
+			case clientChan <- eventName:
+			default:
+				// Buffer full, skip this client
+			}
 		}
 	}
 }
@@ -362,10 +436,10 @@ func (s *Server) broadcastBenchmarkUpdate() {
 	s.sseMutex.RLock()
 	defer s.sseMutex.RUnlock()
 
-	logger.Info("Broadcasting benchmark_update event to %d SSE clients", len(s.sseClients))
+	logger.Debug("Broadcasting benchmark_update event to %d SSE clients", len(s.sseClients))
 
 	if len(s.sseClients) == 0 {
-		logger.Info("No SSE clients connected, skipping broadcast")
+		logger.Debug("No SSE clients connected, skipping broadcast")
 		return
 	}
 
@@ -373,9 +447,9 @@ func (s *Server) broadcastBenchmarkUpdate() {
 	for clientChan := range s.sseClients {
 		select {
 		case clientChan <- msg:
-			logger.Info("Sent benchmark_update event to client")
+			logger.Debug("Sent benchmark_update event to client")
 		default:
-			logger.Info("Client buffer full, skipping")
+			logger.Debug("Client buffer full, skipping")
 		}
 	}
 }
@@ -466,6 +540,7 @@ func (s *Server) handleModelsPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTestingPage(w http.ResponseWriter, r *http.Request) {
+	logger.Info("Serving testing page")
 	component := templates.Testing()
 	if err := component.Render(r.Context(), w); err != nil {
 		http.Error(w, "Failed to render template", http.StatusInternalServerError)
@@ -554,7 +629,7 @@ type ModelInfo struct {
 
 // handleGetModels returns a list of available models from common servers
 func (s *Server) handleGetModels(w http.ResponseWriter, r *http.Request) {
-	logger.Info("API: /api/models called")
+	logger.Debug("API: /api/models called")
 	models := []ModelInfo{}
 
 	// Common server URLs to check
@@ -569,18 +644,18 @@ func (s *Server) handleGetModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, serverURL := range serverURLs {
-		logger.Info("Checking server: %s", serverURL)
+		logger.Debug("Checking server: %s", serverURL)
 		// Try to fetch models from this server
 		fetchedModels := fetchModelsFromServer(serverURL)
-		logger.Info("Found %d models from %s", len(fetchedModels), serverURL)
+		logger.Debug("Found %d models from %s", len(fetchedModels), serverURL)
 		models = append(models, fetchedModels...)
 	}
 
-	logger.Info("Total models found: %d", len(models))
+	logger.Debug("Total models found: %d", len(models))
 
 	// If no models found, return default suggestions
 	if len(models) == 0 {
-		logger.Info("No models found, returning defaults")
+		logger.Debug("No models found, returning defaults")
 		models = []ModelInfo{
 			{Name: "Ollama (http://localhost:11434)", URL: "http://localhost:11434", APIType: "ollama"},
 			{Name: "llama.cpp (http://localhost:8081)", URL: "http://localhost:8081", APIType: "llamacpp"},
@@ -593,12 +668,12 @@ func (s *Server) handleGetModels(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	logger.Info("Successfully sent models response")
+	logger.Debug("Successfully sent models response")
 }
 
 // handleGetModelOptions returns HTML <option> elements for HTMX
 func (s *Server) handleGetModelOptions(w http.ResponseWriter, r *http.Request) {
-	logger.Info("API: /api/models/options called")
+	logger.Debug("API: /api/models/options called")
 	models := []ModelInfo{}
 
 	// Common server URLs to check
@@ -613,47 +688,28 @@ func (s *Server) handleGetModelOptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, serverURL := range serverURLs {
-		logger.Info("Checking server: %s", serverURL)
+		logger.Debug("Checking server: %s", serverURL)
+		// Try to fetch models from this server
 		fetchedModels := fetchModelsFromServer(serverURL)
-		logger.Info("Found %d models from %s", len(fetchedModels), serverURL)
+		logger.Debug("Found %d models from %s", len(fetchedModels), serverURL)
 		models = append(models, fetchedModels...)
 	}
 
-	logger.Info("Total models found: %d", len(models))
+	logger.Debug("Total models found: %d", len(models))
 
-	// Return HTML options
-	w.Header().Set("Content-Type", "text/html")
-
-	// Default option
+	var html string
 	if len(models) == 0 {
-		fmt.Fprint(w, `<option value="">No models found (enter manually)</option>`)
-		logger.Info("No models found, returning empty option")
-		return
-	}
-
-	// Start with a placeholder option
-	fmt.Fprint(w, `<option value="">Select a model...</option>`)
-
-	// Add option for each model
-	for _, model := range models {
-		// Store model data as JSON in the value attribute (with API type)
-		jsonData := fmt.Sprintf(`{"name":"%s","url":"%s","api_type":"%s"}`, model.Name, model.URL, model.APIType)
-
-		// Display friendly API type name
-		apiTypeDisplay := model.APIType
-		switch model.APIType {
-		case "llamacpp":
-			apiTypeDisplay = "llama.cpp"
-		case "openai":
-			apiTypeDisplay = "OpenAI"
-		case "ollama":
-			apiTypeDisplay = "Ollama"
+		logger.Debug("No models found, returning empty option")
+		html = `<option value="">No models found</option>`
+	} else {
+		for _, model := range models {
+			html += fmt.Sprintf(`<option value="%s" data-url="%s" data-api="%s">%s</option>`, model.URL, model.URL, model.APIType, model.Name)
 		}
-
-		fmt.Fprintf(w, `<option value='%s'>%s - %s (%s)</option>`, jsonData, model.Name, apiTypeDisplay, model.URL)
 	}
 
-	logger.Info("Successfully sent %d model options as HTML", len(models))
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprint(w, html)
+	logger.Debug("Successfully sent %d model options as HTML", len(models))
 }
 
 // handleSearchHuggingFace searches HuggingFace for GGUF models and returns HTML datalist options
@@ -2326,13 +2382,17 @@ func (s *Server) HandleGetBenchmarkResults(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "text/html")
 
+	// Base attributes for Pattern 2 continuity
+	attrs := `id="benchmark_results_table" hx-get="/api/benchmark/results" hx-trigger="sse:benchmark_update" hx-swap="outerHTML" hx-ext="sse"`
+
 	if len(runs) == 0 {
-		fmt.Fprint(w, `<div id="benchmark_results_table"><p style="color: #94a3b8; font-style: italic;">No benchmark runs yet. Click "Run Benchmarks" on a running model to start.</p></div>`)
+		fmt.Fprintf(w, `<div %s><p style="color: #94a3b8; font-style: italic;">No benchmark runs yet. Click "Run Benchmarks" on a running model to start.</p></div>`, attrs)
 		return
 	}
 
 	// Build HTML table with wrapper div
-	html := `<div id="benchmark_results_table"><table style="width: 100%; border-collapse: collapse;">
+	html := fmt.Sprintf(`<div %s><table style="width: 100%%; border-collapse: collapse;">`, attrs)
+	html += `
 		<thead>
 			<tr style="border-bottom: 1px solid #475569;">
 				<th style="padding: 8px; text-align: left;">Model</th>
@@ -2419,9 +2479,9 @@ func (s *Server) handleClearBenchmarkResults(w http.ResponseWriter, r *http.Requ
 
 // HandleGPUStatus returns the GPU status dashboard HTML
 func (s *Server) HandleGPUStatus(w http.ResponseWriter, r *http.Request) {
-	logger.Info("HandleGPUStatus: Starting...")
+	logger.Debug("HandleGPUStatus: Starting...")
 	gpus, err := gpu.GetGPUInfo()
-	logger.Info("HandleGPUStatus: Got GPU info")
+	logger.Debug("HandleGPUStatus: Got GPU info")
 
 	w.Header().Set("Content-Type", "text/html")
 

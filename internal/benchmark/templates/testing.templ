@@ -8,8 +8,10 @@ templ Testing() {
 			<a href="/testing" class="active">Testing &amp; Results</a>
 		</div>
 
-		<!-- Agentic Benchmark Results - Pattern 1: sse-swap -->
-		<div class="card">
+		<!-- Single SSE Connection for Entire Page - Pattern 2: SSE triggers hx-get -->
+		<div hx-ext="sse" sse-connect="/api/servers/events">
+
+		<!-- Agentic Benchmark Results - Pattern 2: sse trigger -->
 			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
 				<div>
 					<h2 style="margin: 0 0 10px 0; font-size: 24px;">Agentic Code Generation Benchmarks</h2>
@@ -31,14 +33,10 @@ templ Testing() {
 		<div 
 			id="benchmark_results_table"
 			hx-get="/api/benchmark/results"
-			hx-trigger="load"
-			hx-swap="innerHTML"
-			hx-ext="sse"
-			sse-connect="/api/servers/events"
-			sse-swap="benchmark_update"
+			hx-trigger="load, sse:benchmark_update"
+			hx-swap="outerHTML"
 		>
 			<p style="color: #94a3b8;">Loading benchmark results...</p>
-		</div>
 		</div>
 
 		<!-- Detailed Test Results -->
@@ -121,5 +119,6 @@ templ Testing() {
 				}
 			});
 		</script>
+		</div><!-- End of SSE connection container -->
 	}
 }

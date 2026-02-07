@@ -15,6 +15,8 @@ type KeyMap struct {
 	Home        key.Binding
 	End         key.Binding
 	Send        key.Binding
+	StartModel  key.Binding
+	StopModel   key.Binding
 }
 
 func (k KeyMap) ShortHelp() []key.Binding {
@@ -24,7 +26,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Help, k.Quit, k.Tab, k.ToggleTheme, k.NewConv, k.Send},
-		{k.ScrollUp, k.ScrollDown, k.PageUp, k.PageDown, k.Home, k.End},
+		{k.StartModel, k.StopModel, k.ScrollUp, k.ScrollDown, k.PageUp, k.PageDown, k.Home, k.End},
 	}
 }
 
@@ -76,5 +78,13 @@ var DefaultKeyMap = KeyMap{
 	Send: key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "send message"),
+	),
+	StartModel: key.NewBinding(
+		key.WithKeys("s"),
+		key.WithHelp("s", "start selected model"),
+	),
+	StopModel: key.NewBinding(
+		key.WithKeys("x"),
+		key.WithHelp("x", "stop selected model"),
 	),
 }

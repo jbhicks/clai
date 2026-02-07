@@ -19,11 +19,11 @@ const (
 
 var (
 	currentLevel = LevelInfo
-	logger       = log.New(os.Stderr, "", log.Ltime)
+	logger       = log.New(io.MultiWriter(os.Stderr), "", log.Ltime)
 )
 
 func Init(w io.Writer) {
-	logger.SetOutput(w)
+	logger.SetOutput(io.MultiWriter(os.Stderr, w))
 	logger.SetFlags(log.Ltime)
 
 	levelStr := strings.ToUpper(os.Getenv("LOG_LEVEL"))

@@ -137,8 +137,13 @@ func (dl *DockerLauncher) StartContainer(
 			"--device", "/dev/kfd",
 			"--group-add", "video",
 			"--group-add", "render",
-			"--group-add", "sudo",
 		)
+		// On Arch, 'wheel' is used instead of 'sudo'
+		if _, err := exec.Command("getent", "group", "wheel").Output(); err == nil {
+			args = append(args, "--group-add", "wheel")
+		} else if _, err := exec.Command("getent", "group", "sudo").Output(); err == nil {
+			args = append(args, "--group-add", "sudo")
+		}
 	} else {
 		// Vulkan
 		args = append(args,
@@ -158,21 +163,21 @@ func (dl *DockerLauncher) StartContainer(
 	// Add llama-server command with arguments
 	// Note: Container has llama-server at /usr/local/bin/llama-server
 	modelPathInContainer := fmt.Sprintf("/models/%s", modelName)
-	serverArgs := []string{
-		"llama-server",
-		"-m", modelPathInContainer,
-		"--host", "0.0.0.0",
-		"--port", "8080",
-		"-c", fmt.Sprintf("%d", contextSize),
-		"-ngl", fmt.Sprintf("%d", ngl),
-		"-fa", "on",
-		"--no-mmap", // Disable memory mapping for stability
-		"-b", "2048",
-		"-ub", "512",
-		"--verbose",
-		"--jinja",
+	logFileName := fmt.Sprintf("llama-server-%d.log", port)
+
+	// Check if it's an embedding model
+	isEmbeddingModel := strings.Contains(strings.ToLower(modelName), "embed")
+	extraArgs := "--jinja"
+	if isEmbeddingModel {
+		extraArgs = "--embedding"
 	}
-	args = append(args, serverArgs...)
+
+	// We wrap the command in sh -c to allow redirection to the mounted /logs volume
+	// This ensures parity with native servers which write to the same host log files
+	shCommand := fmt.Sprintf("llama-server -m %s --host 0.0.0.0 --port 8080 -c %d -ngl %d -fa on --no-mmap -b 2048 -ub 512 --verbose %s > /logs/%s 2>&1",
+		modelPathInContainer, contextSize, ngl, extraArgs, logFileName)
+
+	args = append(args, "sh", "-c", shCommand)
 
 	// Execute docker run
 	cmd := exec.Command("docker", args...)
@@ -227,6 +232,22 @@ func (dl *DockerLauncher) GetContainerStatus(containerName string) (bool, error)
 
 	status := strings.TrimSpace(string(output))
 	return status == "running", nil
+}
+
+// GetContainerPID retrieves the host PID of a container
+func (dl *DockerLauncher) GetContainerPID(containerName string) (int, error) {
+	cmd := exec.Command("docker", "inspect", "-f", "{{.State.Pid}}", containerName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get container PID: %w\nOutput: %s", err, string(output))
+	}
+
+	var pid int
+	if _, err := fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &pid); err != nil {
+		return 0, fmt.Errorf("failed to parse container PID: %w", err)
+	}
+
+	return pid, nil
 }
 
 // ListContainers lists all CLAI model containers

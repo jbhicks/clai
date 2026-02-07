@@ -141,7 +141,7 @@ func (dm *DownloadManager) restoreDownloads() {
 		}
 	}
 
-	log.Printf("Restored %d downloads from database", len(records))
+	logger.Info("Restored %d downloads from database", len(records))
 }
 
 // periodicCleanup runs in the background and cleans up old download records

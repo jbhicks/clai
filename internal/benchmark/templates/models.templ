@@ -12,8 +12,8 @@ templ Models() {
 		<div hx-ext="sse" sse-connect="/api/servers/events">
 			
 			<!-- GPU Status -->
-			<div class="card" style="margin-bottom: 20px;" id="gpu_status_container">
-				<div hx-get="/api/gpu/status" hx-trigger="load, sse:gpu_status" hx-swap="outerHTML">
+			<div class="card" style="margin-bottom: 20px;">
+				<div id="gpu_status" hx-get="/api/gpu/status" hx-trigger="load, sse:gpu_status" hx-swap="outerHTML">
 					<p style="color: #94a3b8;">Loading GPU status...</p>
 				</div>
 			</div>

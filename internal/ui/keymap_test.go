@@ -67,7 +67,7 @@ func TestKeyMapFullHelp(t *testing.T) {
 	}
 
 	col1Expected := []key.Binding{km.Help, km.Quit, km.Tab, km.ToggleTheme, km.NewConv, km.Send}
-	col2Expected := []key.Binding{km.ScrollUp, km.ScrollDown, km.PageUp, km.PageDown, km.Home, km.End}
+	col2Expected := []key.Binding{km.StartModel, km.StopModel, km.ScrollUp, km.ScrollDown, km.PageUp, km.PageDown, km.Home, km.End}
 
 	allCols := [][]key.Binding{col1Expected, col2Expected}
 

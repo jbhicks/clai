@@ -7,10 +7,15 @@ import (
 	"clai/internal/llm"
 	"clai/internal/logger"
 	"clai/internal/ralph"
+	"clai/internal/service"
 	"clai/internal/tools"
+	"clai/internal/types"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -105,6 +110,21 @@ func formatLogLine(line string, theme *glitter.UI, width int) string {
 
 	rendered := style.Render(message)
 
+	if strings.HasPrefix(line, "[MODEL:") {
+		// Keep the model tag and use a different style
+		if idx := strings.Index(line, "] "); idx != -1 {
+			tag := line[:idx+1]
+			content := line[idx+2:]
+			tagStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color(theme.Theme.Normal.Magenta)).
+				Background(lipgloss.Color(theme.Theme.Primary.Background))
+			contentStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color(theme.Theme.Primary.Foreground)).
+				Background(lipgloss.Color(theme.Theme.Primary.Background))
+			rendered = tagStyle.Render(tag) + " " + contentStyle.Render(content)
+		}
+	}
+
 	if lipgloss.Width(rendered) < width {
 		wrapper := lipgloss.NewStyle().
 			Width(width).
@@ -120,6 +140,8 @@ type Model struct {
 	Log           viewport.Model
 	logBuffer     string
 	AgentStatus   *AgentStatusView
+	ServiceStatus types.ServiceStatus
+	Servers       []*types.ModelServer
 	Err           error
 	Width         int
 	Height        int
@@ -155,6 +177,9 @@ type Model struct {
 	llmHost       string
 	llmModel      string
 	llmHealth     bool
+
+	// Selection in BriefingRoom
+	serverCursor int
 }
 
 type (
@@ -182,7 +207,9 @@ type (
 		content string
 		gitHash string
 	}
-	patternMsg string
+	patternMsg       string
+	ServiceStatusMsg types.ServiceStatus
+	ServersListMsg   []*types.ModelServer
 )
 
 func executeCodeBlocksCmd(blocks []llm.CodeBlock) tea.Cmd {
@@ -221,7 +248,68 @@ func TailLogFileCmd(m *Model) tea.Cmd {
 	m.logChan = make(chan tea.Msg)
 	m.logDone = make(chan struct{})
 	go tailLogFile(m.logChan, m.logDone)
+	go m.tailModelLogs(m.logChan, m.logDone)
 	return readLogChanCmd(m.logChan)
+}
+
+func (m *Model) tailModelLogs(logChan chan<- tea.Msg, done <-chan struct{}) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	logsDir := filepath.Join(homeDir, ".local", "share", "clai", "logs")
+
+	// Track file offsets for each log file
+	offsets := make(map[string]int64)
+	files := make(map[string]*os.File)
+
+	for {
+		select {
+		case <-done:
+			for _, f := range files {
+				f.Close()
+			}
+			return
+		default:
+			entries, err := os.ReadDir(logsDir)
+			if err != nil {
+				time.Sleep(2 * time.Second)
+				continue
+			}
+
+			for _, entry := range entries {
+				if entry.IsDir() || !strings.HasPrefix(entry.Name(), "llama-server-") || !strings.HasSuffix(entry.Name(), ".log") {
+					continue
+				}
+
+				path := filepath.Join(logsDir, entry.Name())
+				f, ok := files[path]
+				if !ok {
+					f, err = os.Open(path)
+					if err != nil {
+						continue
+					}
+					// Start at the end of existing files to avoid flooding the log pane
+					info, err := f.Stat()
+					if err == nil {
+						offsets[path] = info.Size()
+						f.Seek(offsets[path], 0)
+					}
+					files[path] = f
+				}
+
+				scanner := bufio.NewScanner(f)
+				for scanner.Scan() {
+					line := scanner.Text()
+					offsets[path] += int64(len(line)) + 1
+					// Tag the log line with the model server ID (port)
+					port := strings.TrimPrefix(strings.TrimSuffix(entry.Name(), ".log"), "llama-server-")
+					logChan <- LogUpdateMsg(fmt.Sprintf("[MODEL:%s] %s", port, line))
+				}
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}
 }
 
 func tailLogFile(logChan chan<- tea.Msg, done <-chan struct{}) {
@@ -308,6 +396,8 @@ func (m *Model) Init() tea.Cmd {
 		m.loadStoriesCmd(),
 		m.watchStoriesCmd(),
 		m.checkHealthCmd(),
+		m.pollServiceStatusCmd(),
+		readStatusChanCmd(m.statusChan),
 	)
 }
 
@@ -337,6 +427,86 @@ func (m *Model) checkHealthCmd() tea.Cmd {
 	return func() tea.Msg {
 		// TODO: Implement LLM health check
 		return healthMsg(true)
+	}
+}
+
+func (m *Model) pollServiceStatusCmd() tea.Cmd {
+	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		port := service.GetServicePort()
+		if port == 0 {
+			return ServiceStatusMsg{Status: "disconnected", Activity: "Service not found. Run 'clai service' or 'make dev' to start."}
+		}
+
+		// Update service status
+		statusResp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/service/status", port))
+		if err != nil {
+			return ServiceStatusMsg{Status: "disconnected", Activity: "Service unreachable"}
+		}
+		defer statusResp.Body.Close()
+		var status types.ServiceStatus
+		if err := json.NewDecoder(statusResp.Body).Decode(&status); err == nil {
+			m.statusChan <- ServiceStatusMsg(status)
+		}
+
+		// Update servers list
+		serversResp, err := http.Get(fmt.Sprintf("http://localhost:%d/api/servers/list", port))
+		if err == nil {
+			defer serversResp.Body.Close()
+			var servers []*types.ModelServer
+			if err := json.NewDecoder(serversResp.Body).Decode(&servers); err == nil {
+				m.statusChan <- ServersListMsg(servers)
+			}
+		}
+
+		return TickMsg{}
+	})
+}
+
+func (m *Model) startServerCmd(modelPath string) tea.Cmd {
+	return func() tea.Msg {
+		logger.Info("Starting model server for: %s", modelPath)
+		port := service.GetServicePort()
+		if port == 0 {
+			return errorMsg{fmt.Errorf("service not found")}
+		}
+
+		url := fmt.Sprintf("http://localhost:%d/api/servers/start", port)
+		formData := "model_path=" + modelPath + "&context_size=131072&ngl=999&backend=rocm"
+		resp, err := http.Post(url, "application/x-www-form-urlencoded", strings.NewReader(formData))
+		if err != nil {
+			return errorMsg{err}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return errorMsg{fmt.Errorf("failed to start server: %s", resp.Status)}
+		}
+
+		return nil
+	}
+}
+
+func (m *Model) stopServerCmd(modelPath string) tea.Cmd {
+	return func() tea.Msg {
+		logger.Info("Stopping model server for: %s", modelPath)
+		port := service.GetServicePort()
+		if port == 0 {
+			return errorMsg{fmt.Errorf("service not found")}
+		}
+
+		url := fmt.Sprintf("http://localhost:%d/api/servers/stop", port)
+		formData := "model_path=" + modelPath
+		resp, err := http.Post(url, "application/x-www-form-urlencoded", strings.NewReader(formData))
+		if err != nil {
+			return errorMsg{err}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return errorMsg{fmt.Errorf("failed to stop server: %s", resp.Status)}
+		}
+
+		return nil
 	}
 }
 
@@ -401,7 +571,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				conv.Messages = m.Chat.Messages
 				if store, ok := m.DB.(*db.Store); ok {
 					if err := store.SaveConversation(conv); err != nil {
-						logger.Info("[DB] Failed to save conversation: %v", err)
+						logger.Info("Failed to save conversation: %v", err)
 					}
 				}
 			}
@@ -492,7 +662,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			conv.Messages = m.Chat.Messages
 			if store, ok := m.DB.(*db.Store); ok {
 				if err := store.SaveConversation(conv); err != nil {
-					logger.Info("[DB] Failed to save conversation: %v", err)
+					logger.Info("Failed to save conversation: %v", err)
 				}
 			}
 		}
@@ -567,7 +737,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			conv.Messages = m.Chat.Messages
 			if store, ok := m.DB.(*db.Store); ok {
 				if err := store.SaveConversation(conv); err != nil {
-					logger.Info("[DB] Failed to save conversation: %v", err)
+					logger.Info("Failed to save conversation: %v", err)
 				}
 			}
 		}
@@ -579,6 +749,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.AgentStatus.SetExecutingCode(msg.Status.CodeLanguage, msg.Code)
 		}
 		return m, readStatusChanCmd(m.statusChan)
+	case ServiceStatusMsg:
+		m.ServiceStatus = types.ServiceStatus(msg)
+		return m, nil
+	case ServersListMsg:
+		m.Servers = msg
+		return m, nil
+	case TickMsg:
+		return m, m.pollServiceStatusCmd()
 	case prdLoadedMsg:
 		m.prd = msg
 		logger.Info("Loaded PRD with %d stories", len(msg.UserStories))
@@ -642,7 +820,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 					}
 					if store, ok := m.DB.(*db.Store); ok {
 						if err := store.SaveConversation(conv); err != nil {
-							logger.Info("[DB] Failed to save conversation: %v", err)
+							logger.Info("Failed to save conversation: %v", err)
 						}
 					}
 				}
@@ -666,7 +844,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 				conv.Messages = m.Chat.Messages
 				if store, ok := m.DB.(*db.Store); ok {
 					if err := store.SaveConversation(conv); err != nil {
-						logger.Info("[DB] Failed to save conversation: %v", err)
+						logger.Info("Failed to save conversation: %v", err)
 					}
 				}
 			}
@@ -726,7 +904,7 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 				conv.Messages = m.Chat.Messages
 				if store, ok := m.DB.(*db.Store); ok {
 					if err := store.SaveConversation(conv); err != nil {
-						logger.Info("[DB] Failed to save conversation: %v", err)
+						logger.Info("Failed to save conversation: %v", err)
 					}
 				}
 			}
@@ -739,9 +917,9 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 		}
 		if store, ok := m.DB.(*db.Store); ok {
 			if err := store.SaveConversation(newConv); err != nil {
-				logger.Warn("[DB] Failed to save new conversation: %v", err)
+				logger.Warn("Failed to save new conversation: %v", err)
 			} else {
-				logger.Info("[DB] Created new conversation with ID %d", newConv.ID)
+				logger.Info("Created new conversation with ID %d", newConv.ID)
 			}
 		}
 		m.Conversation = newConv
@@ -761,6 +939,12 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 
 		return nil
 	case "up":
+		if m.ActivePane == BriefingRoom {
+			if m.serverCursor > 0 {
+				m.serverCursor--
+			}
+			return nil
+		}
 		if m.Chat.Textarea.Focused() {
 			if len(m.Chat.QueryHistory) > 0 && m.Chat.HistoryIndex < len(m.Chat.QueryHistory) {
 				m.Chat.HistoryIndex++
@@ -775,6 +959,12 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 			return smoothScrollCmd()
 		}
 	case "down":
+		if m.ActivePane == BriefingRoom {
+			if m.serverCursor < len(m.Servers)-1 {
+				m.serverCursor++
+			}
+			return nil
+		}
 		if m.Chat.Textarea.Focused() {
 			if m.Chat.HistoryIndex > 1 {
 				m.Chat.HistoryIndex--
@@ -793,6 +983,16 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 				m.Chat.AutoScroll = true
 			}
 			return smoothScrollCmd()
+		}
+	case "s":
+		if m.ActivePane == BriefingRoom && m.serverCursor < len(m.Servers) {
+			server := m.Servers[m.serverCursor]
+			return m.startServerCmd(server.ModelPath)
+		}
+	case "x":
+		if m.ActivePane == BriefingRoom && m.serverCursor < len(m.Servers) {
+			server := m.Servers[m.serverCursor]
+			return m.stopServerCmd(server.ModelPath)
 		}
 	case "k":
 		if !m.Chat.Textarea.Focused() {
@@ -900,6 +1100,7 @@ func (m *Model) handleDebugCommand(msg DebugServerMsg) tea.Cmd {
 				"show_help":        m.ShowHelp,
 				"help_show_all":    m.Help.ShowAll,
 				"help_content":     helpContent,
+				"status_bar_text":  m.StatusBarText,
 			},
 		}
 
@@ -1291,36 +1492,90 @@ func (m *Model) handleWindowSizeMsg(msg tea.WindowSizeMsg) tea.Cmd {
 }
 
 func (m *Model) renderBriefingRoom() string {
-	if m.prd == nil {
-		return "Loading stories..."
-	}
-
 	var lines []string
-	completed := 0
-	total := len(m.prd.UserStories)
-	for _, story := range m.prd.UserStories {
-		if story.Passes {
-			completed++
-		}
-	}
-	lines = append(lines, fmt.Sprintf("📋 CLAI Development Tasks (%d/%d completed)", completed, total))
+
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(m.Theme.Theme.Bright.Cyan)).
+		Bold(true)
+
+	lines = append(lines, titleStyle.Render("🖥️  Model Servers"))
 	lines = append(lines, "")
 
-	for _, story := range m.prd.UserStories {
-		status := "❌"
-		if story.Passes {
-			status = "✅"
+	if len(m.Servers) == 0 {
+		if m.ServiceStatus.Status == "disconnected" {
+			warningStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color(m.Theme.Theme.Bright.Red)).
+				Bold(true)
+			instructionStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color(m.Theme.Theme.Normal.White))
+
+			lines = append(lines, warningStyle.Render("   🔴 Service Disconnected"))
+			lines = append(lines, "")
+			lines = append(lines, instructionStyle.Render("   To restart the service:"))
+			lines = append(lines, instructionStyle.Render("   1. Exit CLAI (ctrl+q)"))
+			lines = append(lines, instructionStyle.Render("   2. Run 'clai service'"))
+			lines = append(lines, instructionStyle.Render("   3. Or run 'make dev'"))
+		} else {
+			lines = append(lines, "   No model servers detected.")
+			lines = append(lines, "   Scanning for available models...")
 		}
-		lines = append(lines, fmt.Sprintf("%s %s: %s", status, story.ID, story.Title))
-		if len(story.Description) > 0 {
-			// Truncate description
-			desc := story.Description
-			if len(desc) > 50 {
-				desc = desc[:47] + "..."
+	} else {
+		for i, s := range m.Servers {
+			statusIcon := "⚪"
+			statusColor := m.Theme.Theme.Normal.White
+			switch s.Status {
+			case "running":
+				statusIcon = "🟢"
+				statusColor = m.Theme.Theme.Bright.Green
+			case "loading", "starting":
+				statusIcon = "🟡"
+				statusColor = m.Theme.Theme.Bright.Yellow
+			case "error":
+				statusIcon = "🔴"
+				statusColor = m.Theme.Theme.Bright.Red
+			case "stopped":
+				statusIcon = "⚪"
+				statusColor = m.Theme.Theme.Normal.White
 			}
-			lines = append(lines, fmt.Sprintf("   %s", desc))
+
+			cursor := " "
+			if m.ActivePane == BriefingRoom && m.serverCursor == i {
+				cursor = ">"
+			}
+
+			statusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(statusColor))
+
+			line := fmt.Sprintf("%s %s %-20s", cursor, statusIcon, s.ModelName)
+			if s.Status == "running" {
+				line += fmt.Sprintf(" (Port: %d, NGL: %d)", s.Port, s.NGL)
+			}
+			lines = append(lines, "   "+statusStyle.Render(line))
+
+			if s.ErrorMessage != "" {
+				errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Bright.Red)).Italic(true)
+				lines = append(lines, errorStyle.Render("     ⚠️ "+s.ErrorMessage))
+			}
 		}
-		lines = append(lines, "")
+	}
+
+	lines = append(lines, "")
+	lines = append(lines, titleStyle.Render("📋 Development Tasks"))
+	lines = append(lines, "")
+
+	if m.prd != nil {
+		for _, story := range m.prd.UserStories {
+			status := "❌"
+			if story.Passes {
+				status = "✅"
+			}
+			line := fmt.Sprintf("   %s %s: %s", status, story.ID, story.Title)
+			if story.Passes {
+				line = lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Bright.Green)).Render(line)
+			}
+			lines = append(lines, line)
+		}
+	} else {
+		lines = append(lines, "   Loading tasks...")
 	}
 
 	return strings.Join(lines, "\n")
@@ -1374,6 +1629,15 @@ func (m *Model) View() string {
 
 	if m.ShowError && m.ErrorMessage != "" {
 		layout = lipgloss.JoinVertical(lipgloss.Left, layout, m.ErrorBanner.Width(m.Width).Render(m.ErrorMessage))
+	}
+
+	if m.ServiceStatus.Activity != "" && m.ServiceStatus.Activity != "Idle" {
+		activityBar := themeStyles.StatusBar.Copy().
+			Background(lipgloss.Color(m.Theme.Theme.Bright.Blue)).
+			Foreground(lipgloss.Color(m.Theme.Theme.Primary.Background)).
+			Width(m.Width).
+			Render(" ⚙️  " + m.ServiceStatus.Activity)
+		layout = lipgloss.JoinVertical(lipgloss.Left, layout, activityBar)
 	}
 
 	if m.ShowHelp {
