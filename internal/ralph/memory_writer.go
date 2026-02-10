@@ -33,6 +33,10 @@ func NewMemoryWriter(baseDir string) *MemoryWriter {
 		patterns:  make(chan string, 100),
 		progress:  make(chan ProgressEntry, 100),
 	}
+	// Ensure patterns.md has initial content immediately
+	if err := mw.ensurePatternsHeader(filepath.Join(baseDir, ".clai", "patterns.md")); err != nil {
+		fmt.Printf("Warning: Failed to ensure patterns header: %v\n", err)
+	}
 	return mw
 }
 
