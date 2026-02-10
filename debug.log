@@ -292,3 +292,67 @@ common_init_from_params: failed to create context with model '/models/Devstral-2
 00:10:31 [INFO] Shutting down service...
 00:10:32 [INFO] Opened database at /home/josh/.clai/conversations.db
 00:10:32 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:10:32 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:10:32 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:10:33 [INFO] Restored 18 downloads from database
+00:10:33 [INFO] Web UI available at http://localhost:8080
+00:10:33 [INFO] Service ready on http://localhost:8080
+00:10:34 [INFO] SSE client connected, total clients: 1
+00:10:36 [INFO] SSE client connected, total clients: 2
+00:11:11 [INFO] Shutting down service...
+00:11:12 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:11:13 [INFO] Restored 18 downloads from database
+00:11:13 [INFO] Web UI available at http://localhost:8080
+00:11:13 [INFO] Service ready on http://localhost:8080
+00:11:14 [INFO] SSE client connected, total clients: 1
+00:11:16 [INFO] SSE client connected, total clients: 2
+00:11:18 [INFO] Shutting down service...
+00:11:18 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:11:18 [INFO] Restored 18 downloads from database
+00:11:18 [INFO] Web UI available at http://localhost:8080
+00:11:18 [INFO] Service ready on http://localhost:8080
+00:11:21 [INFO] SSE client connected, total clients: 1
+00:11:23 [INFO] SSE client connected, total clients: 2
+00:12:06 [INFO] Shutting down service...
+00:12:07 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:12:07 [INFO] Restored 18 downloads from database
+00:12:07 [INFO] Web UI available at http://localhost:8080
+00:12:07 [INFO] Service ready on http://localhost:8080
+00:12:09 [INFO] SSE client connected, total clients: 1
+00:12:11 [INFO] SSE client connected, total clients: 2
+00:30:31 [INFO] Shutting down service...
+00:30:32 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:30:32 [INFO] Restored 18 downloads from database
+00:30:32 [INFO] Web UI available at http://localhost:8080
+00:30:32 [INFO] Service ready on http://localhost:8080
+00:30:34 [INFO] SSE client connected, total clients: 1
+00:30:36 [INFO] SSE client connected, total clients: 2
+00:30:43 [INFO] Shutting down service...
+00:31:48 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:31:49 [INFO] Restored 18 downloads from database
+00:31:49 [INFO] Web UI available at http://localhost:8080
+00:31:49 [INFO] Service ready on http://localhost:8080
+00:31:49 [INFO] SSE client connected, total clients: 1
+00:31:49 [INFO] SSE client connected, total clients: 2
+00:32:45 [INFO] Shutting down service...
+00:32:45 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:32:45 [INFO] Restored 18 downloads from database
+00:32:45 [INFO] Web UI available at http://localhost:8080
+00:32:45 [INFO] Service ready on http://localhost:8080
+00:32:48 [INFO] SSE client connected, total clients: 1
+00:32:48 [INFO] Shutting down service...
+00:32:49 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:32:49 [INFO] Restored 18 downloads from database
+00:32:49 [INFO] Web UI available at http://localhost:8080
+00:32:49 [INFO] Service ready on http://localhost:8080
+00:32:50 [INFO] SSE client connected, total clients: 1
+00:32:51 [INFO] SSE client connected, total clients: 2
+00:33:13 [INFO] Shutting down service...
+00:33:13 [INFO] Opened database at /home/josh/.clai/conversations.db
+00:33:13 [INFO] Restored 18 downloads from database
+00:33:13 [INFO] Web UI available at http://localhost:8080
+00:33:13 [INFO] Service ready on http://localhost:8080
+00:33:16 [INFO] SSE client connected, total clients: 1
+00:33:18 [INFO] SSE client connected, total clients: 2
+00:33:34 [INFO] Shutting down service...
+00:33:34 [INFO] Opened database at /home/josh/.clai/conversations.db
