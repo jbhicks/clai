@@ -582,9 +582,21 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 	}
 
 	// Try plain JSON format as fallback
-	re := regexp.MustCompile(`\{[^{}]*"function"[^{}]*\}`)
+	// Use a pattern that can match nested JSON objects (up to 2 levels deep)
+	// This handles: {"id":"...","type":"function","function":{"name":"...","arguments":"..."}}
+	re := regexp.MustCompile(`\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*"function"(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}`)
 	jsonMatches := re.FindAllString(content, -1)
 	logger.Debug("[AGENT-PARSE-TOOL] Found %d JSON tool call matches", len(jsonMatches))
+
+	// Also try to parse the entire content if it looks like a single tool call
+	if len(jsonMatches) == 0 && strings.Contains(content, `"type"`) && strings.Contains(content, `"function"`) {
+		// Content might be a complete tool call JSON - try parsing it directly
+		var directToolCall tools.ToolCall
+		if err := json.Unmarshal([]byte(content), &directToolCall); err == nil && directToolCall.Type == "function" && directToolCall.Function.Name != "" {
+			toolCalls = append(toolCalls, directToolCall)
+			logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed direct tool call JSON: %s", directToolCall.Function.Name)
+		}
+	}
 
 	for _, match := range jsonMatches {
 		logger.Debug("[AGENT-PARSE-TOOL] Trying to parse JSON: %s", match)

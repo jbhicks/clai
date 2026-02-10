@@ -42,6 +42,8 @@ CLAI is a modern, local-first AI interface and agent framework for terminal powe
 - [Testing Quick Reference](./testing/TESTING_QUICK_REF.txt)
 
 ### [Development](./development/)
+- **[MCP Code Bridge Design](./development/MCP_CODE_BRIDGE_DESIGN.md)** - Anthropic's MCP Code Mode for Hermes 3 native format (NEW)
+- **[Adding Tools Guide](./development/ADDING_TOOLS_GUIDE.md)** - How to add new tools to MCP Code Bridge (NEW)
 - [Agent Implementation](./development/AGENT_IMPLEMENTATION.md)
 - [Code Parser Fix Results](./development/CODE_PARSER_FIX_RESULTS.md)
 - [Dev Commands](./development/DEV_COMMANDS.md)

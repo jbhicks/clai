@@ -1,0 +1,1 @@
+{"Variables":{"__import_tools":"clai-tools","result":{"output":"Executed execute_bash with args: map[_arg_0:echo 'Hello from MCP Code Bridge']"}},"Files":{},"Imports":["servers.clai_tools"],"TurnCount":1,"SessionID":"session_1770576432122291634","WorkspaceDir":"./workspace"}

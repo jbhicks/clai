@@ -1,0 +1,368 @@
+#!/bin/bash
+# tail-api-logs - Tail logs from CLAI API server SSE endpoint
+# Usage: tail-api-logs [port] [options]
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+DIM='\033[2m'
+NC='\033[0m' # No Color
+BOLD='\033[1m'
+
+# Configuration
+API_HOST="${CLAI_API_HOST:-localhost}"
+API_PORT="${CLAI_API_PORT:-8080}"
+BASE_URL="http://${API_HOST}:${API_PORT}"
+
+# Parse arguments
+PORT="${1:-8082}"
+FILTER=""
+FOLLOW=true
+RECONNECT=true
+RECONNECT_DELAY=2
+MAX_RECONNECT=10
+reconnect_count=0
+show_sse_events=false
+show_raw=false
+
+# Help message
+show_help() {
+    cat << EOF
+Usage: $(basename "$0") [PORT] [OPTIONS]
+
+Tail logs from CLAI model servers via API SSE endpoint.
+
+Arguments:
+  PORT              Server port to tail logs from (default: 8082)
+
+Options:
+  -h, --help        Show this help message
+  -f, --follow      Follow log stream (default: true)
+  -n, --no-follow   Don't follow, exit after current buffer
+  --no-reconnect    Don't auto-reconnect if connection drops
+  --show-events     Show SSE event lines (hidden by default)
+  --raw             Show raw SSE output without parsing
+  --filter REGEX    Filter logs by regex pattern
+  --host HOST       API host (default: localhost, env: CLAI_API_HOST)
+  --api-port PORT   API port (default: 8080, env: CLAI_API_PORT)
+  --since TIME      Show logs since TIME (e.g., "5m", "1h", "2024-01-01T00:00:00")
+
+Examples:
+  $(basename "$0")                    # Tail logs from server on port 8082
+  $(basename "$0") 8083             # Tail logs from server on port 8083
+  $(basename "$0") 8082 --filter "error\|ERROR"   # Show only errors
+  $(basename "$0") 8082 --since 5m              # Last 5 minutes only
+  $(basename "$0") 8082 --no-reconnect            # Single connection, no retry
+
+Environment Variables:
+  CLAI_API_HOST     API server hostname (default: localhost)
+  CLAI_API_PORT     API server port (default: 8080)
+EOF
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -f|--follow)
+                FOLLOW=true
+                shift
+                ;;
+            -n|--no-follow)
+                FOLLOW=false
+                shift
+                ;;
+            --no-reconnect)
+                RECONNECT=false
+                shift
+                ;;
+            --show-events)
+                show_sse_events=true
+                shift
+                ;;
+            --raw)
+                show_raw=true
+                shift
+                ;;
+            --filter)
+                FILTER="$2"
+                shift 2
+                ;;
+            --host)
+                API_HOST="$2"
+                BASE_URL="http://${API_HOST}:${API_PORT}"
+                shift 2
+                ;;
+            --api-port)
+                API_PORT="$2"
+                BASE_URL="http://${API_HOST}:${API_PORT}"
+                shift 2
+                ;;
+            --since)
+                SINCE="$2"
+                shift 2
+                ;;
+            -*|--*)
+                echo -e "${RED}Unknown option: $1${NC}"
+                show_help
+                exit 1
+                ;;
+            *)
+                PORT="$1"
+                shift
+                ;;
+        esac
+    done
+}
+
+# Check if required tools are available
+check_dependencies() {
+    if ! command -v curl &> /dev/null; then
+        echo -e "${RED}Error: curl is required but not installed${NC}"
+        exit 1
+    fi
+}
+
+# Get server info
+get_server_info() {
+    local info_url="${BASE_URL}/api/servers/status?port=${PORT}"
+    local info
+    
+    info=$(curl -sS "${info_url}" 2>/dev/null || echo "")
+    
+    if [[ -n "$info" ]]; then
+        echo -e "${BLUE}Server Info:${NC}"
+        echo "$info" | grep -o '"model_name":"[^"]*"' | cut -d'"' -f4 | xargs -I {} echo -e "  ${CYAN}Model:${NC} {}"
+        echo "$info" | grep -o '"status":"[^"]*"' | cut -d'"' -f4 | xargs -I {} echo -e "  ${CYAN}Status:${NC} {}"
+        echo ""
+    fi
+}
+
+# Build the logs URL
+build_logs_url() {
+    local url="${BASE_URL}/api/servers/logs?port=${PORT}"
+    
+    if [[ -n "$SINCE" ]]; then
+        url="${url}&since=${SINCE}"
+    fi
+    
+    echo "$url"
+}
+
+# Format log line with colors
+format_log_line() {
+    local line="$1"
+    local timestamp=""
+    local level=""
+    local message=""
+    
+    # Try to extract timestamp (various formats)
+    if [[ "$line" =~ ^\[?([0-9]{4}-[0-9]{2}-[0-9]{2}[T\ ][0-9]{2}:[0-9]{2}:[0-9]{2})\]? ]]; then
+        timestamp="${BASH_REMATCH[1]}"
+        line="${line:${#BASH_REMATCH[0]}}"
+        line="${line# }"  # Remove leading space
+    elif [[ "$line" =~ ^([0-9]{2}:[0-9]{2}:[0-9]{2}) ]]; then
+        timestamp="${BASH_REMATCH[1]}"
+        line="${line:${#BASH_REMATCH[0]}}"
+        line="${line# }"
+    fi
+    
+    # Try to extract log level
+    if [[ "$line" =~ ^\[?(ERROR|FATAL|CRITICAL)\]? ]]; then
+        level="${BASH_REMATCH[1]}"
+        line="${line:${#BASH_REMATCH[0]}}"
+        line="${line# }"
+    elif [[ "$line" =~ ^\[?(WARN|WARNING)\]? ]]; then
+        level="${BASH_REMATCH[1]}"
+        line="${line:${#BASH_REMATCH[0]}}"
+        line="${line# }"
+    elif [[ "$line" =~ ^\[?(INFO|LOG)\]? ]]; then
+        level="${BASH_REMATCH[1]}"
+        line="${line:${#BASH_REMATCH[0]}}"
+        line="${line# }"
+    elif [[ "$line" =~ ^\[?(DEBUG|TRACE)\]? ]]; then
+        level="${BASH_REMATCH[1]}"
+        line="${line:${#BASH_REMATCH[0]}}"
+        line="${line# }"
+    fi
+    
+    # Color the level
+    local level_color=""
+    case "$level" in
+        ERROR|FATAL|CRITICAL)
+            level_color="${RED}${BOLD}"
+            ;;
+        WARN|WARNING)
+            level_color="${YELLOW}"
+            ;;
+        INFO|LOG)
+            level_color="${GREEN}"
+            ;;
+        DEBUG|TRACE)
+            level_color="${DIM}"
+            ;;
+    esac
+    
+    # Print formatted line
+    if [[ -n "$timestamp" ]]; then
+        echo -ne "${DIM}${timestamp}${NC} "
+    fi
+    
+    if [[ -n "$level" ]]; then
+        echo -ne "${level_color}[${level}]${NC} "
+    fi
+    
+    # Highlight important patterns
+    line=$(echo "$line" | sed \
+        -e "s/\(error\|Error\|ERROR\)/${RED}\1${NC}/gi" \
+        -e "s/\(warning\|Warning\|WARN\)/${YELLOW}\1${NC}/gi" \
+        -e "s/\(success\|Success\|SUCCESS\)/${GREEN}\1${NC}/gi" \
+        -e "s/\(loading\|Loading\|LOADING\)/${CYAN}\1${NC}/gi" \
+        -e "s/\(port\|Port\|PORT\)[: ]*\([0-9]\+\)/${MAGENTA}\1:${NC}\2/gi" \
+        -e "s/\(model\|Model\|MODEL\)/${BLUE}\1${NC}/gi")
+    
+    echo -e "$line"
+}
+
+# Parse SSE line
+parse_sse_line() {
+    local line="$1"
+    
+    # Check if it's a data line
+    if [[ "$line" =~ ^data:\ (.*)$ ]]; then
+        local data="${BASH_REMATCH[1]}"
+        
+        # Handle special SSE data
+        if [[ "$data" == "" ]]; then
+            # Empty data is heartbeat
+            return
+        elif [[ "$data" == "[connected]" ]]; then
+            echo -e "${GREEN}✓ Connected to log stream${NC}"
+            return
+        elif [[ "$data" == "[disconnected]" ]]; then
+            echo -e "${YELLOW}! Server disconnected${NC}"
+            return
+        fi
+        
+        # Apply filter if set
+        if [[ -n "$FILTER" ]]; then
+            if ! echo "$data" | grep -qE "$FILTER"; then
+                return
+            fi
+        fi
+        
+        # Format and output
+        format_log_line "$data"
+        
+    elif [[ "$line" =~ ^event:\ (.*)$ ]]; then
+        if [[ "$show_sse_events" == true ]]; then
+            echo -e "${DIM}[EVENT: ${BASH_REMATCH[1]}]${NC}"
+        fi
+        
+    elif [[ "$line" =~ ^id:\ (.*)$ ]]; then
+        # ID line, usually ignore
+        : # no-op
+        
+    else
+        # Unknown line format
+        if [[ "$show_raw" == true ]]; then
+            echo "$line"
+        fi
+    fi
+}
+
+# Main tail function
+tail_logs() {
+    local url
+    url=$(build_logs_url)
+    
+    echo -e "${BLUE}Tailing logs from:${NC} ${CYAN}${url}${NC}"
+    echo -e "${DIM}Press Ctrl+C to stop${NC}"
+    echo ""
+    
+    # Show server info first
+    get_server_info
+    
+    while true; do
+        reconnect_count=$((reconnect_count + 1))
+        
+        if [[ $reconnect_count -gt 1 ]]; then
+            echo -e "${YELLOW}! Reconnecting (attempt $reconnect_count/$MAX_RECONNECT)...${NC}"
+            sleep "$RECONNECT_DELAY"
+        fi
+        
+        # Connect and stream
+        if ! curl -NsS --connect-timeout 5 \
+            -H "Accept: text/event-stream" \
+            -H "Cache-Control: no-cache" \
+            "$url" 2>&1 | while IFS= read -r line; do
+                
+                # Check if we got an HTTP error
+                if [[ "$line" =~ ^curl:\ .* ]]; then
+                    echo -e "${RED}Connection error: $line${NC}" >&2
+                    exit 1
+                fi
+                
+                # Parse SSE line
+                if [[ "$show_raw" == true ]]; then
+                    echo "$line"
+                else
+                    parse_sse_line "$line"
+                fi
+            done; then
+            
+            # curl exited with error
+            if [[ "$RECONNECT" == false ]]; then
+                echo -e "${RED}Connection lost and --no-reconnect specified${NC}"
+                exit 1
+            fi
+            
+            if [[ $reconnect_count -ge $MAX_RECONNECT ]]; then
+                echo -e "${RED}Max reconnection attempts ($MAX_RECONNECT) reached${NC}"
+                exit 1
+            fi
+            
+            continue
+        fi
+        
+        # curl exited cleanly (server closed connection)
+        if [[ "$FOLLOW" == false ]]; then
+            break
+        fi
+        
+        if [[ "$RECONNECT" == false ]]; then
+            echo -e "${YELLOW}! Connection closed by server${NC}"
+            break
+        fi
+        
+        # Will loop and reconnect
+    done
+}
+
+# Handle Ctrl+C
+cleanup() {
+    echo ""
+    echo -e "${GREEN}✓ Stopped tailing logs${NC}"
+    exit 0
+}
+
+trap cleanup INT TERM
+
+# Main execution
+main() {
+    parse_args "$@"
+    check_dependencies
+    tail_logs
+}
+
+main "$@"

@@ -602,7 +602,7 @@ func ModelRow(i int, model *ModelServer, data ModelTableData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" sse-swap=\"log_update\" hx-on=\"htmx:sseMessage: const el = document.getElementById(this.id); el.scrollTop = el.scrollHeight;\" style=\"background: #020617; color: #e2e8f0; padding: 12px; border-radius: 4px; font-size: 11px; font-family: monospace; overflow-x: auto; max-height: 400px; overflow-y: auto; margin: 0;\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\" sse-swap=\"log_update\" hx-on=\"htmx:sseMessage: const el = document.getElementById(this.id); el.scrollTop = el.scrollHeight;\" style=\"background: #020617; color: #e2e8f0; padding: 12px; border-radius: 4px; font-size: 11px; font-family: monospace; overflow-x: auto; max-height: 400px; overflow-y: auto; margin: 0; white-space: pre-wrap; word-wrap: break-word;\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -649,7 +649,7 @@ func ActionButtons(modelID string, model *ModelServer, data ModelTableData) temp
 		}
 		ctx = templ.ClearChildren(ctx)
 		if model.Status == "running" || model.Status == "loading" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<form style=\"display: inline;\" hx-post=\"/api/servers/stop\"><input type=\"hidden\" name=\"model_path\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<form style=\"display: inline;\" hx-post=\"/api/servers/stop\" hx-target=\"#servers_list\" hx-swap=\"innerHTML\"><input type=\"hidden\" name=\"model_path\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -680,9 +680,9 @@ func ActionButtons(modelID string, model *ModelServer, data ModelTableData) temp
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var29 string
-			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("stop-spinner-%s", modelID))
+			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#stop-spinner-%s", modelID))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 308, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 308, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var29))
 			if templ_7745c5c3_Err != nil {
@@ -1066,14 +1066,14 @@ func ActionButtons(modelID string, model *ModelServer, data ModelTableData) temp
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "</select> <select name=\"context_size\" style=\"padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;\" title=\"Context window size - smaller contexts load faster and use less memory\"><option value=\"\">Default (131K)</option> <option value=\"2048\">2K - Minimal</option> <option value=\"4096\">4K - Small</option> <option value=\"8192\">8K - Standard</option> <option value=\"16384\">16K - Medium</option> <option value=\"32768\">32K - Large</option> <option value=\"65536\">65K - Very Large</option> <option value=\"131072\">131K - Huge</option></select> <select name=\"ngl\" style=\"padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;\" title=\"GPU layers - fewer layers = less VRAM usage\"><option value=\"999\">Auto (All Layers)</option> <option value=\"0\">CPU Only (0 Layers)</option> <option value=\"10\">10 Layers</option> <option value=\"20\">20 Layers</option> <option value=\"30\">30 Layers</option> <option value=\"40\">40 Layers</option> <option value=\"50\">50 Layers ⭐</option> <option value=\"60\">60 Layers</option> <option value=\"70\">70 Layers</option> <option value=\"80\">80 Layers</option></select> <button type=\"submit\" style=\"padding: 6px 12px; background: #2563eb; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px;\" hx-indicator=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "</select> <select name=\"context_size\" style=\"padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;\" title=\"Context window size - smaller contexts load faster and use less memory\"><option value=\"\">Default (131K)</option> <option value=\"2048\">2K - Minimal</option> <option value=\"4096\">4K - Small</option> <option value=\"8192\">8K - Standard</option> <option value=\"16384\">16K - Medium</option> <option value=\"32768\">32K - Large</option> <option value=\"65536\">65K - Very Large</option> <option value=\"131072\">131K - Huge</option> <option value=\"262144\">262K - Qwen3 Native</option></select> <select name=\"ngl\" style=\"padding: 6px 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; border-radius: 4px; font-size: 12px; cursor: pointer;\" title=\"GPU layers - fewer layers = less VRAM usage\"><option value=\"999\">Auto (All Layers)</option> <option value=\"0\">CPU Only (0 Layers)</option> <option value=\"10\">10 Layers</option> <option value=\"20\">20 Layers</option> <option value=\"30\">30 Layers</option> <option value=\"40\">40 Layers</option> <option value=\"50\">50 Layers ⭐</option> <option value=\"60\">60 Layers</option> <option value=\"70\">70 Layers</option> <option value=\"80\">80 Layers</option></select> <button type=\"submit\" style=\"padding: 6px 12px; background: #2563eb; border: none; border-radius: 4px; color: white; cursor: pointer; font-size: 13px;\" hx-indicator=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var49 string
 					templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#start-spinner-%s", modelID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 497, Col: 63}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 498, Col: 63}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 					if templ_7745c5c3_Err != nil {
@@ -1086,7 +1086,7 @@ func ActionButtons(modelID string, model *ModelServer, data ModelTableData) temp
 					var templ_7745c5c3_Var50 string
 					templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("start-spinner-%s", modelID))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 499, Col: 58}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 500, Col: 58}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 					if templ_7745c5c3_Err != nil {
@@ -1099,7 +1099,7 @@ func ActionButtons(modelID string, model *ModelServer, data ModelTableData) temp
 					var templ_7745c5c3_Var51 string
 					templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(buttonText)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 500, Col: 25}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 501, Col: 25}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 					if templ_7745c5c3_Err != nil {
@@ -1130,7 +1130,7 @@ func ActionButtons(modelID string, model *ModelServer, data ModelTableData) temp
 				var templ_7745c5c3_Var52 string
 				templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(deleteConfirmMsg)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 518, Col: 95}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 519, Col: 95}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 				if templ_7745c5c3_Err != nil {
@@ -1143,7 +1143,7 @@ func ActionButtons(modelID string, model *ModelServer, data ModelTableData) temp
 				var templ_7745c5c3_Var53 string
 				templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(model.ModelPath)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 519, Col: 66}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 520, Col: 66}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 				if templ_7745c5c3_Err != nil {
@@ -1156,7 +1156,7 @@ func ActionButtons(modelID string, model *ModelServer, data ModelTableData) temp
 				var templ_7745c5c3_Var54 string
 				templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("#delete-spinner-%s", modelID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 523, Col: 62}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 524, Col: 62}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var54))
 				if templ_7745c5c3_Err != nil {
@@ -1169,7 +1169,7 @@ func ActionButtons(modelID string, model *ModelServer, data ModelTableData) temp
 				var templ_7745c5c3_Var55 string
 				templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("delete-spinner-%s", modelID))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 525, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/benchmark/templates/models_table.templ`, Line: 526, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 				if templ_7745c5c3_Err != nil {
@@ -1180,8 +1180,13 @@ func ActionButtons(modelID string, model *ModelServer, data ModelTableData) temp
 					return templ_7745c5c3_Err
 				}
 			}
+		} else if model.Status == "starting" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<div style=\"display: flex; align-items: center; gap: 8px;\"><span class=\"spinner\" style=\"width: 14px; height: 14px; border-width: 2px;\"></span> <span style=\"color: #f59e0b; font-size: 13px;\">Starting...</span></div><p style=\"color: #64748b; font-size: 11px; margin-top: 4px;\">Model is loading into memory</p>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 83, "<span style=\"color: #64748b;\">Please wait...</span>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "<span style=\"color: #64748b;\">Please wait...</span>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

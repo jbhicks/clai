@@ -30,8 +30,8 @@
                 "Implement context truncation: If log grows too large, logic is ready to reference sub-documents."
             ],
             "priority": 2,
-            "passes": false,
-            "notes": "Patterns.md should be treated as the 'System Prompt Addendum' for all future iterations."
+            "passes": true,
+            "notes": "Patterns.md is now the 'System Prompt Addendum' for all future iterations. Implementation: internal/ralph/memory_writer.go with channel-based single-writer queue, timestamp formatting, git hash inclusion, and context truncation logic."
         },
         {
             "id": "CORE-003",

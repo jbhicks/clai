@@ -406,6 +406,9 @@ func checkExistingBenchmarks() bool {
 // checkAPIHealth verifies the LLM API server is responsive
 func checkAPIHealth() bool {
 	host := forcedLLMHost
+	if envHost := os.Getenv("OLLAMA_HOST"); envHost != "" {
+		host = envHost
+	}
 
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(host + "/health")

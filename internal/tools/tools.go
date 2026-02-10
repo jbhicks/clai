@@ -3,7 +3,20 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
+
+// IsHermesStyleModel checks if the model name indicates support for Hermes-style tool calling
+// This includes Qwen3, Hermes, and other models trained for native function calling
+func IsHermesStyleModel(modelName string) bool {
+	modelLower := strings.ToLower(modelName)
+	return strings.Contains(modelLower, "qwen3") ||
+		strings.Contains(modelLower, "hermes") ||
+		strings.Contains(modelLower, "llama-3.1") ||
+		strings.Contains(modelLower, "llama-3.2") ||
+		strings.Contains(modelLower, "llama3.1") ||
+		strings.Contains(modelLower, "llama3.2")
+}
 
 // Tools package now only contains code execution functionality.
 // All function calling / tool definitions have been removed in favor of agent mode.
@@ -37,6 +50,39 @@ type ToolCallFunc struct {
 // GetAvailableTools returns the list of tools available for function calling
 func GetAvailableTools() []Tool {
 	return []Tool{
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name: "execute_code",
+				Description: `Execute code in various programming languages to perform any task. This is a general-purpose tool - write code to read/write files, execute shell commands (via subprocess), make HTTP requests, process data, use available libraries, and compose multiple operations together.
+
+The code runs in a sandboxed environment with access to:
+- The filesystem (current working directory and subdirectories)
+- Python standard library and common packages
+- Ability to compose multiple operations in a single execution
+
+Always print or return results so they appear in output. For complex tasks, write complete scripts with proper error handling.`,
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"language": map[string]interface{}{
+							"type":        "string",
+							"enum":        []string{"python", "bash", "javascript"},
+							"description": "Programming language to execute (python, bash, or javascript)",
+						},
+						"code": map[string]interface{}{
+							"type":        "string",
+							"description": "The code to execute. For Python: write complete, runnable code. For Bash: write shell commands. For JavaScript: write Node.js code.",
+						},
+						"purpose": map[string]interface{}{
+							"type":        "string",
+							"description": "Brief description of what this code does (for logging/debugging)",
+						},
+					},
+					"required": []string{"language", "code"},
+				},
+			},
+		},
 		{
 			Type: "function",
 			Function: ToolFunction{
@@ -91,9 +137,69 @@ func GetAvailableTools() []Tool {
 	}
 }
 
+// GetCodeActTools returns a minimal set of tools optimized for CodeAct-style operation
+// This uses a single general-purpose execute_code tool instead of specific language tools
+func GetCodeActTools() []Tool {
+	return []Tool{
+		{
+			Type: "function",
+			Function: ToolFunction{
+				Name: "execute_code",
+				Description: `Execute code to perform any task. Write Python, Bash, or JavaScript code to accomplish your goal.
+
+This is a general-purpose tool - use it to:
+- Read/write files and manipulate the filesystem
+- Execute shell commands via subprocess
+- Make HTTP requests and process data
+- Use available libraries and packages
+- Compose multiple operations together in one execution
+- Write loops, conditionals, and complex logic
+
+The code runs with access to the current working directory and standard libraries.
+
+Always print results so they appear in the output. For Python, use print(). For Bash, output goes to stdout. For JavaScript, use console.log().`,
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"language": map[string]interface{}{
+							"type":        "string",
+							"enum":        []string{"python", "bash", "javascript"},
+							"description": "Programming language: python, bash, or javascript",
+						},
+						"code": map[string]interface{}{
+							"type":        "string",
+							"description": "Complete, runnable code to execute",
+						},
+						"purpose": map[string]interface{}{
+							"type":        "string",
+							"description": "What this code accomplishes (brief description)",
+						},
+					},
+					"required": []string{"language", "code"},
+				},
+			},
+		},
+	}
+}
+
 // ExecuteTool executes a tool call and returns the result
 func ExecuteTool(toolCall ToolCall) (string, error) {
 	switch toolCall.Function.Name {
+	case "execute_code":
+		var args map[string]interface{}
+		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("failed to parse tool arguments as JSON: %w", err)
+		}
+		language, ok := args["language"].(string)
+		if !ok {
+			return "", fmt.Errorf("language parameter is required and must be a string")
+		}
+		code, ok := args["code"].(string)
+		if !ok {
+			return "", fmt.Errorf("code parameter is required and must be a string")
+		}
+		return ExecuteCode(language, code)
+
 	case "execute_bash":
 		var args map[string]interface{}
 		if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {

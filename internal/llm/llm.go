@@ -13,7 +13,12 @@ import (
 )
 
 const (
+	// defaultSystemPrompt is the standard prompt for XML-based code execution (agent mode)
 	defaultSystemPrompt = `You are a free agent AI with full code execution capabilities. You can execute bash, python, and javascript code directly on the system.
+
+**Current working directory:** /home/josh/clai
+- Relative paths (like "internal/llm/sample.txt") are relative to this directory
+- When given a relative path, use it as-is or prepend the working directory
 
 **Critical rules:**
 1. When you need to read files, execute commands, or perform system operations, use code execution by wrapping code in XML tags:
@@ -33,13 +38,41 @@ const (
 7. When using execute_python, always wrap arithmetic expressions in print(...), e.g. print(15 * 23 + 47), to ensure output is returned.
 
 **Default behavior when uncertain:**
-- If asked about project status, plans, or "what's next", read TODO.md, README.md, or AGENTS.md
+- If asked about project status, plans or "what's next", read TODO.md, README.md, or AGENTS.md
 - If asked about code structure or how something works, read the relevant source files
 - If asked about configuration or setup, read config files (.yaml, .json, .toml, Makefile, package.json, etc.)
 - When you don't know something about the project, explore the filesystem first (ls, find, grep, cat) rather than guessing
 - Be proactive: if a question implies file knowledge, read those files before answering
 
 Answer questions clearly and execute code when needed to provide accurate information.`
+
+	// codeActSystemPrompt is used for Hermes-style models that support native tool calling
+	codeActSystemPrompt = `You are a free agent AI with full code execution capabilities.
+
+**Current working directory:** /home/josh/clai
+- Relative paths are relative to this directory
+- You have full filesystem access
+
+**How to use tools:**
+You have access to an execute_code tool that can run Python, Bash, or JavaScript code. Use this tool to accomplish tasks by writing code that:
+- Reads and writes files
+- Executes shell commands
+- Processes and transforms data
+- Composes multiple operations together
+
+**Guidelines:**
+1. Use the execute_code tool with the appropriate language for your task
+2. Write complete, runnable code that accomplishes the goal
+3. Always print results so they appear in the output
+4. For complex tasks, write scripts with proper error handling
+5. You can import and use standard libraries
+6. After tool execution, provide the final answer as plain text
+
+**Default behavior:**
+- If asked about project status, read TODO.md, README.md, or AGENTS.md
+- If asked about code, read the relevant source files
+- If asked about configuration, read config files
+- Be proactive: explore the filesystem rather than guessing`
 )
 
 type APIFormat int
@@ -189,6 +222,15 @@ type ToolFunction = tools.ToolFunction
 type ToolCall = tools.ToolCall
 type ToolCallFunc = tools.ToolCallFunc
 
+// ToolCallDelta represents a partial tool call chunk in OpenAI streaming
+// It includes an Index field to identify which tool call this chunk belongs to
+type ToolCallDelta struct {
+	Index    int          `json:"index"`
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function ToolCallFunc `json:"function"`
+}
+
 type Request struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
@@ -201,9 +243,9 @@ type Response struct {
 }
 
 type OpenAIDelta struct {
-	Content   string     `json:"content,omitempty"`
-	Role      string     `json:"role,omitempty"`
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	Content   string          `json:"content,omitempty"`
+	Role      string          `json:"role,omitempty"`
+	ToolCalls []ToolCallDelta `json:"tool_calls,omitempty"`
 }
 
 type OpenAIChoice struct {
@@ -385,22 +427,36 @@ func (c *Client) SendMessageStreamNoTools(messages []Message, streamChan chan<- 
 	return Response{}, nil
 }
 
-func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, streamChan chan<- string, includeSystemPrompt bool) (Response, error) {
+func (c *Client) SendMessageStreamWithTools(messages []Message, availableTools []Tool, streamChan chan<- string, includeSystemPrompt bool) (Response, error) {
 	var allMessages []Message
 
-	// Prepare system prompt with tools for Hermes-style (Qwen) or include tools in request for OpenAI-style
+	// Check if model supports Hermes-style tool calling (CodeAct)
+	useCodeAct := tools.IsHermesStyleModel(c.model)
+
+	// Prepare system prompt and tools based on model capabilities
 	systemPrompt := c.systemPrompt
+	toolsToUse := availableTools
 	if includeSystemPrompt && c.systemPrompt != "" {
-		if len(tools) > 0 && c.apiFormat == FormatOllama {
-			toolsJSON, err := json.Marshal(tools)
+		if useCodeAct {
+			// Use CodeAct system prompt for Hermes-style models
+			systemPrompt = codeActSystemPrompt
+			// Use only the execute_code tool for CodeAct
+			toolsToUse = tools.GetCodeActTools()
+			logger.Debug("[LLM-TOOLS] Using CodeAct mode for model %s", c.model)
+		} else if len(toolsToUse) > 0 && c.apiFormat == FormatOllama {
+			// For Ollama format without Hermes support, inject tools into system prompt
+			toolsJSON, err := json.Marshal(toolsToUse)
 			if err != nil {
 				return Response{}, fmt.Errorf("failed to marshal tools: %w", err)
 			}
 			systemPrompt = c.systemPrompt + "\n\nAvailable tools:\n" + string(toolsJSON)
 		}
-		if len(tools) > 0 && strings.Contains(strings.ToLower(c.model), "qwen") {
+
+		// Legacy Qwen handling (for older Qwen models not using CodeAct)
+		if !useCodeAct && len(toolsToUse) > 0 && strings.Contains(strings.ToLower(c.model), "qwen") {
 			systemPrompt = systemPrompt + "\n\nWhen tools are available, do NOT use <code> blocks. If you need to run a tool, respond with a single JSON object only (no extra text): {\"action\":\"bash\",\"command\":\"...\"} or {\"action\":\"python\",\"code\":\"...\"}. After tool execution, respond with the final answer as plain text."
 		}
+
 		allMessages = append([]Message{{Role: "system", Content: systemPrompt}}, messages...)
 		logger.Debug("[LLM-TOOLS] Final system prompt for model %s: %s", c.model, systemPrompt)
 	} else {
@@ -413,7 +469,7 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 		reqBody = OpenAIRequestWithTools{
 			Model:    c.model,
 			Messages: allMessages,
-			Tools:    tools,
+			Tools:    toolsToUse,
 			Stream:   true,
 		}
 	} else {
@@ -463,6 +519,11 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 			var toolCallChunks int
 			var linesRead int
 
+			// Accumulate partial tool calls by index
+			// In OpenAI streaming, tool calls arrive as partial chunks with an index
+			accumulatingToolCalls := make(map[int]*tools.ToolCall)
+			accumulatingArgs := make(map[int]string)
+
 			for scanner.Scan() {
 				line := scanner.Text()
 				linesRead++
@@ -474,6 +535,15 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 				data := strings.TrimPrefix(line, "data: ")
 
 				if data == "[DONE]" {
+					// Emit any remaining accumulated tool calls before finishing
+					for idx, tc := range accumulatingToolCalls {
+						if args, ok := accumulatingArgs[idx]; ok {
+							tc.Function.Arguments = args
+						}
+						toolCallJSON, _ := json.Marshal(tc)
+						streamChan <- string(toolCallJSON)
+						toolCallChunks++
+					}
 					logger.Info("[LLM-OPENAI-STREAM] Stream complete (lines=%d content_chunks=%d tool_call_chunks=%d)", linesRead, contentChunks, toolCallChunks)
 					return
 				}
@@ -492,11 +562,52 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, tools []Tool, st
 						contentChunks++
 					}
 
+					// Accumulate tool call chunks - they come incrementally with an index
 					if len(delta.ToolCalls) > 0 {
-						for _, toolCall := range delta.ToolCalls {
-							toolCallJSON, _ := json.Marshal(toolCall)
-							streamChan <- string(toolCallJSON)
-							toolCallChunks++
+						for _, tcChunk := range delta.ToolCalls {
+							idx := tcChunk.Index
+
+							// Initialize the accumulating tool call if needed
+							if _, exists := accumulatingToolCalls[idx]; !exists {
+								accumulatingToolCalls[idx] = &tools.ToolCall{
+									Type: "function",
+								}
+							}
+
+							// Accumulate ID (only present in first chunk)
+							if tcChunk.ID != "" {
+								accumulatingToolCalls[idx].ID = tcChunk.ID
+							}
+
+							// Accumulate function name (only present in first chunk)
+							if tcChunk.Function.Name != "" {
+								accumulatingToolCalls[idx].Function.Name = tcChunk.Function.Name
+							}
+
+							// Accumulate arguments (comes in multiple chunks)
+							if tcChunk.Function.Arguments != "" {
+								accumulatingArgs[idx] += tcChunk.Function.Arguments
+							}
+
+							// Check if this chunk signals completion (finish_reason == "tool_calls" or arguments look complete)
+							// OpenAI sends finish_reason on the last delta
+							finishReason := chunk.Choices[0].FinishReason
+							if finishReason == "tool_calls" || finishReason == "stop" {
+								// Emit all accumulated tool calls
+								for idx, tc := range accumulatingToolCalls {
+									if args, ok := accumulatingArgs[idx]; ok {
+										tc.Function.Arguments = args
+									}
+									if tc.ID != "" && tc.Function.Name != "" {
+										toolCallJSON, _ := json.Marshal(tc)
+										streamChan <- string(toolCallJSON)
+										toolCallChunks++
+									}
+								}
+								// Clear accumulated state
+								accumulatingToolCalls = make(map[int]*tools.ToolCall)
+								accumulatingArgs = make(map[int]string)
+							}
 						}
 					}
 				}

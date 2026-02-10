@@ -297,13 +297,28 @@ func (dl *DockerLauncher) ImageExistsLocally(imageTag string) bool {
 		return false
 	}
 
+	// Try with FullImage first (may include docker.io/ prefix)
 	cmd := exec.Command("docker", "images", "-q", imageInfo.FullImage)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return false
 	}
+	if strings.TrimSpace(string(output)) != "" {
+		return true
+	}
 
-	return strings.TrimSpace(string(output)) != ""
+	// Fallback: try without docker.io/ prefix
+	imageRef := strings.TrimPrefix(imageInfo.FullImage, "docker.io/")
+	if imageRef != imageInfo.FullImage {
+		cmd = exec.Command("docker", "images", "-q", imageRef)
+		output, err = cmd.CombinedOutput()
+		if err != nil {
+			return false
+		}
+		return strings.TrimSpace(string(output)) != ""
+	}
+
+	return false
 }
 
 // UpdateImage pulls the latest version of an image

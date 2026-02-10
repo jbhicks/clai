@@ -44,8 +44,9 @@ func (r *Runner) RunBenchmark(ctx context.Context, modelName, modelURL string) (
 	results := make([]db.BenchmarkResult, 0, len(llm.ModelBenchmarkSuite))
 	passed := 0
 	totalIterations := 0
+	totalTests := len(llm.ModelBenchmarkSuite)
 
-	for _, test := range llm.ModelBenchmarkSuite {
+	for i, test := range llm.ModelBenchmarkSuite {
 		// Check if context is cancelled
 		select {
 		case <-ctx.Done():
@@ -53,8 +54,8 @@ func (r *Runner) RunBenchmark(ctx context.Context, modelName, modelURL string) (
 		default:
 		}
 
-		// Execute single test
-		result := r.runSingleTest(test)
+		// Execute single test (i+1 for 1-based test numbering)
+		result := r.runSingleTest(test, i+1, totalTests)
 
 		// Convert to db.BenchmarkResult
 		dbResult := db.BenchmarkResult{
@@ -104,29 +105,30 @@ func (r *Runner) RunBenchmark(ctx context.Context, modelName, modelURL string) (
 	// Clean up test-created files
 	cleanupTestFiles()
 
+	// Print final summary
+	viz := NewBenchmarkVisualizer(0, 0) // Dummy visualizer just for summary
+	viz.PrintSummary(passed, run.TotalTests, time.Since(startTime))
+
 	return runID, nil
 }
 
 // runSingleTest executes a single benchmark test (based on runSingleBenchmark from model_benchmark_test.go)
-func (r *Runner) runSingleTest(test llm.ModelBenchmarkTest) llm.ModelBenchmarkResult {
+func (r *Runner) runSingleTest(test llm.ModelBenchmarkTest, testNumber, totalTests int) llm.ModelBenchmarkResult {
 	result := llm.ModelBenchmarkResult{
 		TestName:     test.Name,
 		CodeExecuted: []string{},
 	}
 
-	// Print test info
-	fmt.Printf("\n🧪 Running: %s\n", test.Name)
-	fmt.Printf("   Query: %s\n", test.Query)
-	fmt.Printf("   Streaming response...\n")
+	// Create visualizer for clean output
+	viz := NewBenchmarkVisualizer(testNumber, totalTests)
+	viz.PrintTestHeader(test.Name, test.Query)
 
 	agent := llm.NewAgent(r.llmClient)
 
-	// Note: System prompt is already configured in the LLM client
-	// Do not override it here
-
 	// Collect the full response for evaluation
 	var fullResponse strings.Builder
-	var inToolCall bool
+	var currentToolCall *llm.ToolCall
+	var currentCodeBlock *llm.CodeBlock
 
 	// Run the test with streaming
 	start := time.Now()
@@ -140,25 +142,30 @@ func (r *Runner) runSingleTest(test llm.ModelBenchmarkTest) llm.ModelBenchmarkRe
 	go func() {
 		response, err := agent.RunWithStreaming(test.Query, func(chunk string, toolCall *llm.ToolCall, codeBlock *llm.CodeBlock) {
 			if toolCall != nil {
-				// Print tool call info and suppress text chunks until tool completes
-				fmt.Printf("\n[Tool Call: %s]\n", toolCall.Function.Name)
-				fmt.Printf("[Tool Args: %s]\n", toolCall.Function.Arguments)
-				inToolCall = true
+				// Display formatted tool call
+				currentToolCall = toolCall
+				viz.PrintToolCall(toolCall)
 				result.CodeExecuted = append(result.CodeExecuted, fmt.Sprintf("tool:%s %s", toolCall.Function.Name, toolCall.Function.Arguments))
 				logger.Debug("[BENCH-STREAM] tool_call name=%s args=%s", toolCall.Function.Name, truncateForLog(toolCall.Function.Arguments, 200))
 			} else if codeBlock != nil {
-				// Print code execution info
-				fmt.Printf("\n[Executing %s code]\n", codeBlock.Language)
+				// Display code execution
+				currentCodeBlock = codeBlock
+				viz.PrintCodeExecution(codeBlock.Language, codeBlock.Code)
+				result.CodeExecuted = append(result.CodeExecuted, fmt.Sprintf("code:%s", codeBlock.Language))
 				logger.Debug("[BENCH-STREAM] code_block language=%s", codeBlock.Language)
-			} else if chunk != "" && !inToolCall {
-				// Only print text chunks when not in a tool call
-				fmt.Print(chunk)
+			} else if chunk != "" {
+				// Filter and display text chunks
+				viz.PrintResponseChunk(chunk)
 				fullResponse.WriteString(chunk)
 				logger.Debug("[BENCH-STREAM] chunk len=%d content=%q", len(chunk), truncateForLog(chunk, 200))
-			} else if chunk != "" {
-				// Still collect all chunks for evaluation, even during tool calls
-				fullResponse.WriteString(chunk)
-				logger.Debug("[BENCH-STREAM] chunk(in tool) len=%d content=%q", len(chunk), truncateForLog(chunk, 200))
+			}
+
+			// Clear current tool/code after we get response chunks
+			if chunk != "" && currentToolCall != nil {
+				currentToolCall = nil
+			}
+			if chunk != "" && currentCodeBlock != nil {
+				currentCodeBlock = nil
 			}
 		})
 		resultChan <- streamResult{response: response, err: err}
@@ -251,6 +258,10 @@ func (r *Runner) runSingleTest(test llm.ModelBenchmarkTest) llm.ModelBenchmarkRe
 
 	// Test passed!
 	result.Passed = true
+
+	// Print final result using visualizer
+	viz.PrintTestResult(result)
+
 	return result
 }
 

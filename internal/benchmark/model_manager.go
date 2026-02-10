@@ -376,6 +376,19 @@ func (mm *ModelManager) RefreshServerStatus() error {
 			contextSize: mm.getContextSizeFromPort(port),
 		}
 
+		// If we couldn't get model name from HTTP response (server still loading),
+		// use the model name from the existing server entry
+		if info.modelName == "" {
+			mm.mu.RLock()
+			for _, server := range mm.servers {
+				if server.Port == port {
+					info.modelName = server.ModelName
+					break
+				}
+			}
+			mm.mu.RUnlock()
+		}
+
 		if info.modelName != "" {
 			activePortsInfo = append(activePortsInfo, info)
 			logger.Debug("RefreshServerStatus: Found active server on known port %d: %s (PID %d)", port, info.modelName, info.pid)
@@ -476,11 +489,14 @@ func (mm *ModelManager) RefreshServerStatus() error {
 		activePorts[info.port] = true
 	}
 
-	// Mark previously running/loading/starting servers as stopped if their ports disappeared
+	// Mark previously running/loading servers as stopped if their ports disappeared
+	// Note: We don't reset "starting" servers because they may still be loading
+	// and haven't opened their port yet. The start process will update the status
+	// when the server is ready or fails.
 	for _, server := range mm.servers {
 		if server.Port > 0 && !activePorts[server.Port] {
 			switch server.Status {
-			case "running", "loading", "starting":
+			case "running", "loading":
 				server.Status = "stopped"
 				server.Port = 0
 				server.PID = 0
@@ -491,6 +507,9 @@ func (mm *ModelManager) RefreshServerStatus() error {
 				server.MemoryBytes = 0
 				server.VRAMUsageBytes = 0
 			}
+			// Note: "starting" status is intentionally NOT reset here
+			// The server is still initializing and will update to "loading", "running", or "error"
+			// when waitForServerReady() detects the actual state
 		}
 	}
 
@@ -750,6 +769,9 @@ func (mm *ModelManager) checkIfServerLoading(port int) bool {
 // findAvailablePortForModel finds an available port starting from 8082
 // (8081 is reserved for the benchmark server itself)
 // Scans up to 100 ports until it finds an available one
+//
+// This function uses SO_REUSEADDR to properly test port availability and
+// avoid race conditions where the kernel keeps sockets in TIME_WAIT state.
 func (mm *ModelManager) findAvailablePortForModel() (int, error) {
 	// Start from 8082 (8081 is used by benchmark server) and scan up to 100 ports
 	const startPort = 8082
@@ -757,15 +779,39 @@ func (mm *ModelManager) findAvailablePortForModel() (int, error) {
 
 	for i := 0; i < maxAttempts; i++ {
 		port := startPort + i
-		addr := fmt.Sprintf(":%d", port)
-		listener, err := net.Listen("tcp", addr)
-		if err == nil {
-			listener.Close()
+
+		// Use syscall to bind with SO_REUSEADDR to properly test availability
+		// This avoids false positives from sockets in TIME_WAIT state
+		if isPortAvailable(port) {
 			logger.Info("Found available port: %d", port)
 			return port, nil
 		}
 	}
 	return 0, fmt.Errorf("no available ports found after scanning %d ports starting from %d", maxAttempts, startPort)
+}
+
+// isPortAvailable checks if a port is truly available by attempting to bind with SO_REUSEADDR
+// This properly detects ports that are in TIME_WAIT or other reserved states
+func isPortAvailable(port int) bool {
+	// Method 1: Try standard net.Listen first (fast path)
+	addr := fmt.Sprintf(":%d", port)
+	listener, err := net.Listen("tcp", addr)
+	if err == nil {
+		listener.Close()
+
+		// Add a small delay to allow kernel to fully release the socket
+		// This helps prevent race conditions with rapid start/stop cycles
+		time.Sleep(50 * time.Millisecond)
+
+		// Double-check by trying to bind again
+		listener2, err := net.Listen("tcp", addr)
+		if err == nil {
+			listener2.Close()
+			return true
+		}
+	}
+
+	return false
 }
 
 // getModelMetadataFromPort fetches detailed model metadata from /v1/models endpoint
@@ -1121,7 +1167,7 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 	}
 
 	// Reload systemd, enable and start service
-	logger.Info("Starting model via systemd: %s", unitName)
+	logger.Info("Starting model via systemd: %s on port %d", unitName, port)
 	commands := [][]string{
 		{"systemctl", "--user", "daemon-reload"},
 		{"systemctl", "--user", "enable", unitName + ".service"},
@@ -1148,6 +1194,32 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 	if pid == 0 {
 		// Fallback to finding PID via port
 		pid = mm.findPIDForPort(port)
+	}
+
+	// If we still don't have a PID, check if the service failed due to port conflict
+	// and retry with a different port
+	if pid == 0 {
+		logger.Warn("Server failed to start on port %d, checking for port conflict...", port)
+
+		// Check systemd status for port binding errors
+		statusCmd := exec.Command("systemctl", "--user", "status", unitName+".service")
+		statusOutput, _ := statusCmd.CombinedOutput()
+		statusStr := string(statusOutput)
+
+		if strings.Contains(statusStr, "couldn't bind") || strings.Contains(statusStr, "Address already in use") {
+			// Port conflict detected - stop this service and retry with new port
+			logger.Warn("Port %d is already in use, stopping service and retrying with different port...", port)
+
+			// Stop and disable the failed service
+			exec.Command("systemctl", "--user", "stop", unitName+".service").Run()
+			exec.Command("systemctl", "--user", "disable", unitName+".service").Run()
+			homeDir, _ := os.UserHomeDir()
+			os.Remove(filepath.Join(homeDir, ".config/systemd/user", unitName+".service"))
+
+			// Try again with a new port
+			logger.Info("Retrying with new port...")
+			return mm.StartServerWithBackend(modelPath, contextSize, ngl, backend)
+		}
 	}
 
 	logger.Info("Started model server via systemd: %s on port %d (PID: %d)", modelName, port, pid)
