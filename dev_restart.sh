@@ -2,6 +2,11 @@
 # CLAI Development Watch Script - Simple and Reliable
 # Does NOT use templ --watch to avoid temp file issues
 
+# Source .env file if it exists
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | xargs)
+fi
+
 echo "=================================================="
 echo "CLAI Development Mode"
 echo "=================================================="
