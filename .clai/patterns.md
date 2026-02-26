@@ -57,3 +57,65 @@ func (mw *MemoryWriter) writerLoop(ctx context.Context) {
 ```
 
 **Context:** CORE-002 Multi-file Markdown Persistent Memory implementation.
+
+---
+
+## [2026-02-25 23:35:00] | Story: CORE-003
+
+**Pattern:** Controller Integration in Bubble Tea TUI
+
+**Problem:** The RalphLoopController existed in internal/ralph/loop.go but was never connected to the UI model, so the features were inaccessible to users.
+
+**Solution:** Integrated the controller directly into the UI Model struct and wired up keyboard handlers. The controller manages its own state (StageIdle, StageThinking, etc.) and the UI model delegates to it.
+
+**When to Use:** When implementing background orchestrators or state machines that need to be controlled from the UI (Bubble Tea, TUI frameworks).
+
+**Implementation:**
+```go
+// In UI Model struct
+type Model struct {
+    // ... other fields ...
+    ralphController *ralph.RalphLoopController
+}
+
+// Initialize in Init()
+func (m *Model) Init() tea.Cmd {
+    m.ralphController = ralph.NewRalphLoopController(".")
+    // ... other initializations ...
+}
+
+// Keyboard handler
+case "r":
+    if m.ralphController.IsIdle() {
+        err := m.ralphController.Start()
+        // Handle error...
+    }
+case "escape", "s":
+    if !m.ralphController.IsIdle() {
+        m.ralphController.Stop()
+    }
+
+// Use controller's styling functions in renderBriefingRoom()
+func (m *Model) renderBriefingRoom() string {
+    for _, story := range m.prd.UserStories {
+        var style lipgloss.Style
+        if m.ralphController.GetActiveStory().ID == story.ID {
+            style = ralph.GetActiveStoryStyle()
+        } else if story.Passes {
+            style = ralph.GetPassedStoryStyle()
+        } else {
+            style = ralph.GetPendingStoryStyle()
+        }
+        // Render styled line...
+    }
+}
+```
+
+**Key Points:**
+- Controller owns its state and lifecycle
+- UI model delegates to controller for behavior
+- Use controller's helper methods (GetActiveStory(), IsIdle(), etc.)
+- Style functions from controller should be used for consistent theming
+- Add keyboard handlers for Start/Stop/Continue operations
+
+**Context:** CORE-003 The Ralph Main Loop & State Machine integration.

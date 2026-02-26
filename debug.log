@@ -1189,3 +1189,8 @@ srv  log_server_r: done request: GET /slots 10.0.0.1 503
 23:06:54 [INFO] Restored 2 downloads from database
 23:06:54 [INFO] Web UI available at http://localhost:8080
 23:06:54 [INFO] Service ready on http://localhost:8080
+23:35:17 [INFO] Shutting down service...
+23:35:17 [INFO] Opened database at /home/josh/.clai/conversations.db
+23:35:18 [INFO] Restored 2 downloads from database
+23:35:18 [INFO] Web UI available at http://localhost:8080
+23:35:18 [INFO] Service ready on http://localhost:8080
