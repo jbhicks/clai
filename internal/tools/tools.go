@@ -18,6 +18,12 @@ func IsHermesStyleModel(modelName string) bool {
 		strings.Contains(modelLower, "llama3.2")
 }
 
+// IsStepFlashModel checks if the model is Step-3.5-Flash which uses <tool_call> format
+func IsStepFlashModel(modelName string) bool {
+	modelLower := strings.ToLower(modelName)
+	return strings.Contains(modelLower, "step") && strings.Contains(modelLower, "flash")
+}
+
 // Tools package now only contains code execution functionality.
 // All function calling / tool definitions have been removed in favor of agent mode.
 
@@ -53,30 +59,23 @@ func GetAvailableTools() []Tool {
 		{
 			Type: "function",
 			Function: ToolFunction{
-				Name: "execute_code",
-				Description: `Execute code in various programming languages to perform any task. This is a general-purpose tool - write code to read/write files, execute shell commands (via subprocess), make HTTP requests, process data, use available libraries, and compose multiple operations together.
-
-The code runs in a sandboxed environment with access to:
-- The filesystem (current working directory and subdirectories)
-- Python standard library and common packages
-- Ability to compose multiple operations in a single execution
-
-Always print or return results so they appear in output. For complex tasks, write complete scripts with proper error handling.`,
+				Name:        "execute_code",
+				Description: `Execute Python, Bash, or JavaScript code to accomplish any task. Use it to read/write files, run shell commands, process data, and compose multiple operations.`,
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"language": map[string]interface{}{
 							"type":        "string",
 							"enum":        []string{"python", "bash", "javascript"},
-							"description": "Programming language to execute (python, bash, or javascript)",
+							"description": "Language: python, bash, or javascript",
 						},
 						"code": map[string]interface{}{
 							"type":        "string",
-							"description": "The code to execute. For Python: write complete, runnable code. For Bash: write shell commands. For JavaScript: write Node.js code.",
+							"description": "Code to execute",
 						},
 						"purpose": map[string]interface{}{
 							"type":        "string",
-							"description": "Brief description of what this code does (for logging/debugging)",
+							"description": "What this code does",
 						},
 					},
 					"required": []string{"language", "code"},
@@ -87,13 +86,13 @@ Always print or return results so they appear in output. For complex tasks, writ
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "execute_bash",
-				Description: "Execute bash/shell commands. Use this for system operations, file manipulation, and general command-line tasks.",
+				Description: "Execute shell commands for system operations and file manipulation.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"command": map[string]interface{}{
 							"type":        "string",
-							"description": "The bash command to execute",
+							"description": "Shell command to execute",
 						},
 					},
 					"required": []string{"command"},
@@ -104,13 +103,13 @@ Always print or return results so they appear in output. For complex tasks, writ
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "execute_python",
-				Description: "Execute Python code. Use this for Python scripting, data processing, and computations.",
+				Description: "Execute Python code for scripting, data processing, and computations.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"code": map[string]interface{}{
 							"type":        "string",
-							"description": "The Python code to execute",
+							"description": "Python code to execute",
 						},
 					},
 					"required": []string{"code"},
@@ -121,13 +120,13 @@ Always print or return results so they appear in output. For complex tasks, writ
 			Type: "function",
 			Function: ToolFunction{
 				Name:        "execute_javascript",
-				Description: "Execute JavaScript/Node.js code. Use this for JavaScript operations and Node.js scripting.",
+				Description: "Execute JavaScript/Node.js code for scripting and operations.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"code": map[string]interface{}{
 							"type":        "string",
-							"description": "The JavaScript code to execute",
+							"description": "JavaScript code to execute",
 						},
 					},
 					"required": []string{"code"},

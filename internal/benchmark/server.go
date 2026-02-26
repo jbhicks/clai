@@ -639,7 +639,7 @@ func (s *Server) handleGetModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Scan common llama.cpp ports
-	for port := 8081; port <= 8090; port++ {
+	for port := 8081; port <= 8089; port++ {
 		serverURLs = append(serverURLs, fmt.Sprintf("http://localhost:%d", port))
 	}
 
@@ -683,7 +683,7 @@ func (s *Server) handleGetModelOptions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Scan common llama.cpp ports
-	for port := 8081; port <= 8090; port++ {
+	for port := 8081; port <= 8089; port++ {
 		serverURLs = append(serverURLs, fmt.Sprintf("http://localhost:%d", port))
 	}
 
@@ -1306,10 +1306,12 @@ func extractQuantization(filename string) string {
 	parts := strings.Split(name, ".")
 	if len(parts) > 1 {
 		lastPart := parts[len(parts)-1]
+		lastPartLower := strings.ToLower(lastPart)
 		// Only use this if the last part is PURELY quantization (no other text)
 		// Valid quantization starts with Q, IQ, or f and has no dashes
-		if (strings.HasPrefix(lastPart, "Q") || strings.HasPrefix(lastPart, "IQ") || strings.HasPrefix(lastPart, "f")) && !strings.Contains(lastPart, "-") {
-			return lastPart
+		// Also handle lowercase variants like q4_k_m
+		if (strings.HasPrefix(lastPartLower, "q") || strings.HasPrefix(lastPartLower, "iq") || strings.HasPrefix(lastPartLower, "f")) && !strings.Contains(lastPart, "-") {
+			return strings.ToUpper(lastPart)
 		}
 	}
 
@@ -1319,10 +1321,10 @@ func extractQuantization(filename string) string {
 		lastPart := parts[len(parts)-1]
 		lastPartLower := strings.ToLower(lastPart)
 		// Check if it looks like a quantization
-		// Common patterns: Q4_K_M, IQ3_M, f16, f32, mxfp4, mxfp8, etc.
-		if strings.HasPrefix(lastPart, "Q") ||
-			strings.HasPrefix(lastPart, "IQ") ||
-			strings.HasPrefix(lastPart, "f") ||
+		// Common patterns: Q4_K_M, IQ3_M, f16, f32, mxfp4, mxfp8, q4_k_s, etc.
+		if strings.HasPrefix(lastPartLower, "q") ||
+			strings.HasPrefix(lastPartLower, "iq") ||
+			strings.HasPrefix(lastPartLower, "f") ||
 			strings.HasPrefix(lastPartLower, "mxfp") ||
 			strings.HasPrefix(lastPartLower, "int") ||
 			strings.HasPrefix(lastPartLower, "fp") {

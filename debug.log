@@ -1,14 +1,14 @@
-18:56:35 [INFO] Opened database at /home/josh/.clai/conversations.db
-18:56:38 [INFO] [LLM-REQ-WITH-TOOLS-STREAM] Request body: {
-  "model": "Qwen3-Coder-Next-Base.Q8_0",
+15:06:55 [INFO] Opened database at /home/josh/.clai/conversations.db
+15:07:07 [INFO] [LLM-REQ-WITH-TOOLS-STREAM] Request body: {
+  "model": "Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf",
   "messages": [
     {
       "role": "system",
-      "content": "You are a free agent AI with full code execution capabilities.\n\n**Current working directory:** /home/josh/clai\n- Relative paths are relative to this directory\n- You have full filesystem access\n\n**How to use tools:**\nYou have access to an execute_code tool that can run Python, Bash, or JavaScript code. Use this tool to accomplish tasks by writing code that:\n- Reads and writes files\n- Executes shell commands\n- Processes and transforms data\n- Composes multiple operations together\n\n**Guidelines:**\n1. Use the execute_code tool with the appropriate language for your task\n2. Write complete, runnable code that accomplishes the goal\n3. Always print results so they appear in the output\n4. For complex tasks, write scripts with proper error handling\n5. You can import and use standard libraries\n6. After tool execution, provide the final answer as plain text\n\n**Default behavior:**\n- If asked about project status, read TODO.md, README.md, or AGENTS.md\n- If asked about code, read the relevant source files\n- If asked about configuration, read config files\n- Be proactive: explore the filesystem rather than guessing"
+      "content": "You are a free agent AI with full code execution capabilities. You can execute bash, python, and javascript code directly on the system.\n\n**Current working directory:** /home/josh/clai\n- Relative paths are relative to this directory\n\n**Tool calling:**\nUse the provided tools to accomplish tasks. The model will automatically use the correct tool calling format.\n\n**Default behavior when uncertain:**\n- If asked about project status, plans or \"what's next\", read TODO.md, README.md, or AGENTS.md\n- If asked about code structure or how something works, read the relevant source files\n- If asked about configuration or setup, read config files (.yaml, .json, .toml, Makefile, package.json, etc.)\n\nAnswer questions clearly and execute code when needed."
     },
     {
       "role": "user",
-      "content": "Read test_data.json and tell me how many users have the role 'engineer'"
+      "content": "Convert the word 'benchmarking' to uppercase"
     }
   ],
   "tools": [
@@ -48,27 +48,27 @@
   ],
   "stream": true
 }
-18:56:41 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI SSE response reading (with tools)
-18:56:57 [INFO] [LLM-OPENAI-STREAM] Stream complete (lines=213 content_chunks=0 tool_call_chunks=1)
-18:56:57 [INFO] [LLM-REQ-WITH-TOOLS-STREAM] Request body: {
-  "model": "Qwen3-Coder-Next-Base.Q8_0",
+15:07:08 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI SSE response reading (with tools)
+15:07:12 [INFO] [LLM-OPENAI-STREAM] Stream complete (lines=169 content_chunks=17 tool_call_chunks=1)
+15:07:12 [INFO] [LLM-REQ-WITH-TOOLS-STREAM] Request body: {
+  "model": "Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf",
   "messages": [
     {
       "role": "system",
-      "content": "You are a free agent AI with full code execution capabilities.\n\n**Current working directory:** /home/josh/clai\n- Relative paths are relative to this directory\n- You have full filesystem access\n\n**How to use tools:**\nYou have access to an execute_code tool that can run Python, Bash, or JavaScript code. Use this tool to accomplish tasks by writing code that:\n- Reads and writes files\n- Executes shell commands\n- Processes and transforms data\n- Composes multiple operations together\n\n**Guidelines:**\n1. Use the execute_code tool with the appropriate language for your task\n2. Write complete, runnable code that accomplishes the goal\n3. Always print results so they appear in the output\n4. For complex tasks, write scripts with proper error handling\n5. You can import and use standard libraries\n6. After tool execution, provide the final answer as plain text\n\n**Default behavior:**\n- If asked about project status, read TODO.md, README.md, or AGENTS.md\n- If asked about code, read the relevant source files\n- If asked about configuration, read config files\n- Be proactive: explore the filesystem rather than guessing"
+      "content": "You are a free agent AI with full code execution capabilities. You can execute bash, python, and javascript code directly on the system.\n\n**Current working directory:** /home/josh/clai\n- Relative paths are relative to this directory\n\n**Tool calling:**\nUse the provided tools to accomplish tasks. The model will automatically use the correct tool calling format.\n\n**Default behavior when uncertain:**\n- If asked about project status, plans or \"what's next\", read TODO.md, README.md, or AGENTS.md\n- If asked about code structure or how something works, read the relevant source files\n- If asked about configuration or setup, read config files (.yaml, .json, .toml, Makefile, package.json, etc.)\n\nAnswer questions clearly and execute code when needed."
     },
     {
       "role": "user",
-      "content": "Read test_data.json and tell me how many users have the role 'engineer'"
+      "content": "Convert the word 'benchmarking' to uppercase"
     },
     {
       "role": "assistant",
-      "content": "{\"id\":\"jslH9SAukEn9HtjYPIqVvEWxEBy5TvLr\",\"type\":\"function\",\"function\":{\"name\":\"execute_code\",\"arguments\":\"{\\\"code\\\":\\\"import json\\\\n\\\\n# Read the test_data.json file\\\\nwith open('test_data.json', 'r') as file:\\\\n    data = json.load(file)\\\\n\\\\n# Count users with the role 'engineer'\\\\nengineer_count = sum(1 for user in data if user.get('role') == 'engineer')\\\\n\\\\nprint(f\\\\\\\"Number of users with the role 'engineer': {engineer_count}\\\\\\\")\\\",\\\"language\\\":\\\"python\\\",\\\"purpose\\\":\\\"Count users with role 'engineer' in test_data.json\\\"}\"}}"
+      "content": "I'll convert 'benchmarking' to uppercase for you.\u003ctool_call\u003e\n\u003cfunction=execute_code{\"id\":\"hQDDRuMvxCTu9VjeRt5IbiIBhdqcB0Qo\",\"type\":\"function\",\"function\":{\"name\":\"execute_code\",\"arguments\":\"{\\\"code\\\":\\\"word = 'benchmarking'\\\\nprint(word.upper())\\\",\\\"language\\\":\\\"python\\\",\\\"purpose\\\":\\\"Convert word to uppercase\\\"}\"}}"
     },
     {
       "role": "tool",
-      "content": "Tool execution error: exit status 1",
-      "tool_call_id": "jslH9SAukEn9HtjYPIqVvEWxEBy5TvLr"
+      "content": "BENCHMARKING\n",
+      "tool_call_id": "hQDDRuMvxCTu9VjeRt5IbiIBhdqcB0Qo"
     }
   ],
   "tools": [
@@ -108,251 +108,1084 @@
   ],
   "stream": true
 }
-18:57:03 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI SSE response reading (with tools)
-18:57:23 [ERROR] Failed to run benchmarks: failed to save benchmark run: failed to save benchmark run: database is locked (5) (SQLITE_BUSY)
-18:59:55 [INFO] SSE client connected, total clients: 3
-19:03:38 [INFO] SSE client disconnected, remaining clients: 2
-19:03:38 [INFO] SSE client connected, total clients: 3
-19:03:41 [INFO] SSE client disconnected, remaining clients: 2
-19:05:35 [INFO] Shutting down service...
-19:08:59 [INFO] Opened database at /home/josh/.clai/conversations.db
-19:09:03 [ERROR] Failed to initialize database: failed to create schema: database is locked (5) (SQLITE_BUSY)
-19:09:05 [INFO] Restored 18 downloads from database
-19:09:05 [INFO] Web UI available at http://localhost:8080
-19:09:05 [INFO] Service ready on http://localhost:8080
-19:09:05 [INFO] SSE client connected, total clients: 1
-19:10:41 [INFO] SSE client connected, total clients: 2
-19:10:43 [INFO] SSE client disconnected, remaining clients: 1
-19:10:43 [INFO] SSE client connected, total clients: 2
-19:10:49 [INFO] SSE client disconnected, remaining clients: 1
-19:10:49 [INFO] SSE client connected, total clients: 2
-19:12:53 [INFO] SSE client disconnected, remaining clients: 1
-19:12:53 [INFO] SSE client connected, total clients: 2
-19:16:28 [INFO] SSE client disconnected, remaining clients: 1
-19:16:28 [INFO] SSE client connected, total clients: 2
-19:16:30 [INFO] SSE client disconnected, remaining clients: 1
-19:16:30 [INFO] SSE client connected, total clients: 2
-19:23:51 [INFO] SSE client disconnected, remaining clients: 1
-19:23:51 [INFO] SSE client connected, total clients: 2
-19:23:53 [INFO] SSE client disconnected, remaining clients: 1
-19:23:53 [INFO] SSE client connected, total clients: 2
-19:27:37 [INFO] Shutting down service...
-19:27:39 [INFO] Opened database at /home/josh/.clai/conversations.db
-19:27:40 [INFO] Opened database at /home/josh/.clai/conversations.db
-19:27:40 [INFO] Restored 18 downloads from database
-19:27:40 [INFO] Web UI available at http://localhost:8080
-19:27:40 [INFO] Service ready on http://localhost:8080
-19:27:41 [INFO] SSE client connected, total clients: 1
-19:27:41 [INFO] Restored 18 downloads from database
-19:27:41 [WARN] Service appears to be already running (lock file exists)
-19:27:41 [WARN] If it's not running, remove /tmp/clai-service.lock
-19:27:41 [INFO] Web UI available at http://localhost:8081
-19:27:41 [INFO] Service ready on http://localhost:8081
-19:27:42 [INFO] SSE client connected, total clients: 2
-19:27:44 [INFO] SSE client disconnected, remaining clients: 1
-19:27:44 [INFO] SSE client connected, total clients: 2
-19:27:47 [INFO] SSE client disconnected, remaining clients: 1
-19:27:47 [INFO] SSE client connected, total clients: 2
-19:27:48 [INFO] SSE client disconnected, remaining clients: 1
-19:27:48 [INFO] SSE client connected, total clients: 2
-19:27:54 [INFO] SSE client disconnected, remaining clients: 1
-19:27:54 [INFO] SSE client connected, total clients: 2
-19:28:15 [INFO] SSE client connected, total clients: 3
-19:28:44 [INFO] Shutting down service...
-19:28:44 [INFO] Shutting down service...
-06:58:19 [INFO] CLAI TUI startup beginning
-06:58:19 [INFO] Service not running, starting it...
-06:58:25 [INFO] Opened database at /home/josh/.clai/conversations.db
-06:58:25 [INFO] Restored 18 downloads from database
-06:58:25 [INFO] Web UI available at http://localhost:8080
-06:58:25 [INFO] Service ready on http://localhost:8080
-06:58:37 [INFO] SSE client connected, total clients: 1
-06:58:57 [INFO] HandleStartServer: request from 127.0.0.1:44336 ua="Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0" referer="http://localhost:8080/models" model_path=/mnt/media/models/Devstral-2-123B-Instruct-2512-UD-Q4_K_XL-00001-of-00002.gguf
-06:58:57 [INFO] DEBUG: Received context_size parameter: ''
-06:58:57 [INFO] DEBUG: No context_size parameter provided, using default
-06:58:57 [INFO] DEBUG: Received ngl parameter: '999'
-06:58:57 [INFO] Using custom ngl: 999 for /mnt/media/models/Devstral-2-123B-Instruct-2512-UD-Q4_K_XL-00001-of-00002.gguf
-06:58:57 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/Devstral-2-123B-Instruct-2512-UD-Q4_K_XL-00001-of-00002.gguf
-06:58:57 [INFO] Found available port: 8082
-06:58:57 [INFO] Started model server via Docker: Devstral-2-123B-Instruct-2512-UD-Q4_K_XL-00001-of-00002.gguf on port 8082 (Container: f36b6ed5593c)
-06:58:57 [INFO] Updated CLI config to use model Devstral-2-123B-Instruct-2512-UD-Q4_K_XL-00001-of-00002.gguf
-07:04:40 [INFO] Detected dead process PID 4086943 for /mnt/media/models/Devstral-2-123B-Instruct-2512-UD-Q4_K_XL-00001-of-00002.gguf
-07:04:40 [INFO] Model server failed to start: Devstral-2-123B-Instruct-2512-UD-Q4_K_XL-00001-of-00002.gguf on port 8082 - Failed to start: Get "http://localhost:8082/health": dial tcp 127.0.0.1:8082: connect: connection refused
+15:07:13 [INFO] [LLM-OPENAI-STREAM] Starting OpenAI SSE response reading (with tools)
+15:07:15 [INFO] [LLM-OPENAI-STREAM] Stream complete (lines=81 content_chunks=19 tool_call_chunks=0)
+20:49:36 [INFO] Opened database at /home/josh/.clai/conversations.db
+20:49:37 [INFO] Opened database at /home/josh/.clai/conversations.db
+20:49:37 [INFO] Restored 0 downloads from database
+20:49:37 [INFO] Web UI available at http://localhost:8080
+20:49:37 [INFO] Service ready on http://localhost:8080
+20:49:38 [INFO] Restored 0 downloads from database
+20:49:38 [WARN] Service appears to be already running (lock file exists)
+20:49:38 [WARN] If it's not running, remove /tmp/clai-service.lock
+20:49:38 [INFO] Web UI available at http://localhost:8082
+20:49:38 [INFO] Service ready on http://localhost:8082
+20:49:44 [INFO] Shutting down service...
+20:49:44 [INFO] Shutting down service...
+06:27:11 [INFO] Opened database at /home/josh/.clai/conversations.db
+06:27:13 [INFO] Restored 0 downloads from database
+06:27:13 [INFO] Web UI available at http://localhost:8080
+06:27:13 [INFO] Service ready on http://localhost:8080
+06:27:19 [INFO] SSE client connected, total clients: 1
+06:28:24 [INFO] HandleStartServer: request from 192.168.1.31:51593 ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/glm-4.7-flash-claude-4.5-opus.bf16.gguf
+06:28:24 [INFO] DEBUG: Received context_size parameter: ''
+06:28:24 [INFO] DEBUG: No context_size parameter provided, using default
+06:28:24 [INFO] DEBUG: Received ngl parameter: '999'
+06:28:24 [INFO] Using custom ngl: 999 for /mnt/media/models/glm-4.7-flash-claude-4.5-opus.bf16.gguf
+06:28:24 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/glm-4.7-flash-claude-4.5-opus.bf16.gguf
+06:28:25 [INFO] Found available port: 8082
+06:28:25 [INFO] Pulling latest Docker image rocm7-nightlies...
+06:30:32 [INFO] SSE client disconnected, remaining clients: 0
+06:30:32 [INFO] SSE client connected, total clients: 1
+06:30:47 [INFO] SSE client disconnected, remaining clients: 0
+06:30:47 [INFO] SSE client connected, total clients: 1
+06:31:09 [INFO] SSE client disconnected, remaining clients: 0
+06:31:09 [INFO] SSE client connected, total clients: 1
+06:31:25 [INFO] SSE client connected, total clients: 2
+06:31:26 [INFO] SSE client connected, total clients: 3
+06:31:55 [INFO] HandleStartServer: request from 192.168.1.31:53695 ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+06:33:43 [INFO] SSE client disconnected, remaining clients: 4
+06:32:03 [INFO] SSE client connected, total clients: 4
+06:33:43 [INFO] SSE client disconnected, remaining clients: 2
+06:32:33 [INFO] SSE client connected, total clients: 5
+06:33:17 [INFO] SSE client connected, total clients: 6
+06:33:43 [INFO] SSE client disconnected, remaining clients: 5
+06:33:43 [INFO] DEBUG: Received context_size parameter: '65536'
+06:33:43 [INFO] Using custom context size: 65536 for /mnt/media/models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+06:33:43 [INFO] DEBUG: Received ngl parameter: '999'
+06:33:43 [INFO] Using custom ngl: 999 for /mnt/media/models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+06:33:43 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+06:33:43 [INFO] SSE client disconnected, remaining clients: 3
+06:33:43 [INFO] SSE client disconnected, remaining clients: 1
+06:33:43 [INFO] Found available port: 8082
+06:33:43 [INFO] Pulling latest Docker image rocm7-nightlies...
+06:34:14 [INFO] SSE client connected, total clients: 2
+06:34:19 [INFO] Docker launch command: llama-server -m /models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf --host 0.0.0.0 --port 8080 -c 65536 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8082.log 2>&1
+06:34:19 [INFO] Docker launch command: llama-server -m /models/glm-4.7-flash-claude-4.5-opus.bf16.gguf --host 0.0.0.0 --port 8080 -c 131072 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8082.log 2>&1
+06:34:23 [INFO] Started model server via Docker: MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf on port 8082 (Container: 93f0a173208f)
+06:34:23 [INFO] Updated CLI config to use model MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+06:34:26 [INFO] Error starting server for /mnt/media/models/glm-4.7-flash-claude-4.5-opus.bf16.gguf: failed to start Docker container: failed to start container: exit status 125
+Output: 06f07ca741cf58c116950a19e89a6a3873cde5e73c93204e62b79fac89e7ad27
+docker: Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint clai-model-glm_4_7_flash_claude_4_5_opus_bf16 (39d8de974e2482bd27c5ac7b3387f3626c9a23c3173eb6594cd62893385edfdf): Bind for 0.0.0.0:8082 failed: port is already allocated
+
+Run 'docker run --help' for more information
+06:34:26 [INFO] Error rendering models table: context canceled
+06:35:01 [INFO] SSE client disconnected, remaining clients: 1
+06:35:01 [INFO] SSE client connected, total clients: 2
+06:38:19 [INFO] SSE client disconnected, remaining clients: 1
+06:38:19 [INFO] SSE client connected, total clients: 2
+06:39:28 [INFO] DEBUG: File 'BF16/MiniMax-M2.5-BF16-00001-of-00010.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'BF16/MiniMax-M2.5-BF16-00002-of-00010.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'BF16/MiniMax-M2.5-BF16-00003-of-00010.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'BF16/MiniMax-M2.5-BF16-00004-of-00010.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'BF16/MiniMax-M2.5-BF16-00005-of-00010.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'BF16/MiniMax-M2.5-BF16-00006-of-00010.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'BF16/MiniMax-M2.5-BF16-00007-of-00010.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'BF16/MiniMax-M2.5-BF16-00008-of-00010.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'BF16/MiniMax-M2.5-BF16-00009-of-00010.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'BF16/MiniMax-M2.5-BF16-00010-of-00010.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'IQ4_NL/MiniMax-M2.5-IQ4_NL-00001-of-00004.gguf' -> Quantization 'IQ4_NL'
+06:39:28 [INFO] DEBUG: File 'IQ4_NL/MiniMax-M2.5-IQ4_NL-00002-of-00004.gguf' -> Quantization 'IQ4_NL'
+06:39:28 [INFO] DEBUG: File 'IQ4_NL/MiniMax-M2.5-IQ4_NL-00003-of-00004.gguf' -> Quantization 'IQ4_NL'
+06:39:28 [INFO] DEBUG: File 'IQ4_NL/MiniMax-M2.5-IQ4_NL-00004-of-00004.gguf' -> Quantization 'IQ4_NL'
+06:39:28 [INFO] DEBUG: File 'IQ4_XS/MiniMax-M2.5-IQ4_XS-00001-of-00004.gguf' -> Quantization 'IQ4_XS'
+06:39:28 [INFO] DEBUG: File 'IQ4_XS/MiniMax-M2.5-IQ4_XS-00002-of-00004.gguf' -> Quantization 'IQ4_XS'
+06:39:28 [INFO] DEBUG: File 'IQ4_XS/MiniMax-M2.5-IQ4_XS-00003-of-00004.gguf' -> Quantization 'IQ4_XS'
+06:39:28 [INFO] DEBUG: File 'IQ4_XS/MiniMax-M2.5-IQ4_XS-00004-of-00004.gguf' -> Quantization 'IQ4_XS'
+06:39:28 [INFO] DEBUG: File 'MXFP4_MOE/MiniMax-M2.5-MXFP4_MOE-00001-of-00004.gguf' -> Quantization 'MXFP4_MOE'
+06:39:28 [INFO] DEBUG: File 'MXFP4_MOE/MiniMax-M2.5-MXFP4_MOE-00002-of-00004.gguf' -> Quantization 'MXFP4_MOE'
+06:39:28 [INFO] DEBUG: File 'MXFP4_MOE/MiniMax-M2.5-MXFP4_MOE-00003-of-00004.gguf' -> Quantization 'MXFP4_MOE'
+06:39:28 [INFO] DEBUG: File 'MXFP4_MOE/MiniMax-M2.5-MXFP4_MOE-00004-of-00004.gguf' -> Quantization 'MXFP4_MOE'
+06:39:28 [INFO] DEBUG: File 'MiniMax-M2.5-UD-TQ1_0.gguf' -> Quantization ''
+06:39:28 [INFO] DEBUG: File 'Q2_K/MiniMax-M2.5-Q2_K-00001-of-00003.gguf' -> Quantization 'Q2_K'
+06:39:28 [INFO] DEBUG: File 'Q2_K/MiniMax-M2.5-Q2_K-00002-of-00003.gguf' -> Quantization 'Q2_K'
+06:39:28 [INFO] DEBUG: File 'Q2_K/MiniMax-M2.5-Q2_K-00003-of-00003.gguf' -> Quantization 'Q2_K'
+06:39:28 [INFO] DEBUG: File 'Q2_K_L/MiniMax-M2.5-Q2_K_L-00001-of-00003.gguf' -> Quantization 'Q2_K_L'
+06:39:28 [INFO] DEBUG: File 'Q2_K_L/MiniMax-M2.5-Q2_K_L-00002-of-00003.gguf' -> Quantization 'Q2_K_L'
+06:39:28 [INFO] DEBUG: File 'Q2_K_L/MiniMax-M2.5-Q2_K_L-00003-of-00003.gguf' -> Quantization 'Q2_K_L'
+06:39:28 [INFO] DEBUG: File 'Q3_K_M/MiniMax-M2.5-Q3_K_M-00001-of-00004.gguf' -> Quantization 'Q3_K_M'
+06:39:28 [INFO] DEBUG: File 'Q3_K_M/MiniMax-M2.5-Q3_K_M-00002-of-00004.gguf' -> Quantization 'Q3_K_M'
+06:39:28 [INFO] DEBUG: File 'Q3_K_M/MiniMax-M2.5-Q3_K_M-00003-of-00004.gguf' -> Quantization 'Q3_K_M'
+06:39:28 [INFO] DEBUG: File 'Q3_K_M/MiniMax-M2.5-Q3_K_M-00004-of-00004.gguf' -> Quantization 'Q3_K_M'
+06:39:28 [INFO] DEBUG: File 'Q3_K_S/MiniMax-M2.5-Q3_K_S-00001-of-00003.gguf' -> Quantization 'Q3_K_S'
+06:39:28 [INFO] DEBUG: File 'Q3_K_S/MiniMax-M2.5-Q3_K_S-00002-of-00003.gguf' -> Quantization 'Q3_K_S'
+06:39:28 [INFO] DEBUG: File 'Q3_K_S/MiniMax-M2.5-Q3_K_S-00003-of-00003.gguf' -> Quantization 'Q3_K_S'
+06:39:28 [INFO] DEBUG: File 'Q4_0/MiniMax-M2.5-Q4_0-00001-of-00004.gguf' -> Quantization 'Q4_0'
+06:39:28 [INFO] DEBUG: File 'Q4_0/MiniMax-M2.5-Q4_0-00002-of-00004.gguf' -> Quantization 'Q4_0'
+06:39:28 [INFO] DEBUG: File 'Q4_0/MiniMax-M2.5-Q4_0-00003-of-00004.gguf' -> Quantization 'Q4_0'
+06:39:28 [INFO] DEBUG: File 'Q4_0/MiniMax-M2.5-Q4_0-00004-of-00004.gguf' -> Quantization 'Q4_0'
+06:39:28 [INFO] DEBUG: File 'Q4_1/MiniMax-M2.5-Q4_1-00001-of-00004.gguf' -> Quantization 'Q4_1'
+06:39:28 [INFO] DEBUG: File 'Q4_1/MiniMax-M2.5-Q4_1-00002-of-00004.gguf' -> Quantization 'Q4_1'
+06:39:28 [INFO] DEBUG: File 'Q4_1/MiniMax-M2.5-Q4_1-00003-of-00004.gguf' -> Quantization 'Q4_1'
+06:39:28 [INFO] DEBUG: File 'Q4_1/MiniMax-M2.5-Q4_1-00004-of-00004.gguf' -> Quantization 'Q4_1'
+06:39:28 [INFO] DEBUG: File 'Q4_K_M/MiniMax-M2.5-Q4_K_M-00001-of-00004.gguf' -> Quantization 'Q4_K_M'
+06:39:28 [INFO] DEBUG: File 'Q4_K_M/MiniMax-M2.5-Q4_K_M-00002-of-00004.gguf' -> Quantization 'Q4_K_M'
+06:39:28 [INFO] DEBUG: File 'Q4_K_M/MiniMax-M2.5-Q4_K_M-00003-of-00004.gguf' -> Quantization 'Q4_K_M'
+06:39:28 [INFO] DEBUG: File 'Q4_K_M/MiniMax-M2.5-Q4_K_M-00004-of-00004.gguf' -> Quantization 'Q4_K_M'
+06:39:28 [INFO] DEBUG: File 'Q4_K_S/MiniMax-M2.5-Q4_K_S-00001-of-00004.gguf' -> Quantization 'Q4_K_S'
+06:39:28 [INFO] DEBUG: File 'Q4_K_S/MiniMax-M2.5-Q4_K_S-00002-of-00004.gguf' -> Quantization 'Q4_K_S'
+06:39:28 [INFO] DEBUG: File 'Q4_K_S/MiniMax-M2.5-Q4_K_S-00003-of-00004.gguf' -> Quantization 'Q4_K_S'
+06:39:28 [INFO] DEBUG: File 'Q4_K_S/MiniMax-M2.5-Q4_K_S-00004-of-00004.gguf' -> Quantization 'Q4_K_S'
+06:39:28 [INFO] DEBUG: File 'Q5_K_M/MiniMax-M2.5-Q5_K_M-00001-of-00005.gguf' -> Quantization 'Q5_K_M'
+06:39:28 [INFO] DEBUG: File 'Q5_K_M/MiniMax-M2.5-Q5_K_M-00002-of-00005.gguf' -> Quantization 'Q5_K_M'
+06:39:28 [INFO] DEBUG: File 'Q5_K_M/MiniMax-M2.5-Q5_K_M-00003-of-00005.gguf' -> Quantization 'Q5_K_M'
+06:39:28 [INFO] DEBUG: File 'Q5_K_M/MiniMax-M2.5-Q5_K_M-00004-of-00005.gguf' -> Quantization 'Q5_K_M'
+06:39:28 [INFO] DEBUG: File 'Q5_K_M/MiniMax-M2.5-Q5_K_M-00005-of-00005.gguf' -> Quantization 'Q5_K_M'
+06:39:28 [INFO] DEBUG: File 'Q5_K_S/MiniMax-M2.5-Q5_K_S-00001-of-00005.gguf' -> Quantization 'Q5_K_S'
+06:39:28 [INFO] DEBUG: File 'Q5_K_S/MiniMax-M2.5-Q5_K_S-00002-of-00005.gguf' -> Quantization 'Q5_K_S'
+06:39:28 [INFO] DEBUG: File 'Q5_K_S/MiniMax-M2.5-Q5_K_S-00003-of-00005.gguf' -> Quantization 'Q5_K_S'
+06:39:28 [INFO] DEBUG: File 'Q5_K_S/MiniMax-M2.5-Q5_K_S-00004-of-00005.gguf' -> Quantization 'Q5_K_S'
+06:39:28 [INFO] DEBUG: File 'Q5_K_S/MiniMax-M2.5-Q5_K_S-00005-of-00005.gguf' -> Quantization 'Q5_K_S'
+06:39:28 [INFO] DEBUG: File 'Q6_K/MiniMax-M2.5-Q6_K-00001-of-00005.gguf' -> Quantization 'Q6_K'
+06:39:28 [INFO] DEBUG: File 'Q6_K/MiniMax-M2.5-Q6_K-00002-of-00005.gguf' -> Quantization 'Q6_K'
+06:39:28 [INFO] DEBUG: File 'Q6_K/MiniMax-M2.5-Q6_K-00003-of-00005.gguf' -> Quantization 'Q6_K'
+06:39:28 [INFO] DEBUG: File 'Q6_K/MiniMax-M2.5-Q6_K-00004-of-00005.gguf' -> Quantization 'Q6_K'
+06:39:28 [INFO] DEBUG: File 'Q6_K/MiniMax-M2.5-Q6_K-00005-of-00005.gguf' -> Quantization 'Q6_K'
+06:39:28 [INFO] DEBUG: File 'Q8_0/MiniMax-M2.5-Q8_0-00001-of-00006.gguf' -> Quantization 'Q8_0'
+06:39:28 [INFO] DEBUG: File 'Q8_0/MiniMax-M2.5-Q8_0-00002-of-00006.gguf' -> Quantization 'Q8_0'
+06:39:28 [INFO] DEBUG: File 'Q8_0/MiniMax-M2.5-Q8_0-00003-of-00006.gguf' -> Quantization 'Q8_0'
+06:39:28 [INFO] DEBUG: File 'Q8_0/MiniMax-M2.5-Q8_0-00004-of-00006.gguf' -> Quantization 'Q8_0'
+06:39:28 [INFO] DEBUG: File 'Q8_0/MiniMax-M2.5-Q8_0-00005-of-00006.gguf' -> Quantization 'Q8_0'
+06:39:28 [INFO] DEBUG: File 'Q8_0/MiniMax-M2.5-Q8_0-00006-of-00006.gguf' -> Quantization 'Q8_0'
+06:39:28 [INFO] DEBUG: File 'UD-IQ1_M/MiniMax-M2.5-UD-IQ1_M-00001-of-00003.gguf' -> Quantization 'IQ1_M'
+06:39:28 [INFO] DEBUG: File 'UD-IQ1_M/MiniMax-M2.5-UD-IQ1_M-00002-of-00003.gguf' -> Quantization 'IQ1_M'
+06:39:28 [INFO] DEBUG: File 'UD-IQ1_M/MiniMax-M2.5-UD-IQ1_M-00003-of-00003.gguf' -> Quantization 'IQ1_M'
+06:39:28 [INFO] DEBUG: File 'UD-IQ1_S/MiniMax-M2.5-UD-IQ1_S-00001-of-00003.gguf' -> Quantization 'IQ1_S'
+06:39:28 [INFO] DEBUG: File 'UD-IQ1_S/MiniMax-M2.5-UD-IQ1_S-00002-of-00003.gguf' -> Quantization 'IQ1_S'
+06:39:28 [INFO] DEBUG: File 'UD-IQ1_S/MiniMax-M2.5-UD-IQ1_S-00003-of-00003.gguf' -> Quantization 'IQ1_S'
+06:39:28 [INFO] DEBUG: File 'UD-IQ2_M/MiniMax-M2.5-UD-IQ2_M-00001-of-00003.gguf' -> Quantization 'IQ2_M'
+06:39:28 [INFO] DEBUG: File 'UD-IQ2_M/MiniMax-M2.5-UD-IQ2_M-00002-of-00003.gguf' -> Quantization 'IQ2_M'
+06:39:28 [INFO] DEBUG: File 'UD-IQ2_M/MiniMax-M2.5-UD-IQ2_M-00003-of-00003.gguf' -> Quantization 'IQ2_M'
+06:39:28 [INFO] DEBUG: File 'UD-IQ2_XXS/MiniMax-M2.5-UD-IQ2_XXS-00001-of-00003.gguf' -> Quantization 'IQ2_XXS'
+06:39:28 [INFO] DEBUG: File 'UD-IQ2_XXS/MiniMax-M2.5-UD-IQ2_XXS-00002-of-00003.gguf' -> Quantization 'IQ2_XXS'
+06:39:28 [INFO] DEBUG: File 'UD-IQ2_XXS/MiniMax-M2.5-UD-IQ2_XXS-00003-of-00003.gguf' -> Quantization 'IQ2_XXS'
+06:39:28 [INFO] DEBUG: File 'UD-IQ3_XXS/MiniMax-M2.5-UD-IQ3_XXS-00001-of-00003.gguf' -> Quantization 'IQ3_XXS'
+06:39:28 [INFO] DEBUG: File 'UD-IQ3_XXS/MiniMax-M2.5-UD-IQ3_XXS-00002-of-00003.gguf' -> Quantization 'IQ3_XXS'
+06:39:28 [INFO] DEBUG: File 'UD-IQ3_XXS/MiniMax-M2.5-UD-IQ3_XXS-00003-of-00003.gguf' -> Quantization 'IQ3_XXS'
+06:39:28 [INFO] DEBUG: File 'UD-Q2_K_XL/MiniMax-M2.5-UD-Q2_K_XL-00001-of-00003.gguf' -> Quantization 'Q2_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q2_K_XL/MiniMax-M2.5-UD-Q2_K_XL-00002-of-00003.gguf' -> Quantization 'Q2_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q2_K_XL/MiniMax-M2.5-UD-Q2_K_XL-00003-of-00003.gguf' -> Quantization 'Q2_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q3_K_XL/MiniMax-M2.5-UD-Q3_K_XL-00001-of-00004.gguf' -> Quantization 'Q3_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q3_K_XL/MiniMax-M2.5-UD-Q3_K_XL-00002-of-00004.gguf' -> Quantization 'Q3_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q3_K_XL/MiniMax-M2.5-UD-Q3_K_XL-00003-of-00004.gguf' -> Quantization 'Q3_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q3_K_XL/MiniMax-M2.5-UD-Q3_K_XL-00004-of-00004.gguf' -> Quantization 'Q3_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q4_K_XL/MiniMax-M2.5-UD-Q4_K_XL-00001-of-00004.gguf' -> Quantization 'Q4_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q4_K_XL/MiniMax-M2.5-UD-Q4_K_XL-00002-of-00004.gguf' -> Quantization 'Q4_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q4_K_XL/MiniMax-M2.5-UD-Q4_K_XL-00003-of-00004.gguf' -> Quantization 'Q4_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q4_K_XL/MiniMax-M2.5-UD-Q4_K_XL-00004-of-00004.gguf' -> Quantization 'Q4_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q5_K_XL/MiniMax-M2.5-UD-Q5_K_XL-00001-of-00005.gguf' -> Quantization 'Q5_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q5_K_XL/MiniMax-M2.5-UD-Q5_K_XL-00002-of-00005.gguf' -> Quantization 'Q5_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q5_K_XL/MiniMax-M2.5-UD-Q5_K_XL-00003-of-00005.gguf' -> Quantization 'Q5_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q5_K_XL/MiniMax-M2.5-UD-Q5_K_XL-00004-of-00005.gguf' -> Quantization 'Q5_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q5_K_XL/MiniMax-M2.5-UD-Q5_K_XL-00005-of-00005.gguf' -> Quantization 'Q5_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q6_K_XL/MiniMax-M2.5-UD-Q6_K_XL-00001-of-00005.gguf' -> Quantization 'Q6_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q6_K_XL/MiniMax-M2.5-UD-Q6_K_XL-00002-of-00005.gguf' -> Quantization 'Q6_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q6_K_XL/MiniMax-M2.5-UD-Q6_K_XL-00003-of-00005.gguf' -> Quantization 'Q6_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q6_K_XL/MiniMax-M2.5-UD-Q6_K_XL-00004-of-00005.gguf' -> Quantization 'Q6_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q6_K_XL/MiniMax-M2.5-UD-Q6_K_XL-00005-of-00005.gguf' -> Quantization 'Q6_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q8_K_XL/MiniMax-M2.5-UD-Q8_K_XL-00001-of-00007.gguf' -> Quantization 'Q8_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q8_K_XL/MiniMax-M2.5-UD-Q8_K_XL-00002-of-00007.gguf' -> Quantization 'Q8_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q8_K_XL/MiniMax-M2.5-UD-Q8_K_XL-00003-of-00007.gguf' -> Quantization 'Q8_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q8_K_XL/MiniMax-M2.5-UD-Q8_K_XL-00004-of-00007.gguf' -> Quantization 'Q8_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q8_K_XL/MiniMax-M2.5-UD-Q8_K_XL-00005-of-00007.gguf' -> Quantization 'Q8_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q8_K_XL/MiniMax-M2.5-UD-Q8_K_XL-00006-of-00007.gguf' -> Quantization 'Q8_K_XL'
+06:39:28 [INFO] DEBUG: File 'UD-Q8_K_XL/MiniMax-M2.5-UD-Q8_K_XL-00007-of-00007.gguf' -> Quantization 'Q8_K_XL'
+06:39:43 [INFO] HuggingFace API returned status 401 for model unsloth/5-GGUF
+06:39:55 [INFO] DEBUG: File 'MiniMax-M2.5-MXFP4_MOE-00001-of-00008.gguf' -> Quantization 'MXFP4_MOE'
+06:39:55 [INFO] DEBUG: File 'MiniMax-M2.5-MXFP4_MOE-00002-of-00008.gguf' -> Quantization 'MXFP4_MOE'
+06:39:55 [INFO] DEBUG: File 'MiniMax-M2.5-MXFP4_MOE-00003-of-00008.gguf' -> Quantization 'MXFP4_MOE'
+06:39:55 [INFO] DEBUG: File 'MiniMax-M2.5-MXFP4_MOE-00004-of-00008.gguf' -> Quantization 'MXFP4_MOE'
+06:39:55 [INFO] DEBUG: File 'MiniMax-M2.5-MXFP4_MOE-00005-of-00008.gguf' -> Quantization 'MXFP4_MOE'
+06:39:55 [INFO] DEBUG: File 'MiniMax-M2.5-MXFP4_MOE-00006-of-00008.gguf' -> Quantization 'MXFP4_MOE'
+06:39:55 [INFO] DEBUG: File 'MiniMax-M2.5-MXFP4_MOE-00007-of-00008.gguf' -> Quantization 'MXFP4_MOE'
+06:39:55 [INFO] DEBUG: File 'MiniMax-M2.5-MXFP4_MOE-00008-of-00008.gguf' -> Quantization 'MXFP4_MOE'
+06:40:30 [INFO] DEBUG: File 'Step-3.5-Flash-PRISM-LITE-IQ2_M.gguf' -> Quantization 'IQ2_M'
+06:40:30 [INFO] DEBUG: File 'Step-3.5-Flash-PRISM-LITE-IQ4_NL.gguf' -> Quantization 'IQ4_NL'
+06:40:30 [INFO] DEBUG: File 'Step-3.5-Flash-PRISM-LITE-Q3_K_L.gguf' -> Quantization 'Q3_K_L'
+06:41:07 [INFO] HandleStopServer: Received request to stop server
+06:41:07 [INFO] HandleStopServer: Stopping model at path: /mnt/media/models/glm-4.7-flash-claude-4.5-opus.bf16.gguf
+06:41:07 [INFO] Stopping Docker container: clai-model-glm_4_7_flash_claude_4_5_opus_bf16
+06:41:07 [INFO] Successfully stopped Docker container: clai-model-glm_4_7_flash_claude_4_5_opus_bf16
+06:41:07 [INFO] Preserving log file: /home/josh/.local/share/clai/logs/llama-server-8082.log
+06:41:10 [INFO] SSE client disconnected, remaining clients: 1
+06:41:10 [INFO] SSE client connected, total clients: 2
+06:41:25 [INFO] Model server ready: MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf on port 8082
+06:50:12 [INFO] SSE client disconnected, remaining clients: 1
+07:06:24 [INFO] SSE client connected, total clients: 2
+07:22:25 [INFO] SSE client disconnected, remaining clients: 1
+07:29:54 [INFO] SSE client disconnected, remaining clients: 0
+07:29:54 [INFO] SSE client connected, total clients: 1
+07:33:10 [INFO] SSE client disconnected, remaining clients: 0
+07:33:10 [INFO] SSE client connected, total clients: 1
+07:33:55 [INFO] HandleStartServer: request from 192.168.1.31:51674 ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+07:33:55 [INFO] DEBUG: Received context_size parameter: '32768'
+07:33:55 [INFO] Using custom context size: 32768 for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+07:33:55 [INFO] DEBUG: Received ngl parameter: '999'
+07:33:55 [INFO] Using custom ngl: 999 for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+07:33:55 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+07:33:55 [INFO] Found available port: 8082
+07:33:55 [INFO] Pulling latest Docker image rocm7-nightlies...
+07:35:14 [INFO] SSE client disconnected, remaining clients: 0
+07:35:14 [INFO] SSE client connected, total clients: 1
+07:35:51 [INFO] SSE client disconnected, remaining clients: 0
+07:35:51 [INFO] SSE client connected, total clients: 1
+07:36:23 [INFO] SSE client disconnected, remaining clients: 0
+07:36:23 [INFO] SSE client connected, total clients: 1
+07:36:45 [INFO] Shutting down service...
+07:36:45 [INFO] Error starting server for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf: failed to pull Docker image: failed to pull image docker.io/kyuz0/amd-strix-halo-toolboxes:rocm7-nightlies: exit status 130
+Output: rocm7-nightlies: Pulling from kyuz0/amd-strix-halo-toolboxes
+a6d30434e0ff: Already exists
+1e866ee109f1: Pulling fs layer
+a5f5f3bbf116: Pulling fs layer
+ee7ad40eef72: Pulling fs layer
+ab9aea95df77: Pulling fs layer
+fd652ec6f9f2: Pulling fs layer
+d5d37042348f: Pulling fs layer
+372de8b756e7: Pulling fs layer
+696b190ce232: Pulling fs layer
+ab9aea95df77: Waiting
+fd652ec6f9f2: Waiting
+d5d37042348f: Waiting
+372de8b756e7: Waiting
+696b190ce232: Waiting
+1e866ee109f1: Verifying Checksum
+1e866ee109f1: Download complete
+ee7ad40eef72: Verifying Checksum
+ab9aea95df77: Verifying Checksum
+ab9aea95df77: Download complete
+fd652ec6f9f2: Verifying Checksum
+fd652ec6f9f2: Download complete
+d5d37042348f: Download complete
+372de8b756e7: Download complete
+696b190ce232: Verifying Checksum
+696b190ce232: Download complete
+1e866ee109f1: Pull complete
+a5f5f3bbf116: Retrying in 5 seconds
+a5f5f3bbf116: Retrying in 4 seconds
+a5f5f3bbf116: Retrying in 3 seconds
+a5f5f3bbf116: Retrying in 2 seconds
+a5f5f3bbf116: Retrying in 1 second
+a5f5f3bbf116: Verifying Checksum
+a5f5f3bbf116: Download complete
+07:36:47 [INFO] SSE client disconnected, remaining clients: 0
+07:36:47 [INFO] SSE client connected, total clients: 1
+08:11:07 [INFO] Opened database at /home/josh/.clai/conversations.db
+08:11:12 [INFO] Restored 0 downloads from database
+08:11:12 [INFO] Web UI available at http://localhost:8080
+08:11:12 [INFO] Service ready on http://localhost:8080
+08:11:21 [INFO] SSE client connected, total clients: 1
+08:12:26 [INFO] SSE client connected, total clients: 2
+08:17:31 [INFO] SSE client disconnected, remaining clients: 1
+08:17:31 [INFO] SSE client connected, total clients: 2
+08:17:49 [INFO] HandleStartServer: request from 192.168.1.31:62776 ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+08:17:49 [INFO] DEBUG: Received context_size parameter: '32768'
+08:17:49 [INFO] Using custom context size: 32768 for /mnt/media/models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+08:17:49 [INFO] DEBUG: Received ngl parameter: '999'
+08:17:49 [INFO] Using custom ngl: 999 for /mnt/media/models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+08:17:49 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+08:17:49 [INFO] Found available port: 8082
+08:17:49 [INFO] Pulling latest Docker image rocm7-nightlies...
+08:23:47 [INFO] Docker launch command: llama-server -m /models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf --host 0.0.0.0 --port 8080 -c 32768 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8082.log 2>&1
+08:23:48 [INFO] Started model server via Docker: MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf on port 8082 (Container: 4659a6e95bec)
+08:23:48 [INFO] Updated CLI config to use model MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+08:28:26 [INFO] SSE client disconnected, remaining clients: 1
+08:31:01 [INFO] Model server ready: MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf on port 8082
+08:58:33 [INFO] SSE client disconnected, remaining clients: 0
+08:58:34 [INFO] SSE client connected, total clients: 1
+09:01:01 [INFO] SSE client connected, total clients: 2
+09:13:32 [INFO] SSE client disconnected, remaining clients: 1
+09:13:33 [INFO] SSE client connected, total clients: 2
+09:17:11 [INFO] SSE client disconnected, remaining clients: 1
+09:51:58 [INFO] SSE client connected, total clients: 2
+10:07:58 [INFO] SSE client disconnected, remaining clients: 1
+10:36:29 [INFO] SSE client disconnected, remaining clients: 0
+10:36:30 [INFO] SSE client connected, total clients: 1
+10:39:15 [INFO] SSE client disconnected, remaining clients: 0
+10:39:15 [INFO] SSE client connected, total clients: 1
+10:40:58 [INFO] SSE client disconnected, remaining clients: 0
+10:40:58 [INFO] SSE client connected, total clients: 1
+10:47:24 [INFO] SSE client connected, total clients: 2
+10:48:01 [INFO] Shutting down service...
+10:48:02 [INFO] Opened database at /home/josh/.clai/conversations.db
+10:48:07 [INFO] Restored 0 downloads from database
+10:48:07 [INFO] Web UI available at http://localhost:8080
+10:48:07 [INFO] Service ready on http://localhost:8080
+10:48:09 [INFO] SSE client connected, total clients: 1
+10:48:52 [INFO] Shutting down service...
+10:48:53 [INFO] Opened database at /home/josh/.clai/conversations.db
+10:48:58 [INFO] Restored 0 downloads from database
+10:48:58 [INFO] Web UI available at http://localhost:8080
+10:48:58 [INFO] Service ready on http://localhost:8080
+10:49:00 [INFO] SSE client connected, total clients: 1
+10:49:01 [INFO] Shutting down service...
+10:49:02 [INFO] Opened database at /home/josh/.clai/conversations.db
+10:49:07 [INFO] Restored 0 downloads from database
+10:49:07 [INFO] Web UI available at http://localhost:8080
+10:49:07 [INFO] Service ready on http://localhost:8080
+10:49:07 [INFO] SSE client connected, total clients: 1
+10:49:22 [INFO] Shutting down service...
+10:49:22 [INFO] Opened database at /home/josh/.clai/conversations.db
+10:49:26 [INFO] Opened database at /home/josh/.clai/conversations.db
+10:49:31 [INFO] Restored 0 downloads from database
+10:49:31 [INFO] Web UI available at http://localhost:8080
+10:49:31 [INFO] Service ready on http://localhost:8080
+10:49:31 [INFO] SSE client connected, total clients: 1
+10:49:48 [INFO] Shutting down service...
+10:49:48 [INFO] Opened database at /home/josh/.clai/conversations.db
+10:49:53 [INFO] Restored 0 downloads from database
+10:49:53 [INFO] Web UI available at http://localhost:8080
+10:49:53 [INFO] Service ready on http://localhost:8080
+10:49:56 [INFO] SSE client connected, total clients: 1
+10:52:35 [INFO] Shutting down service...
+10:52:35 [INFO] Opened database at /home/josh/.clai/conversations.db
+10:52:35 [INFO] Opened database at /home/josh/.clai/conversations.db
+10:52:40 [INFO] Restored 0 downloads from database
+10:52:40 [INFO] Restored 0 downloads from database
+10:52:40 [INFO] Web UI available at http://localhost:8080
+10:52:40 [INFO] Service ready on http://localhost:8080
+10:52:40 [ERROR] Failed to listen on :8080: listen tcp :8080: bind: address already in use
+10:52:40 [ERROR] Failed to start server: listen tcp :8080: bind: address already in use
+10:52:40 [INFO] SSE client connected, total clients: 1
+11:15:14 [INFO] SSE client disconnected, remaining clients: 0
+11:15:14 [INFO] SSE client connected, total clients: 1
+11:15:36 [INFO] HandleStopServer: Received request to stop server
+11:15:36 [INFO] HandleStopServer: Stopping model at path: /mnt/media/models/MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf
+11:15:36 [INFO] Detected running Docker container for MiniMax-M2.1-REAP-172B-A10B.i1-Q4_K_M.gguf (backend: ), stopping via Docker
+11:15:36 [INFO] Stopping Docker container: clai-model-minimax_m2_1_reap_172b_a10b_i1_q4_k_m
+11:15:47 [INFO] Successfully stopped Docker container: clai-model-minimax_m2_1_reap_172b_a10b_i1_q4_k_m
+11:15:47 [INFO] Preserving log file: /home/josh/.local/share/clai/logs/llama-server-8082.log
+11:16:08 [INFO] HandleStartServer: request from 192.168.1.31:55070 ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+11:16:08 [INFO] DEBUG: Received context_size parameter: ''
+11:16:08 [INFO] DEBUG: No context_size parameter provided, using default
+11:16:08 [INFO] DEBUG: Received ngl parameter: '999'
+11:16:08 [INFO] Using custom ngl: 999 for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+11:16:08 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+11:16:09 [INFO] Found available port: 8082
+11:16:09 [INFO] Pulling latest Docker image rocm7-nightlies...
+11:16:57 [INFO] SSE client disconnected, remaining clients: 0
+11:16:57 [INFO] SSE client connected, total clients: 1
+11:23:37 [INFO] Docker launch command: llama-server -m /models/Qwen3-Coder-Next-Base.Q8_0.gguf --host 0.0.0.0 --port 8080 -c 131072 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8082.log 2>&1
+11:23:39 [INFO] Started model server via Docker: Qwen3-Coder-Next-Base.Q8_0.gguf on port 8082 (Container: d02af5015958)
+11:23:39 [INFO] Updated CLI config to use model Qwen3-Coder-Next-Base.Q8_0.gguf
+11:23:40 [INFO] Error rendering models table: context canceled
+11:29:13 [INFO] Model server ready: Qwen3-Coder-Next-Base.Q8_0.gguf on port 8082
+11:31:05 [INFO] SSE client connected, total clients: 2
+11:47:06 [INFO] SSE client disconnected, remaining clients: 1
+12:00:00 [INFO] SSE client connected, total clients: 2
+12:10:49 [INFO] SSE client disconnected, remaining clients: 1
+12:10:49 [INFO] SSE client connected, total clients: 2
+12:15:58 [INFO] SSE client disconnected, remaining clients: 1
+12:38:25 [INFO] SSE client connected, total clients: 2
+12:46:22 [INFO] SSE client disconnected, remaining clients: 1
+12:46:22 [INFO] SSE client connected, total clients: 2
+12:54:24 [INFO] SSE client disconnected, remaining clients: 1
+13:01:00 [INFO] SSE client connected, total clients: 2
+13:17:00 [INFO] SSE client disconnected, remaining clients: 1
+13:45:41 [INFO] SSE client disconnected, remaining clients: 0
+13:45:41 [INFO] SSE client connected, total clients: 1
+13:47:22 [INFO] HandleStopServer: Received request to stop server
+13:47:22 [INFO] HandleStopServer: Stopping model at path: /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+13:47:22 [INFO] Stopping Docker container: clai-model-qwen3_coder_next_base_q8_0
+13:47:34 [INFO] Successfully stopped Docker container: clai-model-qwen3_coder_next_base_q8_0
+13:47:34 [INFO] Preserving log file: /home/josh/.local/share/clai/logs/llama-server-8082.log
+13:47:37 [INFO] SSE client disconnected, remaining clients: 0
+13:47:37 [INFO] SSE client connected, total clients: 1
+13:49:55 [INFO] SSE client connected, total clients: 2
+13:50:52 [INFO] Shutting down service...
+20:11:24 [INFO] Opened database at /home/josh/.clai/conversations.db
+20:11:24 [INFO] Restored 0 downloads from database
+20:11:24 [INFO] Web UI available at http://localhost:8080
+20:11:24 [INFO] Service ready on http://localhost:8080
+20:11:24 [INFO] SSE client connected, total clients: 1
+20:11:30 [INFO] SSE client connected, total clients: 2
+20:12:13 [INFO] HandleStartServer: request from 127.0.0.1:55206 ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" referer="http://localhost:8080/models" model_path=/mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+20:12:13 [INFO] DEBUG: Received context_size parameter: '65536'
+20:12:13 [INFO] Using custom context size: 65536 for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+20:12:13 [INFO] DEBUG: Received ngl parameter: '999'
+20:12:13 [INFO] Using custom ngl: 999 for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+20:12:13 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+20:12:14 [INFO] Found available port: 8082
+20:12:14 [INFO] Pulling latest Docker image rocm7-nightlies...
+20:19:38 [INFO] Step-3.5-Flash model detected, setting up fixed chat template
+20:19:38 [INFO] Mounting chat template for Step-3.5-Flash: --chat-template-file /templates/step35_flash_chat.jinja
+20:19:38 [INFO] Docker launch command: llama-server -m /models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf --host 0.0.0.0 --port 8080 -c 65536 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja --chat-template-file /templates/step35_flash_chat.jinja  > /logs/llama-server-8082.log 2>&1
+20:19:40 [INFO] Started model server via Docker: Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf on port 8082 (Container: 956b66d69224)
+20:19:40 [INFO] Updated CLI config to use model Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+20:23:50 [INFO] SSE client connected, total clients: 3
+20:26:54 [INFO] Model server ready: Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf on port 8082
+20:39:50 [INFO] SSE client disconnected, remaining clients: 2
+20:51:29 [INFO] SSE client connected, total clients: 3
+21:07:28 [INFO] SSE client disconnected, remaining clients: 2
+21:11:31 [INFO] SSE client disconnected, remaining clients: 1
+21:11:31 [INFO] SSE client connected, total clients: 2
+21:25:02 [INFO] SSE client disconnected, remaining clients: 1
+21:43:40 [INFO] SSE client connected, total clients: 2
+21:59:42 [INFO] SSE client disconnected, remaining clients: 1
+22:10:00 [INFO] SSE client connected, total clients: 2
+22:25:59 [INFO] SSE client disconnected, remaining clients: 1
+23:00:21 [INFO] SSE client connected, total clients: 2
+23:16:22 [INFO] SSE client disconnected, remaining clients: 1
+23:50:06 [INFO] SSE client connected, total clients: 2
+00:06:08 [INFO] SSE client disconnected, remaining clients: 1
+00:40:01 [INFO] SSE client connected, total clients: 2
+00:56:02 [INFO] SSE client disconnected, remaining clients: 1
+01:27:43 [INFO] SSE client connected, total clients: 2
+01:43:45 [INFO] SSE client disconnected, remaining clients: 1
+02:16:29 [INFO] SSE client connected, total clients: 2
+02:32:29 [INFO] SSE client disconnected, remaining clients: 1
+03:07:35 [INFO] SSE client connected, total clients: 2
+03:23:37 [INFO] SSE client disconnected, remaining clients: 1
+03:56:08 [INFO] SSE client connected, total clients: 2
+04:12:10 [INFO] SSE client disconnected, remaining clients: 1
+04:44:23 [INFO] SSE client connected, total clients: 2
+05:00:25 [INFO] SSE client disconnected, remaining clients: 1
+05:52:49 [INFO] SSE client disconnected, remaining clients: 0
+05:52:49 [INFO] SSE client connected, total clients: 1
+05:53:16 [INFO] HandleStartServer: request from 192.168.1.31:58186 ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/Qwen3-Coder-Next-REAP-60B-A3B-Q6_K_XL.gguf
+05:53:16 [INFO] DEBUG: Received context_size parameter: ''
+05:53:16 [INFO] DEBUG: No context_size parameter provided, using default
+05:53:16 [INFO] DEBUG: Received ngl parameter: '999'
+05:53:16 [INFO] Using custom ngl: 999 for /mnt/media/models/Qwen3-Coder-Next-REAP-60B-A3B-Q6_K_XL.gguf
+05:53:16 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/Qwen3-Coder-Next-REAP-60B-A3B-Q6_K_XL.gguf
+05:53:16 [INFO] Found available port: 8082
+05:53:16 [INFO] Pulling latest Docker image rocm7-nightlies...
+05:58:05 [INFO] Docker launch command: llama-server -m /models/Qwen3-Coder-Next-REAP-60B-A3B-Q6_K_XL.gguf --host 0.0.0.0 --port 8080 -c 131072 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8082.log 2>&1
+05:58:07 [INFO] Started model server via Docker: Qwen3-Coder-Next-REAP-60B-A3B-Q6_K_XL.gguf on port 8082 (Container: d51c941439ff)
+05:58:07 [INFO] Updated CLI config to use model Qwen3-Coder-Next-REAP-60B-A3B-Q6_K_XL.gguf
+06:00:40 [INFO] SSE client disconnected, remaining clients: 0
+06:00:40 [INFO] SSE client connected, total clients: 1
+06:01:35 [INFO] Model server ready: Qwen3-Coder-Next-REAP-60B-A3B-Q6_K_XL.gguf on port 8082
+07:03:59 [INFO] SSE client disconnected, remaining clients: 0
+07:03:59 [INFO] SSE client connected, total clients: 1
+08:23:40 [INFO] Opened database at /home/josh/.clai/conversations.db
+08:23:40 [INFO] Restored 0 downloads from database
+08:23:40 [INFO] Web UI available at http://localhost:8080
+08:23:40 [INFO] Service ready on http://localhost:8080
+08:23:52 [INFO] SSE client connected, total clients: 1
+08:31:33 [INFO] HandleStartServer: request from 127.0.0.1:38302 ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" referer="http://localhost:8080/models" model_path=/mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+08:31:33 [INFO] DEBUG: Received context_size parameter: '65536'
+08:31:33 [INFO] Using custom context size: 65536 for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+08:31:33 [INFO] DEBUG: Received ngl parameter: '999'
+08:31:33 [INFO] Using custom ngl: 999 for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+08:31:33 [INFO] Using Docker runtime: vulkan-radv for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+08:31:33 [INFO] Found available port: 8082
+08:31:33 [INFO] Pulling latest Docker image vulkan-radv...
+08:32:46 [INFO] SSE client disconnected, remaining clients: 0
+08:32:51 [INFO] SSE client connected, total clients: 1
+08:33:00 [INFO] Docker launch command: llama-server -m /models/Qwen3-Coder-Next-Base.Q8_0.gguf --host 0.0.0.0 --port 8080 -c 65536 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8082.log 2>&1
+08:33:02 [INFO] Started model server via Docker: Qwen3-Coder-Next-Base.Q8_0.gguf on port 8082 (Container: 8010baebf6c6)
+08:33:02 [INFO] Updated CLI config to use model Qwen3-Coder-Next-Base.Q8_0.gguf
+08:33:02 [INFO] SSE client disconnected, remaining clients: 0
+08:33:02 [INFO] SSE client connected, total clients: 1
+08:33:02 [INFO] Error rendering models table: context canceled
+08:34:37 [INFO] SSE client disconnected, remaining clients: 0
+08:36:59 [INFO] SSE client connected, total clients: 1
+08:37:33 [INFO] SSE client disconnected, remaining clients: 0
+08:37:33 [INFO] SSE client connected, total clients: 1
+08:38:46 [INFO] Model server ready: Qwen3-Coder-Next-Base.Q8_0.gguf on port 8082
+08:45:10 [INFO] SSE client disconnected, remaining clients: 0
+08:45:10 [INFO] SSE client connected, total clients: 1
+08:47:58 [INFO] SSE client connected, total clients: 2
+08:56:59 [INFO] SSE client disconnected, remaining clients: 1
+08:56:59 [INFO] SSE client connected, total clients: 2
+09:04:29 [INFO] SSE client disconnected, remaining clients: 1
+09:04:29 [INFO] SSE client connected, total clients: 2
+09:04:45 [INFO] Deleted model file: /mnt/media/models/GLM-4.7-Flash-UD-Q8_K_XL.gguf
+09:04:45 [INFO] Successfully deleted model: /mnt/media/models/GLM-4.7-Flash-UD-Q8_K_XL.gguf
+09:04:51 [INFO] SSE client disconnected, remaining clients: 1
+09:04:51 [INFO] SSE client connected, total clients: 2
+09:04:57 [INFO] Deleted model file: /mnt/media/models/nomic-embed-text-v1.5.Q8_0.gguf
+09:04:57 [INFO] Successfully deleted model: /mnt/media/models/nomic-embed-text-v1.5.Q8_0.gguf
+09:04:59 [INFO] SSE client disconnected, remaining clients: 1
+09:04:59 [INFO] SSE client connected, total clients: 2
+09:05:11 [INFO] Deleted model file: /mnt/media/models/glm-4.7-flash-claude-4.5-opus.bf16.gguf
+09:05:11 [INFO] Successfully deleted model: /mnt/media/models/glm-4.7-flash-claude-4.5-opus.bf16.gguf
+09:05:12 [INFO] SSE client disconnected, remaining clients: 1
+09:05:12 [INFO] SSE client connected, total clients: 2
+09:52:09 [INFO] SSE client disconnected, remaining clients: 1
+09:55:14 [INFO] SSE client connected, total clients: 2
+09:55:43 [INFO] SSE client disconnected, remaining clients: 1
+09:55:43 [INFO] SSE client connected, total clients: 2
+10:06:37 [INFO] SSE client disconnected, remaining clients: 1
+10:06:37 [INFO] SSE client connected, total clients: 2
+10:22:38 [INFO] SSE client disconnected, remaining clients: 1
+10:22:38 [INFO] SSE client connected, total clients: 2
+10:32:00 [INFO] HandleStartServer: request from 192.168.1.58:60475 ua="Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:32:00 [INFO] DEBUG: Received context_size parameter: '32768'
+10:32:00 [INFO] Using custom context size: 32768 for /mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:32:00 [INFO] DEBUG: Received ngl parameter: '999'
+10:32:00 [INFO] Using custom ngl: 999 for /mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:32:00 [INFO] Using Docker runtime: rocm-7.2 for /mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:32:00 [INFO] Found available port: 8082
+10:32:00 [INFO] Pulling latest Docker image rocm-7.2...
+10:32:15 [INFO] SSE client disconnected, remaining clients: 1
+10:32:15 [INFO] SSE client connected, total clients: 2
+10:41:10 [INFO] SSE client disconnected, remaining clients: 1
+10:41:10 [INFO] SSE client connected, total clients: 2
+10:42:55 [INFO] Step-3.5-Flash model detected, setting up fixed chat template
+10:42:55 [INFO] Mounting chat template for Step-3.5-Flash: --chat-template-file /templates/step35_flash_chat.jinja
+10:42:55 [INFO] Docker launch command: llama-server -m /models/step-3.5-flash-q4_k_s-00001-of-00003.gguf --host 0.0.0.0 --port 8080 -c 32768 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja --chat-template-file /templates/step35_flash_chat.jinja  > /logs/llama-server-8082.log 2>&1
+10:42:57 [INFO] Started model server via Docker: step-3.5-flash-q4_k_s-00001-of-00003.gguf on port 8082 (Container: b77418e0da0f)
+10:42:57 [INFO] Updated CLI config to use model step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:42:58 [INFO] Error rendering models table: context canceled
+10:43:03 [INFO] SSE client disconnected, remaining clients: 1
+10:43:03 [INFO] SSE client connected, total clients: 2
+10:49:48 [INFO] HandleStopServer: Received request to stop server
+10:49:48 [INFO] HandleStopServer: Stopping model at path: /mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:49:48 [INFO] Stopping Docker container: clai-model-step_3_5_flash_q4_k_s_00001_of_00003
+10:49:52 [INFO] SSE client disconnected, remaining clients: 1
+10:49:52 [INFO] SSE client connected, total clients: 2
+10:49:58 [INFO] HandleStopServer: Received request to stop server
+10:49:58 [INFO] HandleStopServer: Stopping model at path: /mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:49:58 [INFO] Stopping Docker container: clai-model-step_3_5_flash_q4_k_s_00001_of_00003
+10:49:58 [INFO] Successfully stopped Docker container: clai-model-step_3_5_flash_q4_k_s_00001_of_00003
+10:49:58 [INFO] Preserving log file: /home/josh/.local/share/clai/logs/llama-server-8082.log
+10:49:58 [INFO] Successfully stopped Docker container: clai-model-step_3_5_flash_q4_k_s_00001_of_00003
+10:49:58 [INFO] Preserving log file: /home/josh/.local/share/clai/logs/llama-server-8082.log
+10:49:59 [INFO] Error rendering models table: context canceled
+10:50:00 [INFO] Detected dead process PID 308347 for /mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:50:00 [INFO] Model server failed to start: step-3.5-flash-q4_k_s-00001-of-00003.gguf on port 8082 - Failed to start: Get "http://localhost:8082/health": dial tcp 127.0.0.1:8082: connect: connection refused
 
 Last 20 lines from log:
-llama_kv_cache: layer  82: dev = ROCm0
-llama_kv_cache: layer  83: dev = ROCm0
-llama_kv_cache: layer  84: dev = ROCm0
-llama_kv_cache: layer  85: dev = ROCm0
-llama_kv_cache: layer  86: dev = ROCm0
-llama_kv_cache: layer  87: dev = ROCm0
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
 srv  log_server_r: done request: GET /slots 10.0.0.1 503
-srv  log_server_r: request:
-srv  log_server_r: response: {"error":{"message":"Loading model","type":"unavailable_error","code":503}}
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
 srv  log_server_r: done request: GET /slots 10.0.0.1 503
-srv  log_server_r: request:
-srv  log_server_r: response: {"error":{"message":"Loading model","type":"unavailable_error","code":503}}
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
 srv  log_server_r: done request: GET /slots 10.0.0.1 503
-srv  log_server_r: request:
-srv  log_server_r: response: {"error":{"message":"Loading model","type":"unavailable_error","code":503}}
-ggml_backend_cuda_buffer_type_alloc_buffer: allocating 45056.00 MiB on device 0: cudaMalloc failed: out of memory
-alloc_tensor_range: failed to allocate ROCm0 buffer of size 47244640256
-llama_init_from_model: failed to initialize the context: failed to allocate buffer for kv cache
-common_init_result: failed to create context with model '/models/Devstral-2-123B-Instruct-2512-UD-Q4_K_XL-00001-of-00002.gguf'
-common_init_from_params: failed to create context with model '/models/Devstral-2-123B-Instruct-2512-UD-Q4_K_XL-00001-of-00002.gguf'
-07:13:54 [INFO] SSE client connected, total clients: 2
-07:29:56 [INFO] SSE client disconnected, remaining clients: 1
-07:53:21 [INFO] SSE client connected, total clients: 2
-08:09:20 [INFO] SSE client disconnected, remaining clients: 1
-08:54:21 [INFO] SSE client connected, total clients: 2
-09:11:11 [INFO] SSE client disconnected, remaining clients: 1
-09:44:01 [INFO] SSE client connected, total clients: 2
-10:00:12 [INFO] SSE client disconnected, remaining clients: 1
-10:29:49 [INFO] SSE client connected, total clients: 2
-10:47:14 [INFO] SSE client disconnected, remaining clients: 1
-10:56:26 [INFO] SSE client connected, total clients: 2
-11:12:25 [INFO] SSE client disconnected, remaining clients: 1
-11:43:23 [INFO] SSE client connected, total clients: 2
-12:13:23 [INFO] SSE client disconnected, remaining clients: 1
-12:32:23 [INFO] SSE client connected, total clients: 2
-12:48:33 [INFO] SSE client disconnected, remaining clients: 1
-12:58:25 [INFO] SSE client connected, total clients: 2
-13:14:25 [INFO] SSE client disconnected, remaining clients: 1
-13:47:31 [INFO] SSE client connected, total clients: 2
-14:15:23 [INFO] SSE client disconnected, remaining clients: 1
-14:48:49 [INFO] SSE client connected, total clients: 2
-15:04:52 [INFO] SSE client disconnected, remaining clients: 1
-15:34:04 [INFO] SSE client connected, total clients: 2
-15:50:04 [INFO] SSE client disconnected, remaining clients: 1
-16:01:26 [INFO] SSE client connected, total clients: 2
-16:17:26 [INFO] SSE client disconnected, remaining clients: 1
-16:34:16 [INFO] SSE client connected, total clients: 2
-16:50:16 [INFO] SSE client disconnected, remaining clients: 1
-17:02:26 [INFO] SSE client connected, total clients: 2
-17:18:28 [INFO] SSE client disconnected, remaining clients: 1
-17:53:52 [INFO] SSE client connected, total clients: 2
-18:09:52 [INFO] SSE client disconnected, remaining clients: 1
-18:35:33 [INFO] SSE client connected, total clients: 2
-18:51:51 [INFO] SSE client disconnected, remaining clients: 1
-19:04:27 [INFO] SSE client connected, total clients: 2
-19:20:28 [INFO] SSE client disconnected, remaining clients: 1
-19:35:32 [INFO] SSE client connected, total clients: 2
-19:51:44 [INFO] SSE client disconnected, remaining clients: 1
-20:21:01 [INFO] SSE client connected, total clients: 2
-20:37:28 [INFO] SSE client disconnected, remaining clients: 1
-21:06:24 [INFO] SSE client connected, total clients: 2
-21:22:23 [INFO] SSE client disconnected, remaining clients: 1
-21:54:55 [INFO] SSE client connected, total clients: 2
-22:10:55 [INFO] SSE client disconnected, remaining clients: 1
-22:38:05 [INFO] SSE client disconnected, remaining clients: 0
-22:38:06 [INFO] SSE client connected, total clients: 1
-22:43:13 [INFO] SSE client disconnected, remaining clients: 0
-22:43:14 [INFO] SSE client connected, total clients: 1
-22:43:50 [INFO] SSE client disconnected, remaining clients: 0
-22:43:51 [INFO] SSE client connected, total clients: 1
-22:59:27 [INFO] SSE client connected, total clients: 2
-23:02:41 [INFO] SSE client disconnected, remaining clients: 1
-23:02:42 [INFO] SSE client connected, total clients: 2
-23:13:38 [INFO] SSE client disconnected, remaining clients: 1
-23:13:39 [INFO] SSE client connected, total clients: 2
-23:14:07 [INFO] SSE client disconnected, remaining clients: 1
-23:14:08 [INFO] SSE client connected, total clients: 2
-23:15:30 [INFO] SSE client disconnected, remaining clients: 1
-23:46:52 [INFO] SSE client connected, total clients: 2
-23:47:12 [INFO] HandleStartServer: request from 192.168.1.31:61757 ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/Qwen3-Coder-Next-MXFP4_MOE.gguf
-23:47:12 [INFO] DEBUG: Received context_size parameter: ''
-23:47:12 [INFO] DEBUG: No context_size parameter provided, using default
-23:47:12 [INFO] DEBUG: Received ngl parameter: '999'
-23:47:12 [INFO] Using custom ngl: 999 for /mnt/media/models/Qwen3-Coder-Next-MXFP4_MOE.gguf
-23:47:12 [INFO] Using Docker runtime: vulkan-amdvlk for /mnt/media/models/Qwen3-Coder-Next-MXFP4_MOE.gguf
-23:47:12 [INFO] Found available port: 8082
-23:47:12 [INFO] Started model server via Docker: Qwen3-Coder-Next-MXFP4_MOE.gguf on port 8082 (Container: 0d6e0c0ae64b)
-23:47:12 [INFO] Updated CLI config to use model Qwen3-Coder-Next-MXFP4_MOE.gguf
-23:49:35 [INFO] SSE client connected, total clients: 3
-23:50:12 [INFO] Model server ready: Qwen3-Coder-Next-MXFP4_MOE.gguf on port 8082
-23:58:55 [INFO] SSE client disconnected, remaining clients: 2
-23:58:55 [INFO] SSE client connected, total clients: 3
-23:59:09 [INFO] SSE client disconnected, remaining clients: 2
-23:59:09 [INFO] SSE client connected, total clients: 3
-00:05:37 [INFO] SSE client disconnected, remaining clients: 2
-00:06:22 [INFO] Shutting down service...
-00:06:23 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:06:24 [INFO] Restored 18 downloads from database
-00:06:24 [INFO] Web UI available at http://localhost:8080
-00:06:24 [INFO] Service ready on http://localhost:8080
-00:06:25 [INFO] SSE client connected, total clients: 1
-00:06:27 [INFO] SSE client connected, total clients: 2
-00:09:18 [INFO] Shutting down service...
-00:09:36 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:09:37 [INFO] Restored 18 downloads from database
-00:09:37 [INFO] Web UI available at http://localhost:8080
-00:09:37 [INFO] Service ready on http://localhost:8080
-00:09:37 [INFO] SSE client connected, total clients: 1
-00:09:39 [INFO] SSE client connected, total clients: 2
-00:10:31 [INFO] Shutting down service...
-00:10:32 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:10:32 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:10:32 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:10:32 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:10:33 [INFO] Restored 18 downloads from database
-00:10:33 [INFO] Web UI available at http://localhost:8080
-00:10:33 [INFO] Service ready on http://localhost:8080
-00:10:34 [INFO] SSE client connected, total clients: 1
-00:10:36 [INFO] SSE client connected, total clients: 2
-00:11:11 [INFO] Shutting down service...
-00:11:12 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:11:13 [INFO] Restored 18 downloads from database
-00:11:13 [INFO] Web UI available at http://localhost:8080
-00:11:13 [INFO] Service ready on http://localhost:8080
-00:11:14 [INFO] SSE client connected, total clients: 1
-00:11:16 [INFO] SSE client connected, total clients: 2
-00:11:18 [INFO] Shutting down service...
-00:11:18 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:11:18 [INFO] Restored 18 downloads from database
-00:11:18 [INFO] Web UI available at http://localhost:8080
-00:11:18 [INFO] Service ready on http://localhost:8080
-00:11:21 [INFO] SSE client connected, total clients: 1
-00:11:23 [INFO] SSE client connected, total clients: 2
-00:12:06 [INFO] Shutting down service...
-00:12:07 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:12:07 [INFO] Restored 18 downloads from database
-00:12:07 [INFO] Web UI available at http://localhost:8080
-00:12:07 [INFO] Service ready on http://localhost:8080
-00:12:09 [INFO] SSE client connected, total clients: 1
-00:12:11 [INFO] SSE client connected, total clients: 2
-00:30:31 [INFO] Shutting down service...
-00:30:32 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:30:32 [INFO] Restored 18 downloads from database
-00:30:32 [INFO] Web UI available at http://localhost:8080
-00:30:32 [INFO] Service ready on http://localhost:8080
-00:30:34 [INFO] SSE client connected, total clients: 1
-00:30:36 [INFO] SSE client connected, total clients: 2
-00:30:43 [INFO] Shutting down service...
-00:31:48 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:31:49 [INFO] Restored 18 downloads from database
-00:31:49 [INFO] Web UI available at http://localhost:8080
-00:31:49 [INFO] Service ready on http://localhost:8080
-00:31:49 [INFO] SSE client connected, total clients: 1
-00:31:49 [INFO] SSE client connected, total clients: 2
-00:32:45 [INFO] Shutting down service...
-00:32:45 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:32:45 [INFO] Restored 18 downloads from database
-00:32:45 [INFO] Web UI available at http://localhost:8080
-00:32:45 [INFO] Service ready on http://localhost:8080
-00:32:48 [INFO] SSE client connected, total clients: 1
-00:32:48 [INFO] Shutting down service...
-00:32:49 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:32:49 [INFO] Restored 18 downloads from database
-00:32:49 [INFO] Web UI available at http://localhost:8080
-00:32:49 [INFO] Service ready on http://localhost:8080
-00:32:50 [INFO] SSE client connected, total clients: 1
-00:32:51 [INFO] SSE client connected, total clients: 2
-00:33:13 [INFO] Shutting down service...
-00:33:13 [INFO] Opened database at /home/josh/.clai/conversations.db
-00:33:13 [INFO] Restored 18 downloads from database
-00:33:13 [INFO] Web UI available at http://localhost:8080
-00:33:13 [INFO] Service ready on http://localhost:8080
-00:33:16 [INFO] SSE client connected, total clients: 1
-00:33:18 [INFO] SSE client connected, total clients: 2
-00:33:34 [INFO] Shutting down service...
-00:33:34 [INFO] Opened database at /home/josh/.clai/conversations.db
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+10:50:03 [INFO] SSE client disconnected, remaining clients: 1
+10:50:03 [INFO] SSE client connected, total clients: 2
+10:50:28 [INFO] HandleStartServer: request from 192.168.1.58:60509 ua="Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:50:28 [INFO] DEBUG: Received context_size parameter: '32768'
+10:50:28 [INFO] Using custom context size: 32768 for /mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:50:28 [INFO] DEBUG: Received ngl parameter: '999'
+10:50:28 [INFO] Using custom ngl: 999 for /mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:50:28 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:50:28 [INFO] Found available port: 8082
+10:50:28 [INFO] Pulling latest Docker image rocm7-nightlies...
+10:50:34 [INFO] SSE client disconnected, remaining clients: 1
+10:50:34 [INFO] SSE client connected, total clients: 2
+10:54:33 [INFO] SSE client disconnected, remaining clients: 1
+10:54:33 [INFO] SSE client connected, total clients: 2
+10:57:36 [INFO] SSE client disconnected, remaining clients: 1
+10:57:36 [INFO] SSE client connected, total clients: 2
+10:58:16 [INFO] Step-3.5-Flash model detected, setting up fixed chat template
+10:58:16 [INFO] Mounting chat template for Step-3.5-Flash: --chat-template-file /templates/step35_flash_chat.jinja
+10:58:16 [INFO] Docker launch command: llama-server -m /models/step-3.5-flash-q4_k_s-00001-of-00003.gguf --host 0.0.0.0 --port 8080 -c 32768 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja --chat-template-file /templates/step35_flash_chat.jinja  > /logs/llama-server-8082.log 2>&1
+10:58:18 [INFO] Started model server via Docker: step-3.5-flash-q4_k_s-00001-of-00003.gguf on port 8082 (Container: 94874c2ec0d4)
+10:58:18 [INFO] Updated CLI config to use model step-3.5-flash-q4_k_s-00001-of-00003.gguf
+10:58:18 [INFO] Error rendering models table: context canceled
+10:58:43 [INFO] SSE client disconnected, remaining clients: 1
+10:58:43 [INFO] SSE client connected, total clients: 2
+11:05:44 [INFO] Model server ready: step-3.5-flash-q4_k_s-00001-of-00003.gguf on port 8082
+11:26:54 [INFO] SSE client disconnected, remaining clients: 1
+11:26:54 [INFO] SSE client connected, total clients: 2
+11:42:57 [INFO] Opened database at /home/josh/.clai/conversations.db
+11:42:59 [INFO] Restored 0 downloads from database
+11:42:59 [INFO] Web UI available at http://localhost:8080
+11:42:59 [INFO] Service ready on http://localhost:8080
+11:42:59 [INFO] SSE client connected, total clients: 1
+11:44:03 [INFO] SSE client connected, total clients: 2
+11:46:55 [INFO] HandleStartServer: request from 192.168.1.58:61023 ua="Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+11:46:55 [INFO] DEBUG: Received context_size parameter: '32768'
+11:46:55 [INFO] Using custom context size: 32768 for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+11:46:55 [INFO] DEBUG: Received ngl parameter: '999'
+11:46:55 [INFO] Using custom ngl: 999 for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+11:46:55 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+11:46:55 [INFO] Found available port: 8082
+11:46:55 [INFO] Pulling latest Docker image rocm7-nightlies...
+11:46:59 [INFO] SSE client disconnected, remaining clients: 1
+11:46:59 [INFO] SSE client connected, total clients: 2
+11:47:00 [INFO] Step-3.5-Flash model detected, setting up fixed chat template
+11:47:00 [INFO] Mounting chat template for Step-3.5-Flash: --chat-template-file /templates/step35_flash_chat.jinja
+11:47:00 [INFO] Docker launch command: llama-server -m /models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf --host 0.0.0.0 --port 8080 -c 32768 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja --chat-template-file /templates/step35_flash_chat.jinja  > /logs/llama-server-8082.log 2>&1
+11:47:00 [INFO] Started model server via Docker: Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf on port 8082 (Container: 04042c482540)
+11:47:00 [INFO] Updated CLI config to use model Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+11:47:01 [INFO] Error rendering models table: context canceled
+11:50:34 [INFO] SSE client disconnected, remaining clients: 1
+11:50:34 [INFO] SSE client connected, total clients: 2
+11:50:38 [INFO] HandleStopServer: Received request to stop server
+11:50:38 [INFO] HandleStopServer: Stopping model at path: /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+11:50:38 [INFO] Stopping Docker container: clai-model-step_3_5_flash_iq4_xs_00001_of_00004
+11:50:49 [INFO] Successfully stopped Docker container: clai-model-step_3_5_flash_iq4_xs_00001_of_00004
+11:50:49 [INFO] Preserving log file: /home/josh/.local/share/clai/logs/llama-server-8082.log
+11:50:50 [INFO] Detected dead process PID 38873 for /mnt/media/models/Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf
+11:50:50 [INFO] Model server failed to start: Step-3.5-Flash-IQ4_XS-00001-of-00004.gguf on port 8082 - Failed to start: Get "http://localhost:8082/health": dial tcp 127.0.0.1:8082: connect: connection refused
+
+Last 20 lines from log:
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+11:56:42 [INFO] SSE client connected, total clients: 3
+11:57:15 [INFO] HandleStartServer: request from 192.168.1.49:42468 ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/144.0.0.0 Safari/537.36" referer="http://10.0.0.1:8080/models" model_path=/mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+11:57:15 [INFO] DEBUG: Received context_size parameter: '32768'
+11:57:15 [INFO] Using custom context size: 32768 for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+11:57:15 [INFO] DEBUG: Received ngl parameter: '999'
+11:57:15 [INFO] Using custom ngl: 999 for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+11:57:15 [INFO] Using native runtime: rocm for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+11:57:15 [INFO] Found available port: 8082
+11:57:15 [INFO] Starting model via systemd: clai-model-Qwen3-Coder-Next-Base-Q8-0 on port 8082
+11:57:16 [INFO] Started model server via systemd: Qwen3-Coder-Next-Base.Q8_0.gguf on port 8082 (PID: 56875)
+11:57:16 [INFO] Updated CLI config to use model Qwen3-Coder-Next-Base.Q8_0.gguf
+11:57:18 [INFO] Detected zombie process PID 56875 for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+11:57:18 [INFO] Model server failed to start: Qwen3-Coder-Next-Base.Q8_0.gguf on port 8082 - Failed to start: Get "http://localhost:8082/health": read tcp 127.0.0.1:54354->127.0.0.1:8082: read: connection reset by peer
+
+Last 20 lines from log:
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+.srv  log_server_r: done request: GET /slots 10.0.0.1 503
+11:59:11 [INFO] SSE client disconnected, remaining clients: 2
+12:03:31 [INFO] HandleStopServer: Received request to stop server
+12:03:31 [INFO] HandleStopServer: Stopping model at path: /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+12:03:31 [INFO] Error stopping server for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf: server not running
+12:03:47 [INFO] SSE client connected, total clients: 3
+12:04:13 [INFO] HandleStartServer: request from 192.168.1.49:54118 ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/144.0.0.0 Safari/537.36" referer="http://10.0.0.1:8080/models" model_path=/mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+12:04:13 [INFO] DEBUG: Received context_size parameter: '32768'
+12:04:13 [INFO] Using custom context size: 32768 for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+12:04:13 [INFO] DEBUG: Received ngl parameter: '999'
+12:04:13 [INFO] Using custom ngl: 999 for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+12:04:13 [INFO] Using Docker runtime: rocm-7.2 for /mnt/media/models/Qwen3-Coder-Next-Base.Q8_0.gguf
+12:04:13 [INFO] Found available port: 8083
+12:04:13 [INFO] Pulling latest Docker image rocm-7.2...
+12:04:17 [INFO] Docker launch command: llama-server -m /models/Qwen3-Coder-Next-Base.Q8_0.gguf --host 0.0.0.0 --port 8080 -c 32768 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8083.log 2>&1
+12:04:18 [INFO] Started model server via Docker: Qwen3-Coder-Next-Base.Q8_0.gguf on port 8083 (Container: 56d4b53444c1)
+12:04:18 [INFO] Updated CLI config to use model Qwen3-Coder-Next-Base.Q8_0.gguf
+12:04:36 [INFO] SSE client disconnected, remaining clients: 2
+12:06:29 [INFO] SSE client disconnected, remaining clients: 1
+12:06:29 [INFO] SSE client connected, total clients: 2
+12:09:56 [INFO] Model server ready: Qwen3-Coder-Next-Base.Q8_0.gguf on port 8083
+12:40:02 [INFO] Opened database at /home/josh/.clai/conversations.db
+12:40:04 [INFO] Restored 0 downloads from database
+12:40:04 [WARN] Service appears to be already running (lock file exists)
+12:40:04 [WARN] If it's not running, remove /tmp/clai-service.lock
+12:40:04 [INFO] Web UI available at http://localhost:8080
+12:40:04 [INFO] Service ready on http://localhost:8080
+12:40:04 [INFO] SSE client connected, total clients: 1
+16:42:23 [INFO] Opened database at /home/josh/.clai/conversations.db
+16:42:25 [INFO] Restored 0 downloads from database
+16:42:25 [WARN] Service appears to be already running (lock file exists)
+16:42:25 [WARN] If it's not running, remove /tmp/clai-service.lock
+16:42:25 [INFO] Web UI available at http://localhost:8080
+16:42:25 [INFO] Service ready on http://localhost:8080
+16:42:25 [INFO] SSE client connected, total clients: 1
+10:49:06 [INFO] Opened database at /home/josh/.clai/conversations.db
+10:49:07 [INFO] Restored 0 downloads from database
+10:49:07 [WARN] Service appears to be already running (lock file exists)
+10:49:07 [WARN] If it's not running, remove /tmp/clai-service.lock
+10:49:07 [INFO] Web UI available at http://localhost:8080
+10:49:07 [INFO] Service ready on http://localhost:8080
+10:52:15 [INFO] SSE client connected, total clients: 1
+19:56:51 [INFO] SSE client connected, total clients: 2
+19:56:52 [INFO] SSE client disconnected, remaining clients: 1
+19:56:52 [INFO] Error rendering models table: context canceled
+19:58:54 [INFO] Shutting down service...
+21:25:52 [INFO] Opened database at /home/josh/.clai/conversations.db
+21:25:53 [INFO] Restored 0 downloads from database
+21:25:53 [INFO] Web UI available at http://localhost:8080
+21:25:53 [INFO] Service ready on http://localhost:8080
+21:25:55 [INFO] SSE client connected, total clients: 1
+21:26:12 [INFO] DEBUG: File 'BF16/Qwen3.5-122B-A10B-BF16-00001-of-00005.gguf' -> Quantization ''
+21:26:12 [INFO] DEBUG: File 'BF16/Qwen3.5-122B-A10B-BF16-00002-of-00005.gguf' -> Quantization ''
+21:26:12 [INFO] DEBUG: File 'BF16/Qwen3.5-122B-A10B-BF16-00003-of-00005.gguf' -> Quantization ''
+21:26:12 [INFO] DEBUG: File 'BF16/Qwen3.5-122B-A10B-BF16-00004-of-00005.gguf' -> Quantization ''
+21:26:12 [INFO] DEBUG: File 'BF16/Qwen3.5-122B-A10B-BF16-00005-of-00005.gguf' -> Quantization ''
+21:26:12 [INFO] DEBUG: File 'IQ4_NL/Qwen3.5-122B-A10B-IQ4_NL-00001-of-00003.gguf' -> Quantization 'IQ4_NL'
+21:26:12 [INFO] DEBUG: File 'IQ4_NL/Qwen3.5-122B-A10B-IQ4_NL-00002-of-00003.gguf' -> Quantization 'IQ4_NL'
+21:26:12 [INFO] DEBUG: File 'IQ4_NL/Qwen3.5-122B-A10B-IQ4_NL-00003-of-00003.gguf' -> Quantization 'IQ4_NL'
+21:26:12 [INFO] DEBUG: File 'IQ4_XS/Qwen3.5-122B-A10B-IQ4_XS-00001-of-00003.gguf' -> Quantization 'IQ4_XS'
+21:26:12 [INFO] DEBUG: File 'IQ4_XS/Qwen3.5-122B-A10B-IQ4_XS-00002-of-00003.gguf' -> Quantization 'IQ4_XS'
+21:26:12 [INFO] DEBUG: File 'IQ4_XS/Qwen3.5-122B-A10B-IQ4_XS-00003-of-00003.gguf' -> Quantization 'IQ4_XS'
+21:26:12 [INFO] DEBUG: File 'MXFP4_MOE/Qwen3.5-122B-A10B-MXFP4_MOE-00001-of-00003.gguf' -> Quantization 'MXFP4_MOE'
+21:26:12 [INFO] DEBUG: File 'MXFP4_MOE/Qwen3.5-122B-A10B-MXFP4_MOE-00002-of-00003.gguf' -> Quantization 'MXFP4_MOE'
+21:26:12 [INFO] DEBUG: File 'MXFP4_MOE/Qwen3.5-122B-A10B-MXFP4_MOE-00003-of-00003.gguf' -> Quantization 'MXFP4_MOE'
+21:26:12 [INFO] DEBUG: File 'Q3_K_M/Qwen3.5-122B-A10B-Q3_K_M-00001-of-00003.gguf' -> Quantization 'Q3_K_M'
+21:26:12 [INFO] DEBUG: File 'Q3_K_M/Qwen3.5-122B-A10B-Q3_K_M-00002-of-00003.gguf' -> Quantization 'Q3_K_M'
+21:26:12 [INFO] DEBUG: File 'Q3_K_M/Qwen3.5-122B-A10B-Q3_K_M-00003-of-00003.gguf' -> Quantization 'Q3_K_M'
+21:26:12 [INFO] DEBUG: File 'Q3_K_S/Qwen3.5-122B-A10B-Q3_K_S-00001-of-00003.gguf' -> Quantization 'Q3_K_S'
+21:26:12 [INFO] DEBUG: File 'Q3_K_S/Qwen3.5-122B-A10B-Q3_K_S-00002-of-00003.gguf' -> Quantization 'Q3_K_S'
+21:26:12 [INFO] DEBUG: File 'Q3_K_S/Qwen3.5-122B-A10B-Q3_K_S-00003-of-00003.gguf' -> Quantization 'Q3_K_S'
+21:26:12 [INFO] DEBUG: File 'Q4_0/Qwen3.5-122B-A10B-Q4_0-00001-of-00003.gguf' -> Quantization 'Q4_0'
+21:26:12 [INFO] DEBUG: File 'Q4_0/Qwen3.5-122B-A10B-Q4_0-00002-of-00003.gguf' -> Quantization 'Q4_0'
+21:26:12 [INFO] DEBUG: File 'Q4_0/Qwen3.5-122B-A10B-Q4_0-00003-of-00003.gguf' -> Quantization 'Q4_0'
+21:26:12 [INFO] DEBUG: File 'Q4_1/Qwen3.5-122B-A10B-Q4_1-00001-of-00003.gguf' -> Quantization 'Q4_1'
+21:26:12 [INFO] DEBUG: File 'Q4_1/Qwen3.5-122B-A10B-Q4_1-00002-of-00003.gguf' -> Quantization 'Q4_1'
+21:26:12 [INFO] DEBUG: File 'Q4_1/Qwen3.5-122B-A10B-Q4_1-00003-of-00003.gguf' -> Quantization 'Q4_1'
+21:26:12 [INFO] DEBUG: File 'Q4_K_M/Qwen3.5-122B-A10B-Q4_K_M-00001-of-00003.gguf' -> Quantization 'Q4_K_M'
+21:26:12 [INFO] DEBUG: File 'Q4_K_M/Qwen3.5-122B-A10B-Q4_K_M-00002-of-00003.gguf' -> Quantization 'Q4_K_M'
+21:26:12 [INFO] DEBUG: File 'Q4_K_M/Qwen3.5-122B-A10B-Q4_K_M-00003-of-00003.gguf' -> Quantization 'Q4_K_M'
+21:26:12 [INFO] DEBUG: File 'Q4_K_S/Qwen3.5-122B-A10B-Q4_K_S-00001-of-00003.gguf' -> Quantization 'Q4_K_S'
+21:26:12 [INFO] DEBUG: File 'Q4_K_S/Qwen3.5-122B-A10B-Q4_K_S-00002-of-00003.gguf' -> Quantization 'Q4_K_S'
+21:26:12 [INFO] DEBUG: File 'Q4_K_S/Qwen3.5-122B-A10B-Q4_K_S-00003-of-00003.gguf' -> Quantization 'Q4_K_S'
+21:26:12 [INFO] DEBUG: File 'Q5_K_M/Qwen3.5-122B-A10B-Q5_K_M-00001-of-00003.gguf' -> Quantization 'Q5_K_M'
+21:26:12 [INFO] DEBUG: File 'Q5_K_M/Qwen3.5-122B-A10B-Q5_K_M-00002-of-00003.gguf' -> Quantization 'Q5_K_M'
+21:26:12 [INFO] DEBUG: File 'Q5_K_M/Qwen3.5-122B-A10B-Q5_K_M-00003-of-00003.gguf' -> Quantization 'Q5_K_M'
+21:26:12 [INFO] DEBUG: File 'Q5_K_S/Qwen3.5-122B-A10B-Q5_K_S-00001-of-00003.gguf' -> Quantization 'Q5_K_S'
+21:26:12 [INFO] DEBUG: File 'Q5_K_S/Qwen3.5-122B-A10B-Q5_K_S-00002-of-00003.gguf' -> Quantization 'Q5_K_S'
+21:26:12 [INFO] DEBUG: File 'Q5_K_S/Qwen3.5-122B-A10B-Q5_K_S-00003-of-00003.gguf' -> Quantization 'Q5_K_S'
+21:26:12 [INFO] DEBUG: File 'Q6_K/Qwen3.5-122B-A10B-Q6_K-00001-of-00004.gguf' -> Quantization 'Q6_K'
+21:26:12 [INFO] DEBUG: File 'Q6_K/Qwen3.5-122B-A10B-Q6_K-00002-of-00004.gguf' -> Quantization 'Q6_K'
+21:26:12 [INFO] DEBUG: File 'Q6_K/Qwen3.5-122B-A10B-Q6_K-00003-of-00004.gguf' -> Quantization 'Q6_K'
+21:26:12 [INFO] DEBUG: File 'Q6_K/Qwen3.5-122B-A10B-Q6_K-00004-of-00004.gguf' -> Quantization 'Q6_K'
+21:26:12 [INFO] DEBUG: File 'Q8_0/Qwen3.5-122B-A10B-Q8_0-00001-of-00004.gguf' -> Quantization 'Q8_0'
+21:26:12 [INFO] DEBUG: File 'Q8_0/Qwen3.5-122B-A10B-Q8_0-00002-of-00004.gguf' -> Quantization 'Q8_0'
+21:26:12 [INFO] DEBUG: File 'Q8_0/Qwen3.5-122B-A10B-Q8_0-00003-of-00004.gguf' -> Quantization 'Q8_0'
+21:26:12 [INFO] DEBUG: File 'Q8_0/Qwen3.5-122B-A10B-Q8_0-00004-of-00004.gguf' -> Quantization 'Q8_0'
+21:26:12 [INFO] DEBUG: File 'Qwen3.5-122B-A10B-Q2_K.gguf' -> Quantization 'Q2_K'
+21:26:12 [INFO] DEBUG: File 'Qwen3.5-122B-A10B-Q2_K_L.gguf' -> Quantization 'Q2_K_L'
+21:26:12 [INFO] DEBUG: File 'Qwen3.5-122B-A10B-UD-IQ1_M.gguf' -> Quantization 'IQ1_M'
+21:26:12 [INFO] DEBUG: File 'Qwen3.5-122B-A10B-UD-IQ1_S.gguf' -> Quantization 'IQ1_S'
+21:26:12 [INFO] DEBUG: File 'Qwen3.5-122B-A10B-UD-IQ2_M.gguf' -> Quantization 'IQ2_M'
+21:26:12 [INFO] DEBUG: File 'Qwen3.5-122B-A10B-UD-IQ2_XXS.gguf' -> Quantization 'IQ2_XXS'
+21:26:12 [INFO] DEBUG: File 'Qwen3.5-122B-A10B-UD-Q2_K_XL.gguf' -> Quantization 'Q2_K_XL'
+21:26:12 [INFO] DEBUG: File 'Qwen3.5-122B-A10B-UD-TQ1_0.gguf' -> Quantization ''
+21:26:12 [INFO] DEBUG: File 'UD-IQ3_XXS/Qwen3.5-122B-A10B-UD-IQ3_XXS-00001-of-00003.gguf' -> Quantization 'IQ3_XXS'
+21:26:12 [INFO] DEBUG: File 'UD-IQ3_XXS/Qwen3.5-122B-A10B-UD-IQ3_XXS-00002-of-00003.gguf' -> Quantization 'IQ3_XXS'
+21:26:12 [INFO] DEBUG: File 'UD-IQ3_XXS/Qwen3.5-122B-A10B-UD-IQ3_XXS-00003-of-00003.gguf' -> Quantization 'IQ3_XXS'
+21:26:12 [INFO] DEBUG: File 'UD-Q3_K_XL/Qwen3.5-122B-A10B-UD-Q3_K_XL-00001-of-00003.gguf' -> Quantization 'Q3_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q3_K_XL/Qwen3.5-122B-A10B-UD-Q3_K_XL-00002-of-00003.gguf' -> Quantization 'Q3_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q3_K_XL/Qwen3.5-122B-A10B-UD-Q3_K_XL-00003-of-00003.gguf' -> Quantization 'Q3_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q4_K_XL/Qwen3.5-122B-A10B-UD-Q4_K_XL-00001-of-00003.gguf' -> Quantization 'Q4_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q4_K_XL/Qwen3.5-122B-A10B-UD-Q4_K_XL-00002-of-00003.gguf' -> Quantization 'Q4_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q4_K_XL/Qwen3.5-122B-A10B-UD-Q4_K_XL-00003-of-00003.gguf' -> Quantization 'Q4_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q5_K_XL/Qwen3.5-122B-A10B-UD-Q5_K_XL-00001-of-00003.gguf' -> Quantization 'Q5_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q5_K_XL/Qwen3.5-122B-A10B-UD-Q5_K_XL-00002-of-00003.gguf' -> Quantization 'Q5_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q5_K_XL/Qwen3.5-122B-A10B-UD-Q5_K_XL-00003-of-00003.gguf' -> Quantization 'Q5_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q6_K_XL/Qwen3.5-122B-A10B-UD-Q6_K_XL-00001-of-00004.gguf' -> Quantization 'Q6_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q6_K_XL/Qwen3.5-122B-A10B-UD-Q6_K_XL-00002-of-00004.gguf' -> Quantization 'Q6_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q6_K_XL/Qwen3.5-122B-A10B-UD-Q6_K_XL-00003-of-00004.gguf' -> Quantization 'Q6_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q6_K_XL/Qwen3.5-122B-A10B-UD-Q6_K_XL-00004-of-00004.gguf' -> Quantization 'Q6_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q8_K_XL/Qwen3.5-122B-A10B-UD-Q8_K_XL-00001-of-00004.gguf' -> Quantization 'Q8_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q8_K_XL/Qwen3.5-122B-A10B-UD-Q8_K_XL-00002-of-00004.gguf' -> Quantization 'Q8_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q8_K_XL/Qwen3.5-122B-A10B-UD-Q8_K_XL-00003-of-00004.gguf' -> Quantization 'Q8_K_XL'
+21:26:12 [INFO] DEBUG: File 'UD-Q8_K_XL/Qwen3.5-122B-A10B-UD-Q8_K_XL-00004-of-00004.gguf' -> Quantization 'Q8_K_XL'
+21:26:12 [INFO] DEBUG: File 'mmproj-BF16.gguf' -> Quantization ''
+21:26:12 [INFO] DEBUG: File 'mmproj-F16.gguf' -> Quantization 'F16'
+21:26:12 [INFO] DEBUG: File 'mmproj-F32.gguf' -> Quantization 'F32'
+21:26:38 [INFO] HuggingFace API returned status 401 for model unsloth/Qwen3.5-
+21:26:38 [INFO] HuggingFace API returned status 401 for model unsloth/Qwen3.5
+21:27:22 [INFO] DEBUG: File 'IQ2_KL/Qwen3.5-397B-A17B-IQ2_KL-00001-of-00004.gguf' -> Quantization 'IQ2_KL'
+21:27:22 [INFO] DEBUG: File 'IQ2_KL/Qwen3.5-397B-A17B-IQ2_KL-00002-of-00004.gguf' -> Quantization 'IQ2_KL'
+21:27:22 [INFO] DEBUG: File 'IQ2_KL/Qwen3.5-397B-A17B-IQ2_KL-00003-of-00004.gguf' -> Quantization 'IQ2_KL'
+21:27:22 [INFO] DEBUG: File 'IQ2_KL/Qwen3.5-397B-A17B-IQ2_KL-00004-of-00004.gguf' -> Quantization 'IQ2_KL'
+21:27:22 [INFO] DEBUG: File 'IQ4_KSS/Qwen3.5-397B-A17B-IQ4_KSS-00001-of-00006.gguf' -> Quantization 'IQ4_KSS'
+21:27:22 [INFO] DEBUG: File 'IQ4_KSS/Qwen3.5-397B-A17B-IQ4_KSS-00002-of-00006.gguf' -> Quantization 'IQ4_KSS'
+21:27:22 [INFO] DEBUG: File 'IQ4_KSS/Qwen3.5-397B-A17B-IQ4_KSS-00003-of-00006.gguf' -> Quantization 'IQ4_KSS'
+21:27:22 [INFO] DEBUG: File 'IQ4_KSS/Qwen3.5-397B-A17B-IQ4_KSS-00004-of-00006.gguf' -> Quantization 'IQ4_KSS'
+21:27:22 [INFO] DEBUG: File 'IQ4_KSS/Qwen3.5-397B-A17B-IQ4_KSS-00005-of-00006.gguf' -> Quantization 'IQ4_KSS'
+21:27:22 [INFO] DEBUG: File 'IQ4_KSS/Qwen3.5-397B-A17B-IQ4_KSS-00006-of-00006.gguf' -> Quantization 'IQ4_KSS'
+21:27:22 [INFO] DEBUG: File 'Q3_K/Qwen3.5-397B-A17B-Q3_K-00001-of-00005.gguf' -> Quantization 'Q3_K'
+21:27:22 [INFO] DEBUG: File 'Q3_K/Qwen3.5-397B-A17B-Q3_K-00002-of-00005.gguf' -> Quantization 'Q3_K'
+21:27:22 [INFO] DEBUG: File 'Q3_K/Qwen3.5-397B-A17B-Q3_K-00003-of-00005.gguf' -> Quantization 'Q3_K'
+21:27:22 [INFO] DEBUG: File 'Q3_K/Qwen3.5-397B-A17B-Q3_K-00004-of-00005.gguf' -> Quantization 'Q3_K'
+21:27:22 [INFO] DEBUG: File 'Q3_K/Qwen3.5-397B-A17B-Q3_K-00005-of-00005.gguf' -> Quantization 'Q3_K'
+21:27:22 [INFO] DEBUG: File 'imatrix-Qwen3.5-397B-A17B-BF16-mainline.gguf' -> Quantization ''
+21:27:22 [INFO] DEBUG: File 'smol-IQ1_KT/Qwen3.5-397B-A17B-smol-IQ1_KT-00001-of-00003.gguf' -> Quantization 'IQ1_KT'
+21:27:22 [INFO] DEBUG: File 'smol-IQ1_KT/Qwen3.5-397B-A17B-smol-IQ1_KT-00002-of-00003.gguf' -> Quantization 'IQ1_KT'
+21:27:22 [INFO] DEBUG: File 'smol-IQ1_KT/Qwen3.5-397B-A17B-smol-IQ1_KT-00003-of-00003.gguf' -> Quantization 'IQ1_KT'
+21:27:22 [INFO] DEBUG: File 'smol-IQ2_KS/Qwen3.5-397B-A17B-smol-IQ2_KS-00001-of-00004.gguf' -> Quantization 'IQ2_KS'
+21:27:22 [INFO] DEBUG: File 'smol-IQ2_KS/Qwen3.5-397B-A17B-smol-IQ2_KS-00002-of-00004.gguf' -> Quantization 'IQ2_KS'
+21:27:22 [INFO] DEBUG: File 'smol-IQ2_KS/Qwen3.5-397B-A17B-smol-IQ2_KS-00003-of-00004.gguf' -> Quantization 'IQ2_KS'
+21:27:22 [INFO] DEBUG: File 'smol-IQ2_KS/Qwen3.5-397B-A17B-smol-IQ2_KS-00004-of-00004.gguf' -> Quantization 'IQ2_KS'
+21:27:22 [INFO] DEBUG: File 'smol-IQ2_XS/Qwen3.5-397B-A17B-smol-IQ2_XS-00001-of-00004.gguf' -> Quantization 'IQ2_XS'
+21:27:22 [INFO] DEBUG: File 'smol-IQ2_XS/Qwen3.5-397B-A17B-smol-IQ2_XS-00002-of-00004.gguf' -> Quantization 'IQ2_XS'
+21:27:22 [INFO] DEBUG: File 'smol-IQ2_XS/Qwen3.5-397B-A17B-smol-IQ2_XS-00003-of-00004.gguf' -> Quantization 'IQ2_XS'
+21:27:22 [INFO] DEBUG: File 'smol-IQ2_XS/Qwen3.5-397B-A17B-smol-IQ2_XS-00004-of-00004.gguf' -> Quantization 'IQ2_XS'
+21:27:32 [INFO] HuggingFace API returned status 401 for model ubergarm/Qwen3.5-397B-A17B-GGUFr
+21:27:53 [INFO] SSE client disconnected, remaining clients: 0
+21:27:53 [INFO] SSE client connected, total clients: 1
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00001-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00002-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00003-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00004-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00005-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00006-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00007-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00008-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00009-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00010-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00011-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00012-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00013-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00014-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'BF16/GLM-4.7-BF16-00015-of-00015.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'GLM-4.7-UD-TQ1_0.gguf' -> Quantization ''
+21:31:03 [INFO] DEBUG: File 'IQ4_NL/GLM-4.7-IQ4_NL-00001-of-00005.gguf' -> Quantization 'IQ4_NL'
+21:31:03 [INFO] DEBUG: File 'IQ4_NL/GLM-4.7-IQ4_NL-00002-of-00005.gguf' -> Quantization 'IQ4_NL'
+21:31:03 [INFO] DEBUG: File 'IQ4_NL/GLM-4.7-IQ4_NL-00003-of-00005.gguf' -> Quantization 'IQ4_NL'
+21:31:03 [INFO] DEBUG: File 'IQ4_NL/GLM-4.7-IQ4_NL-00004-of-00005.gguf' -> Quantization 'IQ4_NL'
+21:31:03 [INFO] DEBUG: File 'IQ4_NL/GLM-4.7-IQ4_NL-00005-of-00005.gguf' -> Quantization 'IQ4_NL'
+21:31:03 [INFO] DEBUG: File 'IQ4_XS/GLM-4.7-IQ4_XS-00001-of-00004.gguf' -> Quantization 'IQ4_XS'
+21:31:03 [INFO] DEBUG: File 'IQ4_XS/GLM-4.7-IQ4_XS-00002-of-00004.gguf' -> Quantization 'IQ4_XS'
+21:31:03 [INFO] DEBUG: File 'IQ4_XS/GLM-4.7-IQ4_XS-00003-of-00004.gguf' -> Quantization 'IQ4_XS'
+21:31:03 [INFO] DEBUG: File 'IQ4_XS/GLM-4.7-IQ4_XS-00004-of-00004.gguf' -> Quantization 'IQ4_XS'
+21:31:03 [INFO] DEBUG: File 'Q2_K/GLM-4.7-Q2_K-00001-of-00003.gguf' -> Quantization 'Q2_K'
+21:31:03 [INFO] DEBUG: File 'Q2_K/GLM-4.7-Q2_K-00002-of-00003.gguf' -> Quantization 'Q2_K'
+21:31:03 [INFO] DEBUG: File 'Q2_K/GLM-4.7-Q2_K-00003-of-00003.gguf' -> Quantization 'Q2_K'
+21:31:03 [INFO] DEBUG: File 'Q2_K_L/GLM-4.7-Q2_K_L-00001-of-00003.gguf' -> Quantization 'Q2_K_L'
+21:31:03 [INFO] DEBUG: File 'Q2_K_L/GLM-4.7-Q2_K_L-00002-of-00003.gguf' -> Quantization 'Q2_K_L'
+21:31:03 [INFO] DEBUG: File 'Q2_K_L/GLM-4.7-Q2_K_L-00003-of-00003.gguf' -> Quantization 'Q2_K_L'
+21:31:03 [INFO] DEBUG: File 'Q3_K_M/GLM-4.7-Q3_K_M-00001-of-00004.gguf' -> Quantization 'Q3_K_M'
+21:31:03 [INFO] DEBUG: File 'Q3_K_M/GLM-4.7-Q3_K_M-00002-of-00004.gguf' -> Quantization 'Q3_K_M'
+21:31:03 [INFO] DEBUG: File 'Q3_K_M/GLM-4.7-Q3_K_M-00003-of-00004.gguf' -> Quantization 'Q3_K_M'
+21:31:03 [INFO] DEBUG: File 'Q3_K_M/GLM-4.7-Q3_K_M-00004-of-00004.gguf' -> Quantization 'Q3_K_M'
+21:31:03 [INFO] DEBUG: File 'Q3_K_S/GLM-4.7-Q3_K_S-00001-of-00004.gguf' -> Quantization 'Q3_K_S'
+21:31:03 [INFO] DEBUG: File 'Q3_K_S/GLM-4.7-Q3_K_S-00002-of-00004.gguf' -> Quantization 'Q3_K_S'
+21:31:03 [INFO] DEBUG: File 'Q3_K_S/GLM-4.7-Q3_K_S-00003-of-00004.gguf' -> Quantization 'Q3_K_S'
+21:31:03 [INFO] DEBUG: File 'Q3_K_S/GLM-4.7-Q3_K_S-00004-of-00004.gguf' -> Quantization 'Q3_K_S'
+21:31:03 [INFO] DEBUG: File 'Q4_0/GLM-4.7-Q4_0-00001-of-00005.gguf' -> Quantization 'Q4_0'
+21:31:03 [INFO] DEBUG: File 'Q4_0/GLM-4.7-Q4_0-00002-of-00005.gguf' -> Quantization 'Q4_0'
+21:31:03 [INFO] DEBUG: File 'Q4_0/GLM-4.7-Q4_0-00003-of-00005.gguf' -> Quantization 'Q4_0'
+21:31:03 [INFO] DEBUG: File 'Q4_0/GLM-4.7-Q4_0-00004-of-00005.gguf' -> Quantization 'Q4_0'
+21:31:03 [INFO] DEBUG: File 'Q4_0/GLM-4.7-Q4_0-00005-of-00005.gguf' -> Quantization 'Q4_0'
+21:31:03 [INFO] DEBUG: File 'Q4_1/GLM-4.7-Q4_1-00001-of-00005.gguf' -> Quantization 'Q4_1'
+21:31:03 [INFO] DEBUG: File 'Q4_1/GLM-4.7-Q4_1-00002-of-00005.gguf' -> Quantization 'Q4_1'
+21:31:03 [INFO] DEBUG: File 'Q4_1/GLM-4.7-Q4_1-00003-of-00005.gguf' -> Quantization 'Q4_1'
+21:31:03 [INFO] DEBUG: File 'Q4_1/GLM-4.7-Q4_1-00004-of-00005.gguf' -> Quantization 'Q4_1'
+21:31:03 [INFO] DEBUG: File 'Q4_1/GLM-4.7-Q4_1-00005-of-00005.gguf' -> Quantization 'Q4_1'
+21:31:03 [INFO] DEBUG: File 'Q4_K_M/GLM-4.7-Q4_K_M-00001-of-00005.gguf' -> Quantization 'Q4_K_M'
+21:31:03 [INFO] DEBUG: File 'Q4_K_M/GLM-4.7-Q4_K_M-00002-of-00005.gguf' -> Quantization 'Q4_K_M'
+21:31:03 [INFO] DEBUG: File 'Q4_K_M/GLM-4.7-Q4_K_M-00003-of-00005.gguf' -> Quantization 'Q4_K_M'
+21:31:03 [INFO] DEBUG: File 'Q4_K_M/GLM-4.7-Q4_K_M-00004-of-00005.gguf' -> Quantization 'Q4_K_M'
+21:31:03 [INFO] DEBUG: File 'Q4_K_M/GLM-4.7-Q4_K_M-00005-of-00005.gguf' -> Quantization 'Q4_K_M'
+21:31:03 [INFO] DEBUG: File 'Q4_K_S/GLM-4.7-Q4_K_S-00001-of-00005.gguf' -> Quantization 'Q4_K_S'
+21:31:03 [INFO] DEBUG: File 'Q4_K_S/GLM-4.7-Q4_K_S-00002-of-00005.gguf' -> Quantization 'Q4_K_S'
+21:31:03 [INFO] DEBUG: File 'Q4_K_S/GLM-4.7-Q4_K_S-00003-of-00005.gguf' -> Quantization 'Q4_K_S'
+21:31:03 [INFO] DEBUG: File 'Q4_K_S/GLM-4.7-Q4_K_S-00004-of-00005.gguf' -> Quantization 'Q4_K_S'
+21:31:03 [INFO] DEBUG: File 'Q4_K_S/GLM-4.7-Q4_K_S-00005-of-00005.gguf' -> Quantization 'Q4_K_S'
+21:31:03 [INFO] DEBUG: File 'Q5_K_M/GLM-4.7-Q5_K_M-00001-of-00006.gguf' -> Quantization 'Q5_K_M'
+21:31:03 [INFO] DEBUG: File 'Q5_K_M/GLM-4.7-Q5_K_M-00002-of-00006.gguf' -> Quantization 'Q5_K_M'
+21:31:03 [INFO] DEBUG: File 'Q5_K_M/GLM-4.7-Q5_K_M-00003-of-00006.gguf' -> Quantization 'Q5_K_M'
+21:31:03 [INFO] DEBUG: File 'Q5_K_M/GLM-4.7-Q5_K_M-00004-of-00006.gguf' -> Quantization 'Q5_K_M'
+21:31:03 [INFO] DEBUG: File 'Q5_K_M/GLM-4.7-Q5_K_M-00005-of-00006.gguf' -> Quantization 'Q5_K_M'
+21:31:03 [INFO] DEBUG: File 'Q5_K_M/GLM-4.7-Q5_K_M-00006-of-00006.gguf' -> Quantization 'Q5_K_M'
+21:31:03 [INFO] DEBUG: File 'Q5_K_S/GLM-4.7-Q5_K_S-00001-of-00005.gguf' -> Quantization 'Q5_K_S'
+21:31:03 [INFO] DEBUG: File 'Q5_K_S/GLM-4.7-Q5_K_S-00002-of-00005.gguf' -> Quantization 'Q5_K_S'
+21:31:03 [INFO] DEBUG: File 'Q5_K_S/GLM-4.7-Q5_K_S-00003-of-00005.gguf' -> Quantization 'Q5_K_S'
+21:31:03 [INFO] DEBUG: File 'Q5_K_S/GLM-4.7-Q5_K_S-00004-of-00005.gguf' -> Quantization 'Q5_K_S'
+21:31:03 [INFO] DEBUG: File 'Q5_K_S/GLM-4.7-Q5_K_S-00005-of-00005.gguf' -> Quantization 'Q5_K_S'
+21:31:03 [INFO] DEBUG: File 'Q6_K/GLM-4.7-Q6_K-00001-of-00006.gguf' -> Quantization 'Q6_K'
+21:31:03 [INFO] DEBUG: File 'Q6_K/GLM-4.7-Q6_K-00002-of-00006.gguf' -> Quantization 'Q6_K'
+21:31:03 [INFO] DEBUG: File 'Q6_K/GLM-4.7-Q6_K-00003-of-00006.gguf' -> Quantization 'Q6_K'
+21:31:03 [INFO] DEBUG: File 'Q6_K/GLM-4.7-Q6_K-00004-of-00006.gguf' -> Quantization 'Q6_K'
+21:31:03 [INFO] DEBUG: File 'Q6_K/GLM-4.7-Q6_K-00005-of-00006.gguf' -> Quantization 'Q6_K'
+21:31:03 [INFO] DEBUG: File 'Q6_K/GLM-4.7-Q6_K-00006-of-00006.gguf' -> Quantization 'Q6_K'
+21:31:03 [INFO] DEBUG: File 'Q8_0/GLM-4.7-Q8_0-00001-of-00008.gguf' -> Quantization 'Q8_0'
+21:31:03 [INFO] DEBUG: File 'Q8_0/GLM-4.7-Q8_0-00002-of-00008.gguf' -> Quantization 'Q8_0'
+21:31:03 [INFO] DEBUG: File 'Q8_0/GLM-4.7-Q8_0-00003-of-00008.gguf' -> Quantization 'Q8_0'
+21:31:03 [INFO] DEBUG: File 'Q8_0/GLM-4.7-Q8_0-00004-of-00008.gguf' -> Quantization 'Q8_0'
+21:31:03 [INFO] DEBUG: File 'Q8_0/GLM-4.7-Q8_0-00005-of-00008.gguf' -> Quantization 'Q8_0'
+21:31:03 [INFO] DEBUG: File 'Q8_0/GLM-4.7-Q8_0-00006-of-00008.gguf' -> Quantization 'Q8_0'
+21:31:03 [INFO] DEBUG: File 'Q8_0/GLM-4.7-Q8_0-00007-of-00008.gguf' -> Quantization 'Q8_0'
+21:31:03 [INFO] DEBUG: File 'Q8_0/GLM-4.7-Q8_0-00008-of-00008.gguf' -> Quantization 'Q8_0'
+21:31:03 [INFO] DEBUG: File 'UD-IQ1_M/GLM-4.7-UD-IQ1_M-00001-of-00003.gguf' -> Quantization 'IQ1_M'
+21:31:03 [INFO] DEBUG: File 'UD-IQ1_M/GLM-4.7-UD-IQ1_M-00002-of-00003.gguf' -> Quantization 'IQ1_M'
+21:31:03 [INFO] DEBUG: File 'UD-IQ1_M/GLM-4.7-UD-IQ1_M-00003-of-00003.gguf' -> Quantization 'IQ1_M'
+21:31:03 [INFO] DEBUG: File 'UD-IQ1_S/GLM-4.7-UD-IQ1_S-00001-of-00002.gguf' -> Quantization 'IQ1_S'
+21:31:03 [INFO] DEBUG: File 'UD-IQ1_S/GLM-4.7-UD-IQ1_S-00002-of-00002.gguf' -> Quantization 'IQ1_S'
+21:31:03 [INFO] DEBUG: File 'UD-IQ2_M/GLM-4.7-UD-IQ2_M-00001-of-00003.gguf' -> Quantization 'IQ2_M'
+21:31:03 [INFO] DEBUG: File 'UD-IQ2_M/GLM-4.7-UD-IQ2_M-00002-of-00003.gguf' -> Quantization 'IQ2_M'
+21:31:03 [INFO] DEBUG: File 'UD-IQ2_M/GLM-4.7-UD-IQ2_M-00003-of-00003.gguf' -> Quantization 'IQ2_M'
+21:31:03 [INFO] DEBUG: File 'UD-IQ2_XXS/GLM-4.7-UD-IQ2_XXS-00001-of-00003.gguf' -> Quantization 'IQ2_XXS'
+21:31:03 [INFO] DEBUG: File 'UD-IQ2_XXS/GLM-4.7-UD-IQ2_XXS-00002-of-00003.gguf' -> Quantization 'IQ2_XXS'
+21:31:03 [INFO] DEBUG: File 'UD-IQ2_XXS/GLM-4.7-UD-IQ2_XXS-00003-of-00003.gguf' -> Quantization 'IQ2_XXS'
+21:31:03 [INFO] DEBUG: File 'UD-IQ3_XXS/GLM-4.7-UD-IQ3_XXS-00001-of-00003.gguf' -> Quantization 'IQ3_XXS'
+21:31:03 [INFO] DEBUG: File 'UD-IQ3_XXS/GLM-4.7-UD-IQ3_XXS-00002-of-00003.gguf' -> Quantization 'IQ3_XXS'
+21:31:03 [INFO] DEBUG: File 'UD-IQ3_XXS/GLM-4.7-UD-IQ3_XXS-00003-of-00003.gguf' -> Quantization 'IQ3_XXS'
+21:31:03 [INFO] DEBUG: File 'UD-Q2_K_XL/GLM-4.7-UD-Q2_K_XL-00001-of-00003.gguf' -> Quantization 'Q2_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q2_K_XL/GLM-4.7-UD-Q2_K_XL-00002-of-00003.gguf' -> Quantization 'Q2_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q2_K_XL/GLM-4.7-UD-Q2_K_XL-00003-of-00003.gguf' -> Quantization 'Q2_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q3_K_XL/GLM-4.7-UD-Q3_K_XL-00001-of-00004.gguf' -> Quantization 'Q3_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q3_K_XL/GLM-4.7-UD-Q3_K_XL-00002-of-00004.gguf' -> Quantization 'Q3_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q3_K_XL/GLM-4.7-UD-Q3_K_XL-00003-of-00004.gguf' -> Quantization 'Q3_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q3_K_XL/GLM-4.7-UD-Q3_K_XL-00004-of-00004.gguf' -> Quantization 'Q3_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q4_K_XL/GLM-4.7-UD-Q4_K_XL-00001-of-00005.gguf' -> Quantization 'Q4_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q4_K_XL/GLM-4.7-UD-Q4_K_XL-00002-of-00005.gguf' -> Quantization 'Q4_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q4_K_XL/GLM-4.7-UD-Q4_K_XL-00003-of-00005.gguf' -> Quantization 'Q4_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q4_K_XL/GLM-4.7-UD-Q4_K_XL-00004-of-00005.gguf' -> Quantization 'Q4_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q4_K_XL/GLM-4.7-UD-Q4_K_XL-00005-of-00005.gguf' -> Quantization 'Q4_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q5_K_XL/GLM-4.7-UD-Q5_K_XL-00001-of-00006.gguf' -> Quantization 'Q5_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q5_K_XL/GLM-4.7-UD-Q5_K_XL-00002-of-00006.gguf' -> Quantization 'Q5_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q5_K_XL/GLM-4.7-UD-Q5_K_XL-00003-of-00006.gguf' -> Quantization 'Q5_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q5_K_XL/GLM-4.7-UD-Q5_K_XL-00004-of-00006.gguf' -> Quantization 'Q5_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q5_K_XL/GLM-4.7-UD-Q5_K_XL-00005-of-00006.gguf' -> Quantization 'Q5_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q5_K_XL/GLM-4.7-UD-Q5_K_XL-00006-of-00006.gguf' -> Quantization 'Q5_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q6_K_XL/GLM-4.7-UD-Q6_K_XL-00001-of-00007.gguf' -> Quantization 'Q6_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q6_K_XL/GLM-4.7-UD-Q6_K_XL-00002-of-00007.gguf' -> Quantization 'Q6_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q6_K_XL/GLM-4.7-UD-Q6_K_XL-00003-of-00007.gguf' -> Quantization 'Q6_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q6_K_XL/GLM-4.7-UD-Q6_K_XL-00004-of-00007.gguf' -> Quantization 'Q6_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q6_K_XL/GLM-4.7-UD-Q6_K_XL-00005-of-00007.gguf' -> Quantization 'Q6_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q6_K_XL/GLM-4.7-UD-Q6_K_XL-00006-of-00007.gguf' -> Quantization 'Q6_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q6_K_XL/GLM-4.7-UD-Q6_K_XL-00007-of-00007.gguf' -> Quantization 'Q6_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q8_K_XL/GLM-4.7-UD-Q8_K_XL-00001-of-00009.gguf' -> Quantization 'Q8_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q8_K_XL/GLM-4.7-UD-Q8_K_XL-00002-of-00009.gguf' -> Quantization 'Q8_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q8_K_XL/GLM-4.7-UD-Q8_K_XL-00003-of-00009.gguf' -> Quantization 'Q8_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q8_K_XL/GLM-4.7-UD-Q8_K_XL-00004-of-00009.gguf' -> Quantization 'Q8_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q8_K_XL/GLM-4.7-UD-Q8_K_XL-00005-of-00009.gguf' -> Quantization 'Q8_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q8_K_XL/GLM-4.7-UD-Q8_K_XL-00006-of-00009.gguf' -> Quantization 'Q8_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q8_K_XL/GLM-4.7-UD-Q8_K_XL-00007-of-00009.gguf' -> Quantization 'Q8_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q8_K_XL/GLM-4.7-UD-Q8_K_XL-00008-of-00009.gguf' -> Quantization 'Q8_K_XL'
+21:31:03 [INFO] DEBUG: File 'UD-Q8_K_XL/GLM-4.7-UD-Q8_K_XL-00009-of-00009.gguf' -> Quantization 'Q8_K_XL'
+21:31:31 [INFO] HuggingFace API returned status 401 for model unsloth/
+21:31:39 [INFO] DEBUG: File 'BF16/GLM-4.7-Flash-BF16-00001-of-00002.gguf' -> Quantization ''
+21:31:39 [INFO] DEBUG: File 'BF16/GLM-4.7-Flash-BF16-00002-of-00002.gguf' -> Quantization ''
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-IQ4_NL.gguf' -> Quantization 'IQ4_NL'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-IQ4_XS.gguf' -> Quantization 'IQ4_XS'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-MXFP4_MOE.gguf' -> Quantization 'MXFP4_MOE'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q2_K.gguf' -> Quantization 'Q2_K'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q2_K_L.gguf' -> Quantization 'Q2_K_L'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q3_K_M.gguf' -> Quantization 'Q3_K_M'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q3_K_S.gguf' -> Quantization 'Q3_K_S'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q4_0.gguf' -> Quantization 'Q4_0'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q4_1.gguf' -> Quantization 'Q4_1'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q4_K_M.gguf' -> Quantization 'Q4_K_M'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q4_K_S.gguf' -> Quantization 'Q4_K_S'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q5_K_M.gguf' -> Quantization 'Q5_K_M'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q5_K_S.gguf' -> Quantization 'Q5_K_S'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q6_K.gguf' -> Quantization 'Q6_K'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-Q8_0.gguf' -> Quantization 'Q8_0'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-IQ1_M.gguf' -> Quantization 'IQ1_M'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-IQ1_S.gguf' -> Quantization 'IQ1_S'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-IQ2_M.gguf' -> Quantization 'IQ2_M'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-IQ2_XXS.gguf' -> Quantization 'IQ2_XXS'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-IQ3_XXS.gguf' -> Quantization 'IQ3_XXS'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-Q2_K_XL.gguf' -> Quantization 'Q2_K_XL'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-Q3_K_XL.gguf' -> Quantization 'Q3_K_XL'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-Q4_K_XL.gguf' -> Quantization 'Q4_K_XL'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-Q5_K_XL.gguf' -> Quantization 'Q5_K_XL'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-Q6_K_XL.gguf' -> Quantization 'Q6_K_XL'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-Q8_K_XL.gguf' -> Quantization 'Q8_K_XL'
+21:31:39 [INFO] DEBUG: File 'GLM-4.7-Flash-UD-TQ1_0.gguf' -> Quantization ''
+21:31:51 [INFO] SSE client disconnected, remaining clients: 0
+21:31:51 [INFO] SSE client connected, total clients: 1
+21:32:14 [INFO] HandleStartServer: request from [::1]:56736 ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" referer="http://localhost:8080/models" model_path=/mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+21:32:14 [INFO] DEBUG: Received context_size parameter: '262144'
+21:32:14 [INFO] Using custom context size: 262144 for /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+21:32:14 [INFO] DEBUG: Received ngl parameter: '999'
+21:32:14 [INFO] Using custom ngl: 999 for /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+21:32:14 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+21:32:14 [INFO] Found available port: 8082
+21:32:14 [INFO] Pulling latest Docker image rocm7-nightlies...
+21:35:26 [INFO] SSE client disconnected, remaining clients: 0
+21:35:26 [INFO] SSE client connected, total clients: 1
+21:40:05 [INFO] SSE client disconnected, remaining clients: 0
+21:41:01 [INFO] Docker launch command: llama-server -m /models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf --host 0.0.0.0 --port 8080 -c 262144 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8082.log 2>&1
+21:41:04 [INFO] Started model server via Docker: Qwen3.5-122B-A10B-UD-TQ1_0.gguf on port 8082 (Container: a6ef8c06bc07)
+21:41:04 [INFO] Updated CLI config to use model Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+21:41:05 [INFO] Error rendering models table: context canceled
+21:41:12 [INFO] Model server ready: Qwen3.5-122B-A10B-UD-TQ1_0.gguf on port 8082
+21:41:22 [INFO] SSE client connected, total clients: 1
+21:41:31 [INFO] SSE client disconnected, remaining clients: 0
+21:41:31 [INFO] SSE client connected, total clients: 1
+21:49:45 [INFO] SSE client disconnected, remaining clients: 0
+21:52:28 [INFO] SSE client connected, total clients: 1
+21:53:58 [INFO] SSE client disconnected, remaining clients: 0
+21:53:58 [INFO] SSE client connected, total clients: 1
+21:58:27 [INFO] SSE client disconnected, remaining clients: 0
+21:58:27 [INFO] SSE client connected, total clients: 1
+21:58:49 [INFO] HandleStartServer: request from [::1]:48594 ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" referer="http://localhost:8080/models" model_path=/mnt/media/models/GLM-4.7-Flash-UD-Q8_K_XL.gguf
+21:58:49 [INFO] DEBUG: Received context_size parameter: ''
+21:58:49 [INFO] DEBUG: No context_size parameter provided, using default
+21:58:49 [INFO] DEBUG: Received ngl parameter: '999'
+21:58:49 [INFO] Using custom ngl: 999 for /mnt/media/models/GLM-4.7-Flash-UD-Q8_K_XL.gguf
+21:58:49 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/GLM-4.7-Flash-UD-Q8_K_XL.gguf
+21:58:49 [INFO] Found available port: 8083
+21:58:49 [INFO] Pulling latest Docker image rocm7-nightlies...
+21:58:49 [INFO] Docker launch command: llama-server -m /models/GLM-4.7-Flash-UD-Q8_K_XL.gguf --host 0.0.0.0 --port 8080 -c 131072 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8083.log 2>&1
+21:58:53 [INFO] Started model server via Docker: GLM-4.7-Flash-UD-Q8_K_XL.gguf on port 8083 (Container: 83cb2ee95228)
+21:58:53 [INFO] Updated CLI config to use model GLM-4.7-Flash-UD-Q8_K_XL.gguf
+22:01:49 [INFO] Model server ready: GLM-4.7-Flash-UD-Q8_K_XL.gguf on port 8083
+22:05:15 [INFO] SSE client disconnected, remaining clients: 0
+22:05:15 [INFO] SSE client connected, total clients: 1
+22:21:23 [INFO] SSE client disconnected, remaining clients: 0
+22:21:23 [INFO] SSE client connected, total clients: 1
+22:21:28 [INFO] HandleStopServer: Received request to stop server
+22:21:28 [INFO] HandleStopServer: Stopping model at path: /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+22:21:28 [INFO] Stopping Docker container: clai-model-qwen3_5_122b_a10b_ud_tq1_0
+22:21:38 [INFO] Successfully stopped Docker container: clai-model-qwen3_5_122b_a10b_ud_tq1_0
+22:21:38 [INFO] Preserving log file: /home/josh/.local/share/clai/logs/llama-server-8082.log
+22:26:50 [INFO] Shutting down service...
+22:26:52 [INFO] Opened database at /home/josh/.clai/conversations.db
+22:26:53 [INFO] Restored 2 downloads from database
+22:26:53 [INFO] Web UI available at http://localhost:8080
+22:26:53 [INFO] Service ready on http://localhost:8080
+22:26:53 [INFO] SSE client connected, total clients: 1
+22:27:06 [INFO] Shutting down service...
+22:27:08 [INFO] Opened database at /home/josh/.clai/conversations.db
+22:27:09 [INFO] Restored 2 downloads from database
+22:27:09 [INFO] Web UI available at http://localhost:8080
+22:27:09 [INFO] Service ready on http://localhost:8080
+22:27:09 [INFO] SSE client connected, total clients: 1
+22:27:28 [INFO] SSE client disconnected, remaining clients: 0
+23:02:11 [INFO] Shutting down service...
+23:02:13 [INFO] Opened database at /home/josh/.clai/conversations.db
+23:02:14 [INFO] Restored 2 downloads from database
+23:02:14 [INFO] Web UI available at http://localhost:8080
+23:02:14 [INFO] Service ready on http://localhost:8080
+23:02:37 [INFO] Shutting down service...
+23:02:39 [INFO] Opened database at /home/josh/.clai/conversations.db
+23:02:39 [INFO] Restored 2 downloads from database
+23:02:39 [INFO] Web UI available at http://localhost:8080
+23:02:39 [INFO] Service ready on http://localhost:8080
+23:04:53 [INFO] Shutting down service...
+23:04:55 [INFO] Opened database at /home/josh/.clai/conversations.db
+23:04:56 [INFO] Restored 2 downloads from database
+23:04:56 [INFO] Web UI available at http://localhost:8080
+23:04:56 [INFO] Service ready on http://localhost:8080
+23:06:15 [INFO] Shutting down service...
+23:06:17 [INFO] Opened database at /home/josh/.clai/conversations.db
+23:06:17 [INFO] Restored 2 downloads from database
+23:06:17 [INFO] Web UI available at http://localhost:8080
+23:06:17 [INFO] Service ready on http://localhost:8080
+23:06:52 [INFO] Shutting down service...
+23:06:53 [INFO] Opened database at /home/josh/.clai/conversations.db
+23:06:54 [INFO] Restored 2 downloads from database
+23:06:54 [INFO] Web UI available at http://localhost:8080
+23:06:54 [INFO] Service ready on http://localhost:8080

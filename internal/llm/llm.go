@@ -46,6 +46,22 @@ const (
 
 Answer questions clearly and execute code when needed to provide accurate information.`
 
+	// step35FlashSystemPrompt is for Step-3.5-Flash models - let the Jinja template handle tool format
+	step35FlashSystemPrompt = `You are a free agent AI with full code execution capabilities. You can execute bash, python, and javascript code directly on the system.
+
+**Current working directory:** /home/josh/clai
+- Relative paths are relative to this directory
+
+**Tool calling:**
+Use the provided tools to accomplish tasks. The model will automatically use the correct tool calling format.
+
+**Default behavior when uncertain:**
+- If asked about project status, plans or "what's next", read TODO.md, README.md, or AGENTS.md
+- If asked about code structure or how something works, read the relevant source files
+- If asked about configuration or setup, read config files (.yaml, .json, .toml, Makefile, package.json, etc.)
+
+Answer questions clearly and execute code when needed.`
+
 	// codeActSystemPrompt is used for Hermes-style models that support native tool calling
 	codeActSystemPrompt = `You are a free agent AI with full code execution capabilities.
 
@@ -433,6 +449,9 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, availableTools [
 	// Check if model supports Hermes-style tool calling (CodeAct)
 	useCodeAct := tools.IsHermesStyleModel(c.model)
 
+	// Check if model is Step-3.5-Flash which uses <tool_call> format
+	useStepFlash := tools.IsStepFlashModel(c.model)
+
 	// Prepare system prompt and tools based on model capabilities
 	systemPrompt := c.systemPrompt
 	toolsToUse := availableTools
@@ -443,8 +462,15 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, availableTools [
 			// Use only the execute_code tool for CodeAct
 			toolsToUse = tools.GetCodeActTools()
 			logger.Debug("[LLM-TOOLS] Using CodeAct mode for model %s", c.model)
+		} else if useStepFlash {
+			// Use Step-3.5-Flash specific prompt for <tool_call> format
+			// Use only execute_code tool to avoid confusion from multiple similar tools
+			systemPrompt = step35FlashSystemPrompt
+			toolsToUse = tools.GetCodeActTools() // Use single execute_code tool
+			logger.Debug("[LLM-TOOLS] Using Step-3.5-Flash mode for model %s", c.model)
 		} else if len(toolsToUse) > 0 && c.apiFormat == FormatOllama {
 			// For Ollama format without Hermes support, inject tools into system prompt
+			// Note: Tool descriptions already explain usage - no need for additional instructions
 			toolsJSON, err := json.Marshal(toolsToUse)
 			if err != nil {
 				return Response{}, fmt.Errorf("failed to marshal tools: %w", err)
@@ -452,10 +478,9 @@ func (c *Client) SendMessageStreamWithTools(messages []Message, availableTools [
 			systemPrompt = c.systemPrompt + "\n\nAvailable tools:\n" + string(toolsJSON)
 		}
 
-		// Legacy Qwen handling (for older Qwen models not using CodeAct)
-		if !useCodeAct && len(toolsToUse) > 0 && strings.Contains(strings.ToLower(c.model), "qwen") {
-			systemPrompt = systemPrompt + "\n\nWhen tools are available, do NOT use <code> blocks. If you need to run a tool, respond with a single JSON object only (no extra text): {\"action\":\"bash\",\"command\":\"...\"} or {\"action\":\"python\",\"code\":\"...\"}. After tool execution, respond with the final answer as plain text."
-		}
+		// Legacy Qwen handling - tools already have descriptions, no need for extra instructions
+		_ = useCodeAct   // Keep for potential future use
+		_ = useStepFlash // Keep for potential future use
 
 		allMessages = append([]Message{{Role: "system", Content: systemPrompt}}, messages...)
 		logger.Debug("[LLM-TOOLS] Final system prompt for model %s: %s", c.model, systemPrompt)

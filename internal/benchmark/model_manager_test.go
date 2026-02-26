@@ -111,8 +111,8 @@ func TestFindAvailablePortForModel(t *testing.T) {
 		t.Fatalf("findAvailablePortForModel() error = %v", err)
 	}
 
-	if port < 8081 || port > 8090 {
-		t.Errorf("findAvailablePortForModel() = %d, want port in range 8081-8090", port)
+	if port < 8081 || port > 8089 {
+		t.Errorf("findAvailablePortForModel() = %d, want port in range 8081-8089", port)
 	}
 
 	// Verify port is actually available
@@ -129,7 +129,7 @@ func TestFindAvailablePortForModel_AllPortsOccupied(t *testing.T) {
 	mm := NewModelManagerForTest()
 
 	// Check if any ports are already in use (skip test if running servers exist)
-	for port := 8081; port <= 8090; port++ {
+	for port := 8081; port <= 8089; port++ {
 		addr := fmt.Sprintf(":%d", port)
 		listener, err := net.Listen("tcp", addr)
 		if err != nil {
@@ -161,7 +161,7 @@ func TestFindAvailablePortForModel_AllPortsOccupied(t *testing.T) {
 		t.Error("findAvailablePortForModel() should return error when all ports occupied")
 	}
 
-	expectedMsg := "no available ports in range 8081-8090"
+	expectedMsg := "no available ports in range 8081-8089"
 	if !strings.Contains(err.Error(), expectedMsg) {
 		t.Errorf("Error message should contain %q, got %q", expectedMsg, err.Error())
 	}

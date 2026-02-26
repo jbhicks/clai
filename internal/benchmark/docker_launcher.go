@@ -1,10 +1,13 @@
 package benchmark
 
 import (
+	"clai/internal/logger"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // DockerImageInfo holds information about available Docker images for model serving
@@ -93,6 +96,7 @@ func (dl *DockerLauncher) StartContainer(
 	contextSize int,
 	ngl int,
 	imageTag string,
+	verbose bool,
 ) (string, error) {
 	imageInfo, exists := dl.images[imageTag]
 	if !exists {
@@ -157,7 +161,81 @@ func (dl *DockerLauncher) StartContainer(
 	}
 	args = append(args, envVars...)
 
-	// Add the image
+	// Chat template for Step-3.5-Flash models (fixes tool calling issues with Q4_K_S quantization)
+	// Must add -v mount BEFORE the image
+	chatTemplateArg := ""
+	isStepFlashModel := strings.Contains(strings.ToLower(modelName), "step") &&
+		strings.Contains(strings.ToLower(modelName), "flash")
+	if isStepFlashModel {
+		logger.Info("Step-3.5-Flash model detected, setting up fixed chat template")
+		homeDir, _ := os.UserHomeDir()
+		templateDir := homeDir + "/.local/share/clai/templates"
+		templateFile := templateDir + "/step35_flash_chat.jinja"
+
+		os.MkdirAll(templateDir, 0755)
+		if _, err := os.Stat(templateFile); os.IsNotExist(err) {
+			templateContent := `{% macro render_content(content) %}{% if content is none %}{{- '' }}{% elif content is string %}{{- content }}{% elif content is mapping %}{{- content['value'] if 'value' in content else content['text'] }}{% elif content is iterable %}{% for item in content %}{% if item.type == 'text' %}{{- item['value'] if 'value' in item else item['text'] }}{% endif %}{% endfor %}{% endif %}{% endmacro %}` + "\n" +
+				`{{bos_token}}{%- if tools %}` + "\n" +
+				`{{- '<|im_start|>system\n' }}` + "\n" +
+				`{%- if messages[0].role == 'system' %}` + "\n" +
+				`{{- render_content(messages[0].content) + '\n\n' }}` + "\n" +
+				`{%- endif %}` + "\n" +
+				`{{- "# Tools\n\nYou have access to the following functions in JSONSchema format:\n\n " }}` + "\n" +
+				`{%- for tool in tools %}` + "\n" +
+				`{{- "\n" }}` + "\n" +
+				`{{- tool | tojson(ensure_ascii=False) }}` + "\n" +
+				`{{- '' if tool.function.name else '' }}` + "\n" +
+				`{%- endfor %}` + "\n" +
+				`{{- "\n\nIf you choose to call a function ONLY reply in the following format with NO suffix:\n\n<tool_call>\n<function=NAME>\nARGUMENTS\n</function>\n</tool_call>\n\nReminder:\n- Function calls MUST follow the specified format\n- Required parameters MUST be specified\n<|im_end|>\n" }}` + "\n" +
+				`{%- else %}` + "\n" +
+				`{%- if messages[0].role == 'system' %}` + "\n" +
+				`{{- '<|im_start|>system\n' + render_content(messages[0].content) + '<|im_end|>\n' }}` + "\n" +
+				`{%- endif %}` + "\n" +
+				`{%- endif %}` + "\n" +
+				`{%- for message in messages %}` + "\n" +
+				`{%- set content = render_content(message.content) %}` + "\n" +
+				`{%- if message.role == "user" or (message.role == "system" and not loop.first) %}` + "\n" +
+				`{%- set role_name = 'observation' if (message.role == "system" and not loop.first and message.name == 'observation') else message.role %}` + "\n" +
+				`{{- '<|im_start|>' + role_name + '\n' + content + '<|im_end|>\n' }}` + "\n" +
+				`{%- elif message.role == "assistant" %}` + "\n" +
+				`{{- '<|im_start|>' + message.role + '\n' + content }}` + "\n" +
+				`{%- if message.tool_calls %}` + "\n" +
+				`{%- for tool_call in message.tool_calls %}` + "\n" +
+				`{%- if tool_call.function is defined %}` + "\n" +
+				`{%- set tool_call = tool_call.function %}` + "\n" +
+				`{%- endif %}` + "\n" +
+				`{{- '<tool_call>\n<function=' + tool_call.name + '>\n' }}` + "\n" +
+				`{%- if tool_call.arguments is defined and tool_call.arguments|length > 0 %}` + "\n" +
+				`{{tool_call.arguments}}` + "\n" +
+				`{%- endif %}` + "\n" +
+				`{{- '</function>\n</tool_call>' }}` + "\n" +
+				`{%- endfor %}` + "\n" +
+				`{%- endif %}` + "\n" +
+				`{{- '<|im_end|>\n' }}` + "\n" +
+				`{%- elif message.role == "tool" %}` + "\n" +
+				`{%- if loop.first or (messages[loop.index0 - 1].role != "tool") %}` + "\n" +
+				`{{- '<|im_start|>tool_response\n' }}` + "\n" +
+				`{%- endif %}` + "\n" +
+				`{{- '<tool_response>' + content + '</tool_response>' }}` + "\n" +
+				`{%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}` + "\n" +
+				`{{- '<|im_end|>\n' }}` + "\n" +
+				`{%- endif %}` + "\n" +
+				`{%- endif %}` + "\n" +
+				`{%- endfor %}` + "\n" +
+				`{%- if add_generation_prompt %}` + "\n" +
+				`{{- '<|im_start|>assistant\n' }}` + "\n" +
+				`{%- endif %}`
+			os.WriteFile(templateFile, []byte(templateContent), 0644)
+		}
+
+		// Mount the template directory
+		chatTemplateVolume := templateDir + ":/templates:ro"
+		args = append(args, "-v", chatTemplateVolume)
+		chatTemplateArg = "--chat-template-file /templates/step35_flash_chat.jinja"
+		logger.Info("Mounting chat template for Step-3.5-Flash: %s", chatTemplateArg)
+	}
+
+	// Add the image (must be last before the command)
 	args = append(args, imageInfo.FullImage)
 
 	// Add llama-server command with arguments
@@ -174,8 +252,13 @@ func (dl *DockerLauncher) StartContainer(
 
 	// We wrap the command in sh -c to allow redirection to the mounted /logs volume
 	// This ensures parity with native servers which write to the same host log files
-	shCommand := fmt.Sprintf("llama-server -m %s --host 0.0.0.0 --port 8080 -c %d -ngl %d -fa on --no-mmap -b 2048 -ub 512 --verbose %s > /logs/%s 2>&1",
-		modelPathInContainer, contextSize, ngl, extraArgs, logFileName)
+	verboseFlag := ""
+	if verbose {
+		verboseFlag = "--verbose"
+	}
+	shCommand := fmt.Sprintf("llama-server -m %s --host 0.0.0.0 --port 8080 -c %d -ngl %d -fa on --no-mmap -b 2048 -ub 512 %s %s %s > /logs/%s 2>&1",
+		modelPathInContainer, contextSize, ngl, extraArgs, chatTemplateArg, verboseFlag, logFileName)
+	logger.Info("Docker launch command: %s", shCommand)
 
 	args = append(args, "sh", "-c", shCommand)
 
@@ -194,7 +277,9 @@ func (dl *DockerLauncher) StartContainer(
 
 // StopContainer stops and removes a Docker container
 func (dl *DockerLauncher) StopContainer(containerName string) error {
-	cmd := exec.Command("docker", "stop", containerName)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "docker", "stop", "-t", "10", containerName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Container might already be stopped

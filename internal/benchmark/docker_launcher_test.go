@@ -126,7 +126,7 @@ func TestModelManagerStartServerWithDockerValidation(t *testing.T) {
 	mm := NewModelManagerForTest()
 
 	// Test with non-existent model
-	err := mm.StartServerWithDocker("/non/existent/model.gguf", 131072, 999, "rocm-7.2")
+	err := mm.StartServerWithDocker("/non/existent/model.gguf", 131072, 999, "rocm-7.2", false)
 	if err == nil {
 		t.Error("Expected error for non-existent model, got nil")
 	}

@@ -45,8 +45,8 @@
                 "Interruption: 'ESC' or 'S' key triggers context cancellation to halt loop safely."
             ],
             "priority": 3,
-            "passes": false,
-            "notes": "Bubble Tea Update functionality becomes the 'Brain' that picks the next story."
+            "passes": true,
+            "notes": "RalphLoopController is now integrated into UI model. Added 'R' key to start, 'ESC'/'S' to stop, and updated renderBriefingRoom() to use Ralph styling. Build and tests pass."
         },
         {
             "id": "CONC-001",

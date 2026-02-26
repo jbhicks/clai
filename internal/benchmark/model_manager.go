@@ -395,10 +395,9 @@ func (mm *ModelManager) RefreshServerStatus() error {
 		}
 	}
 
-	// Step 1b: Scan for any servers we don't know about (8081-8090 range)
-	// This handles externally started servers or missed registrations
-	logger.Debug("RefreshServerStatus: Scanning unknown ports 8081-8090")
-	for port := 8081; port <= 8090; port++ {
+	// Step 1b: Scan for any servers we don't know about (8081-8089 range)
+	logger.Debug("RefreshServerStatus: Scanning unknown ports 8081-8089")
+	for port := 8081; port <= 8089; port++ {
 		// Skip if we already checked this port
 		alreadyChecked := false
 		for _, knownPort := range knownPorts {
@@ -535,6 +534,13 @@ func (mm *ModelManager) RefreshServerStatus() error {
 				server.LastChecked = time.Now().Unix()
 				server.PID = info.pid
 				server.ContextSize = info.contextSize
+				// Preserve Docker backend if already set, otherwise check if this is a Docker container
+				if server.Backend == "" || !strings.HasPrefix(server.Backend, "docker-") {
+					if info.pid == 0 {
+						// PID 0 indicates Docker container (no direct PID)
+						server.Backend = "docker-discovered"
+					}
+				}
 				matched = true
 				break
 			}
@@ -1047,14 +1053,8 @@ func (mm *ModelManager) createSystemdServiceFile(modelName string, binaryPath st
 		envLines += fmt.Sprintf("Environment=%s\n", env)
 	}
 
-	// Create logs directory in user's home instead of using /tmp
-	logsDir := filepath.Join(homeDir, ".local", "share", "clai", "logs")
-	if err := os.MkdirAll(logsDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create logs directory: %w", err)
-	}
-
-	logFilePath := filepath.Join(logsDir, fmt.Sprintf("llama-server-%d.log", port))
-
+	// Use systemd journal for logging (automatic rotation, no file cleanup needed)
+	// View logs with: journalctl --user-unit clai-model-XXX -f
 	content := fmt.Sprintf(`[Unit]
 Description=CLAI Model Server: %s
 After=network.target
@@ -1064,12 +1064,13 @@ Type=exec
 %sExecStart=%s %s
 Restart=on-failure
 RestartSec=5
-StandardOutput=file:%s
-StandardError=append:%s
+StandardOutput=journal
+StandardError=journal
+SystemMaxUse=100M
 
 [Install]
 WantedBy=default.target
-`, modelName, envLines, binaryPath, strings.Join(escapedArgs, " "), logFilePath, logFilePath)
+`, modelName, envLines, binaryPath, strings.Join(escapedArgs, " "))
 
 	if err := os.WriteFile(servicePath, []byte(content), 0644); err != nil {
 		return "", fmt.Errorf("failed to write systemd service file: %w", err)
@@ -1080,16 +1081,16 @@ WantedBy=default.target
 
 // StartServer starts a model server on an available port with default context size
 func (mm *ModelManager) StartServer(modelPath string) error {
-	return mm.StartServerWithBackend(modelPath, 131072, 999, "rocm") // Default to ROCm, 999 = all GPU layers
+	return mm.StartServerWithBackend(modelPath, 131072, 999, "rocm", false) // Default to ROCm, 999 = all GPU layers
 }
 
 // StartServerWithContext starts a model server with a custom context size and GPU layer count (backward compatibility)
 func (mm *ModelManager) StartServerWithContext(modelPath string, contextSize int, ngl int) error {
-	return mm.StartServerWithBackend(modelPath, contextSize, ngl, "rocm") // Default to ROCm for backward compatibility
+	return mm.StartServerWithBackend(modelPath, contextSize, ngl, "rocm", false) // Default to ROCm for backward compatibility
 }
 
 // StartServerWithBackend starts a model server with a custom context size, GPU layer count, and backend choice
-func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int, ngl int, backend string) error {
+func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int, ngl int, backend string, verbose bool) error {
 	// Step 1: Get server info and port with brief lock
 	mm.mu.Lock()
 	server, exists := mm.servers[modelPath]
@@ -1122,6 +1123,11 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 	isEmbeddingModel := strings.Contains(strings.ToLower(modelName), "embed")
 	mm.mu.Unlock()
 
+	// Truncate log file if it exceeds max size (prevents crashes from large logs)
+	if err := truncateLogFileIfNeeded(port); err != nil {
+		logger.Warn("Failed to truncate log file for port %d: %v", port, err)
+	}
+
 	// Verify split model is complete before starting
 	if isSplit && !splitComplete {
 		return fmt.Errorf("cannot start split model: only %d of %d parts found - download all parts first", partsFound, totalParts)
@@ -1150,7 +1156,11 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 		"--no-mmap", // Disable memory mapping for stability (per Strix Halo optimization)
 		"-b", "2048",
 		"-ub", "512",
-		"--verbose", // Enable verbose logging for detailed tensor loading progress
+	}
+
+	// Add verbose flag if requested
+	if verbose {
+		args = append(args, "--verbose")
 	}
 
 	// Check if it's an embedding model
@@ -1218,7 +1228,7 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 
 			// Try again with a new port
 			logger.Info("Retrying with new port...")
-			return mm.StartServerWithBackend(modelPath, contextSize, ngl, backend)
+			return mm.StartServerWithBackend(modelPath, contextSize, ngl, backend, verbose)
 		}
 	}
 
@@ -1265,7 +1275,7 @@ func (mm *ModelManager) StartServerWithBackend(modelPath string, contextSize int
 }
 
 // StartServerWithDocker starts a model server using Docker containers
-func (mm *ModelManager) StartServerWithDocker(modelPath string, contextSize int, ngl int, imageTag string) error {
+func (mm *ModelManager) StartServerWithDocker(modelPath string, contextSize int, ngl int, imageTag string, verbose bool) error {
 	// Step 1: Get server info and port with brief lock
 	mm.mu.Lock()
 	server, exists := mm.servers[modelPath]
@@ -1295,25 +1305,39 @@ func (mm *ModelManager) StartServerWithDocker(modelPath string, contextSize int,
 
 	// Copy data we need for I/O operations
 	modelName := server.ModelName
-	mm.mu.Unlock()
+
+	// Truncate log file if it exceeds max size (prevents crashes from large logs)
+	if err := truncateLogFileIfNeeded(port); err != nil {
+		logger.Warn("Failed to truncate log file for port %d: %v", port, err)
+	}
 
 	// Verify split model is complete before starting
 	if isSplit && !splitComplete {
+		mm.mu.Unlock()
 		return fmt.Errorf("cannot start split model: only %d of %d parts found - download all parts first", partsFound, totalParts)
 	}
 
+	// Update server status to "starting" BEFORE Docker pull so UI shows logs immediately
+	server.Port = port
+	server.Status = "starting"
+	server.Backend = "docker-" + imageTag
+	server.ErrorMessage = ""
+	server.URL = fmt.Sprintf("http://localhost:%d", port)
+	mm.mu.Unlock()
+
+	// Notify state change so UI updates immediately with "starting" status
+	mm.notifyStateChange()
+
 	// Step 2: Do ALL I/O operations WITHOUT holding lock
 
-	// Check if Docker image exists locally, pull if needed
-	if !mm.dockerLauncher.ImageExistsLocally(imageTag) {
-		logger.Info("Docker image %s not found locally, pulling...", imageTag)
-		if err := mm.dockerLauncher.PullImage(imageTag); err != nil {
-			return fmt.Errorf("failed to pull Docker image: %w", err)
-		}
+	// Always pull the latest Docker image before starting
+	logger.Info("Pulling latest Docker image %s...", imageTag)
+	if err := mm.dockerLauncher.PullImage(imageTag); err != nil {
+		return fmt.Errorf("failed to pull Docker image: %w", err)
 	}
 
 	// Start the Docker container
-	containerID, err := mm.dockerLauncher.StartContainer(modelPath, modelName, port, contextSize, ngl, imageTag)
+	containerID, err := mm.dockerLauncher.StartContainer(modelPath, modelName, port, contextSize, ngl, imageTag, verbose)
 	if err != nil {
 		return fmt.Errorf("failed to start Docker container: %w", err)
 	}
@@ -1342,17 +1366,9 @@ func (mm *ModelManager) StartServerWithDocker(modelPath string, contextSize int,
 		return fmt.Errorf("model was removed while starting")
 	}
 
-	// Update server info
-	server.Port = port
+	// Update server info - only PID needs to be set here, other fields already set
 	server.PID = pid // Store the host PID
-	server.Status = "starting"
-	server.Backend = "docker-" + imageTag // Store which Docker image was used
-	server.ErrorMessage = ""              // Clear any previous errors when starting
-	server.URL = fmt.Sprintf("http://localhost:%d", port)
 	mm.mu.Unlock()
-
-	// Notify state change so UI updates immediately
-	mm.notifyStateChange()
 
 	// Wait for server to be ready (in background)
 	go mm.waitForServerReady(modelPath, port, 2*time.Hour)
@@ -1403,6 +1419,7 @@ func (mm *ModelManager) waitForServerReady(modelPath string, port int, timeout t
 				logger.Info("Model server ready: %s on port %d", server.ModelName, port)
 			}
 			mm.mu.Unlock()
+			mm.notifyStateChange()
 			return
 		}
 		if err != nil {
@@ -1547,8 +1564,20 @@ func (mm *ModelManager) StopServer(modelPath string) error {
 	var stoppedViaDocker bool
 
 	// Check if this is a Docker-based server
-	if strings.HasPrefix(backend, "docker-") {
-		containerName := fmt.Sprintf("clai-model-%s", sanitizeContainerName(modelName))
+	// Also check for "docker-discovered" which is set when server restarts and finds Docker containers
+	containerName := fmt.Sprintf("clai-model-%s", sanitizeContainerName(modelName))
+	isDockerContainer := (strings.HasPrefix(backend, "docker-") || backend == "docker-discovered")
+
+	// Fallback: Check if a Docker container is actually running for this model
+	// This handles the case where backend wasn't set correctly
+	if !isDockerContainer && mm.dockerLauncher != nil {
+		if running, _ := mm.dockerLauncher.GetContainerStatus(containerName); running {
+			logger.Info("Detected running Docker container for %s (backend: %s), stopping via Docker", modelName, backend)
+			isDockerContainer = true
+		}
+	}
+
+	if isDockerContainer {
 		logger.Info("Stopping Docker container: %s", containerName)
 		if err := mm.dockerLauncher.StopContainer(containerName); err != nil {
 			logger.Info("Warning: failed to stop Docker container %s: %v", containerName, err)
@@ -1620,11 +1649,23 @@ func (mm *ModelManager) StopServer(modelPath string) error {
 		if err != nil {
 			stopErr = fmt.Errorf("failed to find process: %w", err)
 			logger.Info("Failed to find process PID %d: %v", pid, err)
-		} else if err := process.Kill(); err != nil {
-			stopErr = fmt.Errorf("failed to kill process: %w", err)
-			logger.Info("Failed to kill process PID %d: %v", pid, err)
 		} else {
-			logger.Info("Successfully sent kill signal to process PID %d for %s", pid, modelName)
+			// Kill with timeout to prevent hanging
+			killDone := make(chan error, 1)
+			go func() {
+				killDone <- process.Kill()
+			}()
+			select {
+			case killErr := <-killDone:
+				if killErr != nil {
+					stopErr = fmt.Errorf("failed to kill process: %w", killErr)
+					logger.Info("Failed to kill process PID %d: %v", pid, killErr)
+				} else {
+					logger.Info("Successfully sent kill signal to process PID %d for %s", pid, modelName)
+				}
+			case <-time.After(5 * time.Second):
+				logger.Info("Kill timed out for PID %d, process may already be dead", pid)
+			}
 		}
 	}
 
@@ -1797,6 +1838,9 @@ func (mm *ModelManager) calculateTotalSize(paths []string) int64 {
 	return totalSize
 }
 
+// MaxLogFileSize is the maximum size a log file can grow to before being truncated
+const MaxLogFileSize = 50 * 1024 * 1024 // 50MB
+
 // getLogPath returns the path to the log file for a given port
 func getLogPath(port int) (string, error) {
 	homeDir, err := os.UserHomeDir()
@@ -1804,6 +1848,56 @@ func getLogPath(port int) (string, error) {
 		return "", err
 	}
 	return filepath.Join(homeDir, ".local", "share", "clai", "logs", fmt.Sprintf("llama-server-%d.log", port)), nil
+}
+
+// truncateLogFileIfNeeded truncates the log file if it exceeds MaxLogFileSize
+// This prevents models from crashing due to disk space exhaustion or file size limits
+func truncateLogFileIfNeeded(port int) error {
+	logPath, err := getLogPath(port)
+	if err != nil {
+		return err
+	}
+
+	// Check if file exists and get its size
+	info, err := os.Stat(logPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // No log file yet, nothing to truncate
+		}
+		return err
+	}
+
+	// If file is within limits, nothing to do
+	if info.Size() < MaxLogFileSize {
+		return nil
+	}
+
+	// Read existing content
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		return err
+	}
+
+	// Keep the last 10MB of the log (most relevant for debugging)
+	keepSize := 10 * 1024 * 1024
+	if len(content) <= keepSize {
+		return nil
+	}
+
+	// Take the last portion of the log
+	truncated := content[len(content)-keepSize:]
+
+	// Add a marker to show the log was truncated
+	header := []byte("\n--- LOG TRUNCATED (exceeded " + fmt.Sprintf("%.0fMB", float64(MaxLogFileSize)/(1024*1024)) + ") ---\n")
+	truncated = append(header, truncated...)
+
+	// Write back
+	if err := os.WriteFile(logPath, truncated, 0644); err != nil {
+		return err
+	}
+
+	logger.Info("Truncated log file %s from %.1fMB to 10MB", logPath, float64(info.Size())/(1024*1024))
+	return nil
 }
 
 // GetServerStatus returns the current status of all servers
@@ -2032,21 +2126,27 @@ func (s *Server) HandleStartServer(w http.ResponseWriter, r *http.Request) {
 		logger.Info("No runtime specified, using backward-compatible default: %s", runtime)
 	}
 
+	// Check for verbose logging parameter
+	verbose := r.FormValue("verbose") == "true"
+	if verbose {
+		logger.Info("Verbose logging enabled for %s", modelPath)
+	}
+
 	var err error
 	if strings.HasPrefix(runtime, "docker:") {
 		// Docker launcher
 		dockerImage := strings.TrimPrefix(runtime, "docker:")
 		logger.Info("Using Docker runtime: %s for %s", dockerImage, modelPath)
-		err = s.modelManager.StartServerWithDocker(modelPath, contextSize, ngl, dockerImage)
+		err = s.modelManager.StartServerWithDocker(modelPath, contextSize, ngl, dockerImage, verbose)
 	} else if strings.HasPrefix(runtime, "native:") {
 		// Native/systemd launcher
 		backend := strings.TrimPrefix(runtime, "native:")
 		logger.Info("Using native runtime: %s for %s", backend, modelPath)
-		err = s.modelManager.StartServerWithBackend(modelPath, contextSize, ngl, backend)
+		err = s.modelManager.StartServerWithBackend(modelPath, contextSize, ngl, backend, verbose)
 	} else {
 		// Legacy fallback - treat as native backend
 		logger.Info("Using legacy runtime format: %s for %s", runtime, modelPath)
-		err = s.modelManager.StartServerWithBackend(modelPath, contextSize, ngl, runtime)
+		err = s.modelManager.StartServerWithBackend(modelPath, contextSize, ngl, runtime, verbose)
 	}
 
 	if err != nil {

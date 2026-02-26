@@ -177,6 +177,7 @@ type Model struct {
 	llmHost       string
 	llmModel      string
 	llmHealth     bool
+	ralphController *ralph.RalphLoopController
 
 	// Selection in BriefingRoom
 	serverCursor int
@@ -389,6 +390,10 @@ func (m *Model) Init() tea.Cmd {
 	m.statusChan = make(chan tea.Msg, 100)
 	m.Layout = DefaultLayoutConfig()
 	m.updateCachedStyles()
+
+	// Initialize Ralph orchestrator
+	m.ralphController = ralph.NewRalphLoopController(".")
+
 	return tea.Batch(
 		TailLogFileCmd(m),
 		m.Chat.Init(),
@@ -792,6 +797,32 @@ func (m *Model) handleKeyMsg(msg tea.KeyMsg) tea.Cmd {
 
 	// Handle global hotkeys that work regardless of focus
 	switch msg.String() {
+	case "r":
+		// Ralph loop: start only if in idle stage
+		if m.ralphController.IsIdle() {
+			err := m.ralphController.Start()
+			if err != nil {
+				logger.Error("[RALPH] Failed to start loop: %v", err)
+				m.ErrorMessage = fmt.Sprintf("Ralph loop failed: %v", err)
+				m.ShowError = true
+				return tea.Tick(5*time.Second, func(t time.Time) tea.Msg { return clearErrorMsg{} })
+			}
+			logger.Info("[RALPH] Started loop - Stage: %s", m.ralphController.GetStage().String())
+		} else {
+			logger.Warn("[RALPH] Cannot start loop: current stage is %s, must be Idle", m.ralphController.GetStage().String())
+		}
+		return nil
+	case "escape", "s":
+		// Interrupt Ralph loop
+		if !m.ralphController.IsIdle() {
+			err := m.ralphController.Stop()
+			if err != nil {
+				logger.Error("[RALPH] Failed to stop loop: %v", err)
+			} else {
+				logger.Info("[RALPH] Stopped loop - Stage: %s", m.ralphController.GetStage().String())
+			}
+		}
+		return nil
 	case "ctrl+c":
 		// Signal log tailer to stop
 		if m.logDone != nil {
@@ -1563,16 +1594,43 @@ func (m *Model) renderBriefingRoom() string {
 	lines = append(lines, "")
 
 	if m.prd != nil {
+		// Check if all stories pass for completion banner
+		allPassed := true
 		for _, story := range m.prd.UserStories {
-			status := "❌"
-			if story.Passes {
-				status = "✅"
+			if !story.Passes {
+				allPassed = false
+				break
 			}
-			line := fmt.Sprintf("   %s %s: %s", status, story.ID, story.Title)
-			if story.Passes {
-				line = lipgloss.NewStyle().Foreground(lipgloss.Color(m.Theme.Theme.Bright.Green)).Render(line)
+		}
+
+		if allPassed {
+			// Display completion banner
+			banner := ralph.GetCompletionBanner()
+			lines = append(lines, banner)
+		} else {
+			// Render stories with Ralph styling
+			for _, story := range m.prd.UserStories {
+				var line string
+				var style lipgloss.Style
+
+				// Check if this is the active story (being worked on by Ralph)
+				if m.ralphController != nil && m.ralphController.GetActiveStory() != nil &&
+				   m.ralphController.GetActiveStory().ID == story.ID {
+					style = ralph.GetActiveStoryStyle()
+				} else if story.Passes {
+					style = ralph.GetPassedStoryStyle()
+				} else {
+					style = ralph.GetPendingStoryStyle()
+				}
+
+				status := "⏳"
+				if story.Passes {
+					status = "✅"
+				}
+
+				line = fmt.Sprintf("   %s %s: %s", status, story.ID, story.Title)
+				lines = append(lines, style.Render(line))
 			}
-			lines = append(lines, line)
 		}
 	} else {
 		lines = append(lines, "   Loading tasks...")

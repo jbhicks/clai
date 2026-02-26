@@ -4,27 +4,32 @@
     {
       "name": "Alice Johnson",
       "position": "Software Engineer",
-      "department": "Engineering"
+      "department": "Engineering",
+      "age": 30
     },
     {
       "name": "Bob Smith",
       "position": "Senior Engineer",
-      "department": "Engineering"
+      "department": "Engineering",
+      "age": 25
     },
     {
       "name": "Carol Davis",
       "position": "QA Engineer",
-      "department": "Quality Assurance"
+      "department": "Quality Assurance",
+      "age": 35
     },
     {
       "name": "David Wilson",
       "position": "DevOps Engineer",
-      "department": "Engineering"
+      "department": "Engineering",
+      "age": 28
     },
     {
       "name": "Eve Brown",
       "position": "Product Manager",
-      "department": "Product"
+      "department": "Product",
+      "age": 32
     }
   ]
 }

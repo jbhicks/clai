@@ -690,39 +690,194 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 		}
 	}
 
-	// Try <tool_call> XML format as fallback (for Qwen models)
-	// Handle tool calls in format: <function=name{...}>
-	toolCallRe := regexp.MustCompile(`<function=(\w+)\s*(\{[^}]+\})`)
-	matches := toolCallRe.FindAllStringSubmatch(content, -1)
-	logger.Debug("[AGENT-PARSE-TOOL] Found %d <tool_call> XML matches", len(matches))
+	// Try <tool_call> XML format (common for Qwen/Step models)
+	// Handle formats like:
+	// <function=execute_code{...JSON...}
+	// <function=execute_code":"id":"...","type":"function","function":{...}
+	// <tool_call><function=execute_code{...JSON...}
+	if strings.Contains(content, "<function=") || strings.Contains(content, "<tool_call>") {
+		logger.Debug("[AGENT-PARSE-TOOL] Detected XML tool_call format")
 
-	for _, match := range matches {
-		if len(match) >= 3 {
-			funcName := match[1]
-			jsonStr := match[2]
+		// Try pattern 1: <function=NAME{...JSON...}
+		funcStartRe := regexp.MustCompile(`<function=(\w+)\{`)
+		funcMatches := funcStartRe.FindAllStringSubmatch(content, -1)
 
-			// Parse the JSON object
-			var toolCallData map[string]interface{}
-			if err := json.Unmarshal([]byte(jsonStr), &toolCallData); err == nil {
-				// Extract function name and arguments
-				if funcData, ok := toolCallData["function"].(map[string]interface{}); ok {
-					if name, ok := funcData["name"].(string); ok && name != "" {
-						if args, ok := funcData["arguments"].(string); ok && args != "" {
-							toolCall := tools.ToolCall{
-								Type: "function",
-								ID:   "xml-parsed-" + funcName,
-								Function: tools.ToolCallFunc{
-									Name:      name,
-									Arguments: args,
-								},
+		// Try pattern 2: <function=NAME":"... (separator is `":"`)
+		if len(funcMatches) == 0 {
+			funcStartRe = regexp.MustCompile(`<function=(\w+)":"`)
+			funcMatches = funcStartRe.FindAllStringSubmatch(content, -1)
+		}
+
+		if len(funcMatches) > 0 {
+			for _, match := range funcMatches {
+				if len(match) >= 2 {
+					name := match[1]
+
+					// Only accept known tool names
+					knownTools := map[string]bool{
+						"execute_code": true, "execute_bash": true, "execute_python": true,
+						"execute_javascript": true,
+					}
+
+					if knownTools[name] {
+						// Find the JSON object - try pattern 1: <function=NAME{
+						startPattern := `<function=` + name + `\{`
+						idx := strings.Index(content, startPattern)
+						jsonStart := -1
+
+						if idx == -1 {
+							// Try pattern 2: <function=NAME":" (the model outputs this format)
+							startPattern = `<function=` + name + `":"`
+							idx = strings.Index(content, startPattern)
+							if idx != -1 {
+								jsonStart = idx + len(startPattern)
 							}
-							toolCalls = append(toolCalls, toolCall)
-							logger.Debug("[AGENT-PARSE-TOOL] Successfully parsed <tool_call> XML format: %s", name)
+						} else {
+							jsonStart = idx + len(startPattern)
+						}
+
+						if jsonStart == -1 {
+							continue
+						}
+
+						// Find the matching closing brace
+						braceCount := 1
+						jsonEnd := jsonStart
+						for i := jsonStart; i < len(content) && braceCount > 0; i++ {
+							if content[i] == '{' {
+								braceCount++
+							} else if content[i] == '}' {
+								braceCount--
+							}
+							if braceCount > 0 {
+								jsonEnd = i + 1
+							}
+						}
+
+						if jsonEnd > jsonStart {
+							jsonStr := content[jsonStart:jsonEnd]
+							logger.Debug("[AGENT-PARSE-TOOL] Extracted JSON from XML: %.200s", jsonStr)
+
+							// Try to parse the extracted JSON
+							var toolCallJSON struct {
+								ID       string `json:"id"`
+								Type     string `json:"type"`
+								Function struct {
+									Name      string `json:"name"`
+									Arguments string `json:"arguments"`
+								} `json:"function"`
+							}
+
+							if err := json.Unmarshal([]byte(jsonStr), &toolCallJSON); err != nil {
+								logger.Debug("[AGENT-PARSE-TOOL] Failed to parse extracted JSON: %v", err)
+								// Try manual extraction as fallback
+								unescapedArgs := extractArgumentsFromTruncatedJSON(jsonStr)
+								if unescapedArgs != "" {
+									toolCall := tools.ToolCall{
+										Type: "function",
+										ID:   "xml-" + name,
+										Function: tools.ToolCallFunc{
+											Name:      name,
+											Arguments: unescapedArgs,
+										},
+									}
+									toolCalls = append(toolCalls, toolCall)
+									logger.Debug("[AGENT-PARSE-TOOL] Parsed via manual extraction: %s", name)
+								}
+							} else {
+								// The Arguments field may be double-encoded JSON string
+								// Try to unescape it if it looks like JSON
+								args := toolCallJSON.Function.Arguments
+								if strings.HasPrefix(args, "{") && strings.HasSuffix(args, "}") {
+									// Try to unquote/unescape the inner JSON
+									if unquoted, err := strconv.Unquote(`"` + args + `"`); err == nil {
+										args = unquoted
+									} else {
+										// Try manual unescaping
+										args = strings.ReplaceAll(args, `\"`, `"`)
+										args = strings.ReplaceAll(args, `\\`, `\`)
+									}
+								}
+
+								toolCall := tools.ToolCall{
+									Type: toolCallJSON.Type,
+									ID:   toolCallJSON.ID,
+									Function: tools.ToolCallFunc{
+										Name:      toolCallJSON.Function.Name,
+										Arguments: args,
+									},
+								}
+								toolCalls = append(toolCalls, toolCall)
+								logger.Debug("[AGENT-PARSE-TOOL] Parsed via XML extraction: %s", name)
+							}
 						}
 					}
 				}
 			}
+
+			if len(toolCalls) > 0 {
+				logger.Debug("[AGENT-PARSE-TOOL] Returning %d tool calls from XML format", len(toolCalls))
+				return toolCalls
+			}
 		}
+	}
+
+	// Try to find "name":"..." pattern followed by "arguments":"..."
+	nameRe := regexp.MustCompile(`"name":\s*"([^"]+)"`)
+	nameMatches := nameRe.FindAllStringSubmatch(content, -1)
+
+	argsRe := regexp.MustCompile(`"arguments":\s*"([^"]+)"`)
+	argsMatches := argsRe.FindAllStringSubmatch(content, -1)
+
+	if len(nameMatches) > 0 && len(argsMatches) > 0 {
+		// Take the first pair
+		if len(nameMatches[0]) >= 2 && len(argsMatches[0]) >= 2 {
+			name := nameMatches[0][1]
+			args := argsMatches[0][1]
+
+			logger.Debug("[AGENT-PARSE-TOOL] Regex found - name: %q, args (first 200): %.200s", name, args)
+
+			// Only accept known tool names
+			knownTools := map[string]bool{
+				"execute_code": true, "execute_bash": true, "execute_python": true,
+				"execute_javascript": true,
+			}
+			// Unescape the arguments - they're double-encoded
+			// Use strconv.Unquote to properly handle JSON-escaped strings
+			unescapedArgs := args
+			if strings.HasPrefix(args, "\"") && strings.HasSuffix(args, "\"") {
+				var err error
+				unescapedArgs, err = strconv.Unquote(args)
+				if err != nil {
+					logger.Debug("[AGENT-PARSE-TOOL] Unquote failed: %v, using raw args", err)
+					unescapedArgs = args // Use as-is if unquote fails
+				}
+			} else {
+				// Try manual unescaping for strings that start with escape chars
+				unescapedArgs = strings.ReplaceAll(args, `\"`, `"`)
+				unescapedArgs = strings.ReplaceAll(unescapedArgs, `\\`, `\`)
+				logger.Debug("[AGENT-PARSE-TOOL] Manual unescape result (first 200): %.200s", unescapedArgs)
+			}
+
+			if knownTools[name] {
+				toolCall := tools.ToolCall{
+					Type: "function",
+					ID:   "regex-" + name,
+					Function: tools.ToolCallFunc{
+						Name:      name,
+						Arguments: unescapedArgs,
+					},
+				}
+				toolCalls = append(toolCalls, toolCall)
+				logger.Debug("[AGENT-PARSE-TOOL] Parsed via simple regex: %s", name)
+			}
+		}
+	}
+
+	// If we found tool calls, return them
+	if len(toolCalls) > 0 {
+		logger.Debug("[AGENT-PARSE-TOOL] Returning %d tool calls from simple regex", len(toolCalls))
+		return toolCalls
 	}
 
 	// Validate parsed tool calls
@@ -733,6 +888,61 @@ func (a *Agent) parseToolCallsFromContent(content string) []tools.ToolCall {
 
 	logger.Debug("[AGENT-PARSE-TOOL] Final parsed tool calls: %d", len(toolCalls))
 	return toolCalls
+}
+
+func extractArgumentsFromTruncatedJSON(jsonStr string) string {
+	// Try to extract the "arguments" field from potentially truncated JSON
+	// Look for "arguments":"..." pattern
+
+	// First, try to find and parse a complete arguments value
+	argsRe := regexp.MustCompile(`"arguments"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"`)
+	matches := argsRe.FindStringSubmatch(jsonStr)
+	if len(matches) >= 2 {
+		// Try to unquote the string
+		args := matches[1]
+		if unquoted, err := strconv.Unquote(`"` + args + `"`); err == nil {
+			return unquoted
+		}
+		return args
+	}
+
+	// Fallback: try to extract anything that looks like JSON key-value pairs
+	// Find code, language, purpose fields
+	result := make(map[string]string)
+
+	codeRe := regexp.MustCompile(`"code"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"`)
+	if m := codeRe.FindStringSubmatch(jsonStr); len(m) >= 2 {
+		if unquoted, err := strconv.Unquote(`"` + m[1] + `"`); err == nil {
+			result["code"] = unquoted
+		} else {
+			result["code"] = m[1]
+		}
+	}
+
+	langRe := regexp.MustCompile(`"language"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"`)
+	if m := langRe.FindStringSubmatch(jsonStr); len(m) >= 2 {
+		if unquoted, err := strconv.Unquote(`"` + m[1] + `"`); err == nil {
+			result["language"] = unquoted
+		} else {
+			result["language"] = m[1]
+		}
+	}
+
+	purposeRe := regexp.MustCompile(`"purpose"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"`)
+	if m := purposeRe.FindStringSubmatch(jsonStr); len(m) >= 2 {
+		if unquoted, err := strconv.Unquote(`"` + m[1] + `"`); err == nil {
+			result["purpose"] = unquoted
+		} else {
+			result["purpose"] = m[1]
+		}
+	}
+
+	if len(result) > 0 {
+		argsJSON, _ := json.Marshal(result)
+		return string(argsJSON)
+	}
+
+	return ""
 }
 
 func parseFragmentedToolCalls(content string) []tools.ToolCall {
