@@ -3,6 +3,7 @@ package llm
 import (
 	"clai/internal/logger"
 	"clai/internal/tools"
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -36,6 +37,8 @@ type Agent struct {
 	enableStrangeLoops bool
 	reflectionDepth    int
 	maxReflectionDepth int
+	ctx                context.Context
+	cancel             context.CancelFunc
 }
 
 // ParseToolCallsForBenchmark exposes tool call parsing for benchmark evaluation.
@@ -134,6 +137,30 @@ func NewAgent(client LLMClientInterface) *Agent {
 		},
 	}
 }
+
+// NewAgentWithContext creates a new agent with context support for cancellation
+func NewAgentWithContext(ctx context.Context, client LLMClientInterface) *Agent {
+	agentCtx, cancel := context.WithCancel(ctx)
+	return &Agent{
+		client:             client,
+		messages:           []Message{},
+		jsExecutor:         NewJSExecutor(),
+		taskHistory:        []string{},
+		maxMessages:        20,    // Keep last 20 messages to prevent context overflow
+		enableStrangeLoops: false, // Default to disabled
+		reflectionDepth:    0,     // Default depth 0 (no recursion)
+		maxReflectionDepth: 2,     // Default max depth to prevent infinite recursion
+		ctx:                agentCtx,
+		cancel:             cancel,
+		loopDetector: &LoopDetector{
+			codeHistory:        []string{},
+			observationHistory: []string{},
+			reflectionHistory:  []string{},
+			maxRepeats:         3,
+		},
+	}
+}
+
 
 func (a *Agent) AddMessage(role, content string, toolCallID ...string) {
 	message := Message{
@@ -1195,6 +1222,17 @@ func (a *Agent) Run(query string) (string, error) {
 
 	iteration := 0
 	for {
+		// Check context cancellation (CONC-001: Context cancellation for sub-agent goroutines)
+		select {
+		case <-a.ctx.Done():
+			logger.Debug("[AGENT-RUN] Context cancelled, stopping agent")
+			if a.statusCallback != nil {
+				a.statusCallback(0, "", false, "", "")
+			}
+			return "", fmt.Errorf("agent cancelled by context")
+		default:
+		}
+
 		iteration++
 		logger.Debug("[AGENT-ITER] Iteration %d", iteration)
 
@@ -1303,6 +1341,17 @@ func (a *Agent) RunWithStreaming(query string, callback StreamingCallback) (stri
 
 	iteration := 0
 	for {
+		// Check context cancellation (CONC-001: Context cancellation for sub-agent goroutines)
+		select {
+		case <-a.ctx.Done():
+			logger.Debug("[AGENT-RUN-STREAM] Context cancelled, stopping agent")
+			if a.statusCallback != nil {
+				a.statusCallback(0, "", false, "", "")
+			}
+			return "", fmt.Errorf("agent cancelled by context")
+		default:
+		}
+
 		iteration++
 		logger.Debug("[AGENT-ITER-STREAM] Starting iteration %d", iteration)
 

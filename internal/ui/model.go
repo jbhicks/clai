@@ -183,6 +183,11 @@ type Model struct {
 	serverCursor int
 }
 
+// Context returns the context for this model (exported for sub-agent creation)
+func (m *Model) Context() context.Context {
+	return m.ctx
+}
+
 type (
 	LogUpdateMsg       string
 	LLMResponseMsg     struct{ Resp llm.Response }
