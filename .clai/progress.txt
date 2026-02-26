@@ -50,3 +50,56 @@ Git Hash: 0911c602dc18ba090bfcfe00e372164073b6d80a
 ✅ Context Gathering reads patterns, history, workspace files
 ✅ Completion Banner displays 'Nothing to do'
 ✅ Interruption with 'ESC'/'S' cancels context
+
+## [2026-02-26 02:35:00] | Story: CONC-001
+Git Hash: 8a9ad36
+
+**Implementation Complete!**
+
+Implemented Concurrent Work Stream & Viewport:
+
+1. Structured Messaging:
+   - Added SubagentActionMsg, SubagentThinkingMsg, SubagentErrorMsg types
+   - Added channels for thread-safe UI updates from sub-agent goroutines
+   - Created message handlers in Update() method
+   - Messages displayed in work stream viewport
+
+2. Context Cancellation:
+   - Added ctx and cancel fields to Agent struct
+   - Created NewAgentWithContext() constructor
+   - Added context cancellation checks in Run() and RunWithStreaming()
+   - Context cancelled when program quits or stopped
+
+3. Work Stream Viewport:
+   - Added workStreamViewport field to Model struct
+   - Initialized viewport in Init() with auto-scroll enabled
+   - Updated handleWindowSizeMsg() to calculate viewport dimensions
+   - Updated View() to render work stream when agent is active
+   - Right pane supports manual scrolling to review logs
+
+4. Auto-scroll:
+   - Viewport sticks to bottom during active output
+   - GotoBottom() called on each message update
+   - User can manually scroll up using viewport controls
+
+5. Concurrency Safety:
+   - Channels prevent blocking calls in main UI thread
+   - Sub-agent goroutines are independent from main UI thread
+   - Thread-safe messaging via channels
+
+Build verified: go build ./... passed ✅
+Tests verified: go test ./internal/ui/... passed ✅
+
+## [2026-02-26 02:40:00] | Story: CONC-001
+Git Hash: 7d6bd27
+
+**PRD UPDATED:**
+- Marked as passing
+- Implementation notes added
+
+All acceptance criteria met:
+✅ Structured Messaging via Go channels
+✅ Context Cancellation with context.Context
+✅ Work Stream Viewport with manual scrolling
+✅ Auto-scroll to bottom
+✅ Concurrency Safety via channels
