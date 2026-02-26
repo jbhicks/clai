@@ -179,6 +179,14 @@ type Model struct {
 	llmHealth     bool
 	ralphController *ralph.RalphLoopController
 
+	// Sub-agent message channels (thread-safe UI updates from sub-agent goroutines)
+	subagentActionChan     chan SubagentActionMsg
+	subagentThinkingChan   chan SubagentThinkingMsg
+	subagentErrorChan      chan SubagentErrorMsg
+
+	// Work stream viewport for sub-agent messages (CONC-001)
+	workStreamViewport viewport.Model
+
 	// Selection in BriefingRoom
 	serverCursor int
 }
@@ -204,6 +212,17 @@ type (
 		Code   string
 	}
 	WebUIPortMsg      struct{ Port int }
+
+	// Ralph orchestrator messages
+	SubagentActionMsg     struct {
+		Description string
+		Iteration   int
+	}
+	SubagentThinkingMsg  string
+	SubagentErrorMsg     struct {
+		Err      error
+		Iteration int
+	}
 	prdLoadedMsg      *ralph.PRD
 	prdErrorMsg       error
 	prdFileChangedMsg struct{}
@@ -398,6 +417,17 @@ func (m *Model) Init() tea.Cmd {
 
 	// Initialize Ralph orchestrator
 	m.ralphController = ralph.NewRalphLoopController(".")
+
+	// Initialize sub-agent message channels (CONC-001)
+	m.subagentActionChan = make(chan SubagentActionMsg, 50)
+	m.subagentThinkingChan = make(chan SubagentThinkingMsg, 50)
+	m.subagentErrorChan = make(chan SubagentErrorMsg, 50)
+
+	// Initialize work stream viewport (CONC-001: Auto-scroll support)
+	m.workStreamViewport = viewport.New(10, 3) // Default dimensions
+	m.workStreamViewport.KeyMap = viewport.DefaultKeyMap()
+	m.workStreamViewport.GotoBottom() // Auto-scroll to bottom
+	m.workStreamViewport.SetContent("")       // Start with empty content
 
 	return tea.Batch(
 		TailLogFileCmd(m),
@@ -759,6 +789,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.AgentStatus.SetExecutingCode(msg.Status.CodeLanguage, msg.Code)
 		}
 		return m, readStatusChanCmd(m.statusChan)
+	case SubagentThinkingMsg:
+		// CONC-001: Add thinking to work stream viewport
+		thought := string(msg)
+		m.workStreamViewport.SetContent(m.workStreamViewport.View() + "\n" + thought)
+		// Auto-scroll to bottom
+		m.workStreamViewport.GotoBottom()
+		return m, nil
+	case SubagentErrorMsg:
+		// CONC-001: Add error to work stream viewport
+		errorMsg := fmt.Sprintf("Error (iteration %d): %v", msg.Iteration, msg.Err)
+		m.workStreamViewport.SetContent(m.workStreamViewport.View() + "\n" + errorMsg)
+		// Auto-scroll to bottom
+		m.workStreamViewport.GotoBottom()
+		return m, nil
 	case ServiceStatusMsg:
 		m.ServiceStatus = types.ServiceStatus(msg)
 		return m, nil
