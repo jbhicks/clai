@@ -60,8 +60,8 @@
                 "Concurrency Safety: Ensure no blocking calls in the main UI thread during heavy LLM/Build operations."
             ],
             "priority": 4,
-            "passes": false,
-            "notes": "Use p.Send() for thread-safe UI updates from sub-agent goroutines."
+            "passes": true,
+            "notes": "Implemented structured messaging with SubagentThinkingMsg and SubagentErrorMsg. Added workStreamViewport for displaying sub-agent activity. Context cancellation implemented in Agent.Run() and Agent.RunWithStreaming(). Auto-scroll with GotoBottom(). Concurrency safety via channels prevents blocking main UI thread."
         },
         {
             "id": "VER-001",
