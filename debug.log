@@ -1250,3 +1250,73 @@ srv  log_server_r: done request: GET /slots 10.0.0.1 503
 02:17:58 [INFO] Restored 2 downloads from database
 02:17:58 [INFO] Web UI available at http://localhost:8080
 02:17:58 [INFO] Service ready on http://localhost:8080
+02:44:10 [INFO] Shutting down service...
+02:44:10 [INFO] Opened database at /home/josh/.clai/conversations.db
+02:44:11 [INFO] Restored 2 downloads from database
+02:44:11 [INFO] Web UI available at http://localhost:8080
+02:44:11 [INFO] Service ready on http://localhost:8080
+02:46:47 [INFO] Shutting down service...
+08:44:01 [INFO] Opened database at /home/josh/.clai/conversations.db
+08:44:02 [INFO] Restored 2 downloads from database
+08:44:02 [INFO] Web UI available at http://localhost:8080
+08:44:02 [INFO] Service ready on http://localhost:8080
+08:44:45 [INFO] SSE client connected, total clients: 1
+08:45:04 [INFO] Deleted model file: /mnt/media/models/Qwen3-Coder-Next-REAP-60B-A3B-Q6_K_XL.gguf
+08:45:04 [INFO] Successfully deleted model: /mnt/media/models/Qwen3-Coder-Next-REAP-60B-A3B-Q6_K_XL.gguf
+08:45:07 [INFO] SSE client disconnected, remaining clients: 0
+08:45:07 [INFO] SSE client connected, total clients: 1
+08:45:24 [INFO] HandleStartServer: request from 127.0.0.1:56060 ua="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" referer="http://localhost:8080/models" model_path=/mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+08:45:24 [INFO] DEBUG: Received context_size parameter: '262144'
+08:45:24 [INFO] Using custom context size: 262144 for /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+08:45:24 [INFO] DEBUG: Received ngl parameter: '999'
+08:45:24 [INFO] Using custom ngl: 999 for /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+08:45:24 [INFO] Using Docker runtime: vulkan-radv for /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+08:45:24 [INFO] Found available port: 8082
+08:45:24 [INFO] Pulling latest Docker image vulkan-radv...
+08:46:04 [INFO] SSE client disconnected, remaining clients: 0
+08:46:09 [INFO] SSE client connected, total clients: 1
+08:47:42 [INFO] Docker launch command: llama-server -m /models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf --host 0.0.0.0 --port 8080 -c 262144 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8082.log 2>&1
+08:47:42 [INFO] Started model server via Docker: Qwen3.5-122B-A10B-UD-TQ1_0.gguf on port 8082 (Container: 4a2f8fc39614)
+08:47:42 [INFO] Updated CLI config to use model Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+08:47:43 [INFO] Error rendering models table: context canceled
+08:49:44 [INFO] Model server ready: Qwen3.5-122B-A10B-UD-TQ1_0.gguf on port 8082
+08:56:12 [INFO] SSE client disconnected, remaining clients: 0
+08:56:12 [INFO] SSE client connected, total clients: 1
+08:57:04 [INFO] SSE client disconnected, remaining clients: 0
+08:57:22 [INFO] SSE client connected, total clients: 1
+08:57:26 [INFO] SSE client disconnected, remaining clients: 0
+08:57:26 [INFO] SSE client connected, total clients: 1
+20:21:52 [INFO] SSE client connected, total clients: 2
+20:25:03 [INFO] SSE client disconnected, remaining clients: 1
+20:25:03 [INFO] SSE client connected, total clients: 2
+20:30:59 [INFO] HandleStopServer: Received request to stop server
+20:30:59 [INFO] HandleStopServer: Stopping model at path: /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+20:30:59 [INFO] Stopping Docker container: clai-model-qwen3_5_122b_a10b_ud_tq1_0
+20:31:09 [INFO] Successfully stopped Docker container: clai-model-qwen3_5_122b_a10b_ud_tq1_0
+20:31:09 [INFO] Preserving log file: /home/josh/.local/share/clai/logs/llama-server-8082.log
+20:31:10 [INFO] SSE client disconnected, remaining clients: 1
+20:31:10 [INFO] SSE client connected, total clients: 2
+20:31:10 [INFO] Error rendering models table: context canceled
+20:31:27 [INFO] HandleStartServer: request from 192.168.1.31:63517 ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36" referer="http://192.168.1.49:8080/models" model_path=/mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+20:31:27 [INFO] DEBUG: Received context_size parameter: '262144'
+20:31:27 [INFO] Using custom context size: 262144 for /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+20:31:27 [INFO] DEBUG: Received ngl parameter: '999'
+20:31:27 [INFO] Using custom ngl: 999 for /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+20:31:27 [INFO] Using Docker runtime: rocm7-nightlies for /mnt/media/models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+20:31:27 [INFO] Found available port: 8082
+20:31:27 [INFO] Pulling latest Docker image rocm7-nightlies...
+20:31:42 [INFO] SSE client disconnected, remaining clients: 1
+20:31:42 [INFO] SSE client connected, total clients: 2
+20:31:51 [INFO] SSE client disconnected, remaining clients: 1
+20:31:51 [INFO] SSE client connected, total clients: 2
+20:38:04 [INFO] Docker launch command: llama-server -m /models/Qwen3.5-122B-A10B-UD-TQ1_0.gguf --host 0.0.0.0 --port 8080 -c 262144 -ngl 999 -fa on --no-mmap -b 2048 -ub 512 --jinja   > /logs/llama-server-8082.log 2>&1
+20:38:11 [INFO] Started model server via Docker: Qwen3.5-122B-A10B-UD-TQ1_0.gguf on port 8082 (Container: 3b2243537e48)
+20:38:11 [INFO] Updated CLI config to use model Qwen3.5-122B-A10B-UD-TQ1_0.gguf
+20:38:12 [INFO] Error rendering models table: context canceled
+20:38:17 [INFO] Model server ready: Qwen3.5-122B-A10B-UD-TQ1_0.gguf on port 8082
+22:55:13 [INFO] SSE client disconnected, remaining clients: 1
+22:55:13 [INFO] SSE client connected, total clients: 2
+01:32:46 [INFO] SSE client disconnected, remaining clients: 1
+07:22:31 [INFO] SSE client connected, total clients: 2
+07:23:18 [INFO] SSE client disconnected, remaining clients: 1
+07:23:18 [INFO] SSE client connected, total clients: 2

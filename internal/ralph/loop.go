@@ -51,6 +51,7 @@ type RalphLoopController struct {
 	activeStory *UserStory
 	ctx         context.Context
 	cancel      context.CancelFunc
+	branchName  string
 }
 
 // NewRalphLoopController creates a new loop controller
@@ -93,6 +94,11 @@ func (lc *RalphLoopController) Start() error {
 		return nil
 	}
 
+	// Branch Guard: Verify current branch matches PRD branchName
+	if err := lc.BranchGuard(prd); err != nil {
+		return fmt.Errorf("branch guard failed: %w", err)
+	}
+
 	// Set active story and start working
 	lc.activeStory = firstPending
 	lc.stage = StageThinking
@@ -100,6 +106,27 @@ func (lc *RalphLoopController) Start() error {
 	// Append progress log
 	if err := AppendLog(firstPending.ID, fmt.Sprintf("Starting Ralph loop - Stage: %s", lc.stage.String()), lc.getGitHash()); err != nil {
 		return fmt.Errorf("failed to log: %w", err)
+	}
+
+	return nil
+}
+
+// BranchGuard verifies current branch matches PRD branchName and checks it out if needed
+func (lc *RalphLoopController) BranchGuard(prd *PRD) error {
+	currentBranch, err := execCommand("git", "branch", "--show-current")
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	lc.branchName = prd.BranchName
+
+	if currentBranch != prd.BranchName {
+		// Branch mismatch - checkout the correct branch
+		_, err := execCommand("git", "checkout", prd.BranchName)
+		if err != nil {
+			return fmt.Errorf("failed to checkout branch %s: %w", prd.BranchName, err)
+		}
+		return fmt.Errorf("checked out branch %s", prd.BranchName)
 	}
 
 	return nil

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -154,15 +156,64 @@ func UpdatePatterns(pattern string) error {
 
 // Verify runs 'go test ./...' and 'go build' to check project health.
 func Verify() (string, error) {
-	// Simulate verification
-	// In real impl, use os/exec to run command
-	return "Verification Passed", nil
+	// Run 'go build' to verify the code compiles
+	buildCmd := exec.Command("go", "build", "./...")
+	buildOutput, err := buildCmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("build failed: %w", err)
+	}
+
+	// Run 'go test ./...' to verify tests pass
+	testCmd := exec.Command("go", "test", "./...")
+	testOutput, err := testCmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("tests failed: %w", err)
+	}
+
+	return fmt.Sprintf("Build output:\n%s\n\nTests output:\n%s", string(buildOutput), string(testOutput)), nil
 }
 
 // CommitStory creates a git commit for the completed story.
 func CommitStory(storyID, title, branchName string) error {
-	// Simulate git automation
-	// In real impl, use os/exec to run 'git checkout', 'git add', 'git commit'
+	// Get current git hash for audit trail
+	hash, err := execCommand("git", "rev-parse", "HEAD")
+	if err != nil {
+		return fmt.Errorf("failed to get git hash: %w", err)
+	}
+
+	// Get current branch
+	currentBranch, err := execCommand("git", "branch", "--show-current")
+	if err != nil {
+		return fmt.Errorf("failed to get branch: %w", err)
+	}
+
+	// Get parent commit for the commit message
+	parentHash, err := execCommand("git", "rev-parse", "HEAD^")
+	if err != nil {
+		return fmt.Errorf("failed to get parent hash: %w", err)
+	}
+
+	// Get recent commit message for context
+	recentMsg, err := execCommand("git", "log", "-1", "--pretty=%B")
+	if err != nil {
+		return fmt.Errorf("failed to get recent message: %w", err)
+	}
+
+	// Create commit message
+	commitMessage := fmt.Sprintf("feat: %s - %s\n\nSummary: %s\n\nCommit: %s\nParent: %s\n\nGit Hash: %s",
+		storyID, title, recentMsg, parentHash, currentBranch, strings.TrimSpace(hash))
+
+	// Add all files and commit
+	_, err = execCommand("git", "add", "-A")
+	if err != nil {
+		return fmt.Errorf("failed to add files: %w", err)
+	}
+
+	_, err = execCommand("git", "commit", "-m", commitMessage)
+	if err != nil {
+		return fmt.Errorf("failed to commit: %w", err)
+	}
+
 	return nil
 }
 
