@@ -1320,3 +1320,10 @@ srv  log_server_r: done request: GET /slots 10.0.0.1 503
 07:22:31 [INFO] SSE client connected, total clients: 2
 07:23:18 [INFO] SSE client disconnected, remaining clients: 1
 07:23:18 [INFO] SSE client connected, total clients: 2
+10:42:47 [INFO] Opened database at /home/josh/.clai/conversations.db
+10:42:47 [INFO] Restored 2 downloads from database
+10:42:47 [INFO] Web UI available at http://localhost:8083
+10:42:47 [INFO] Service ready on http://localhost:8083
+10:43:00 [INFO] SSE client connected, total clients: 1
+16:26:17 [INFO] SSE client disconnected, remaining clients: 0
+16:34:16 [INFO] Shutting down service...
