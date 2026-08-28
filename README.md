@@ -1,54 +1,53 @@
 # clai
-An AI interface, built for local AI, by AI. AlrAIght?
 
-...
+clai is a local-first AI chat client written in Go. It talks to an OpenAI-compatible llama.cpp server, exposes a Charm Bubble Tea TUI by default, and can also run an HTTP service with a web UI for model management and benchmarking.
 
-## Command-Line Benchmarking
+## Requirements
 
-Run the full benchmark suite against your current model directly from the command line:
+- Go 1.24 or later
+- A local LLM server at `OLLAMA_HOST` (default `http://localhost:8081`)
+- [`templ`](https://github.com/a-h/templ) for the web UI: `go install github.com/a-h/templ/cmd/templ@latest`
+
+## Build and run
 
 ```sh
-clai benchmark
+make build          # go build -o clai ./cmd/clai
+./clai              # TUI (default)
+./clai service      # HTTP service / web UI
+go build -o clai ./cmd/clai
+go run ./cmd/clai
 ```
 
-**Details:**
-- Uses the same LLM server configuration as the main clai application
-- **Unified Benchmark Suite** (29 tests total):
-  - **Model Benchmarks** (12 tests): Structured tests with predefined expectations
-  - **Agentic Benchmarks** (17 tests): Natural language prompts testing autonomous tool usage
-  - **Advanced Benchmarks** (5 tests): Challenging multi-step reasoning and safety scenarios
-- Environment variables (same as clai):
-    - `OLLAMA_HOST` (default: `http://localhost:8081`)
-- CLI Options:
-    - `--test N`: Run specific benchmark by index (0-23), shows detailed results
-    - `--sequential`: Run tests sequentially (more stable)
-    - No flags: Run all 24 benchmarks with summary output
-- **Safety Features**:
-    - Checks API health before starting
-    - Prevents multiple benchmark processes from running simultaneously
-    - Graceful shutdown on Ctrl+C
-- **Important**: Stop the dev server (`go run ./cmd/clai`) before running benchmarks to avoid conflicts
-- Runs benchmark tests and prints human-readable results.
-- Results are also saved to the local database.
+Live-reload development (web UI at http://localhost:8080):
 
-### Example
-```
-$ clai benchmark
-================================================================================
-MODEL BENCHMARK SUMMARY
-================================================================================
-✓ Extract Specific Value from File      0.78s  2 iter
-✓ Count Files by Extension             1.12s  1 iter
-✗ Mathematical Calculation             0.46s  1 iter  Wrong answer: expected 392
-...
---------------------------------------------------------------------------------
-TOTAL: 12 tests, 9 passed, 3 failed
-Total time: 15.20s, Avg time: 1.27s
-Total iterations: 18, Avg iterations: 1.5
-Success rate: 75.0%
-================================================================================
+```sh
+make dev            # web UI with auto-reload (needs inotifywait)
+make dev-tui        # TUI with auto-reload
+make run            # CLAI_DEV=1 go run ./cmd/clai
 ```
 
-This feature does NOT launch the TUI or web server. If you want to run the interactive web server, use the appropriate TUI/serve command instead.
+## Commands
 
-...
+- `clai` / `clai tui` -- interactive terminal UI
+- `clai service` -- HTTP service and web UI
+- `clai ask` -- one-shot prompt
+- `clai models list` -- list downloaded GGUF models
+- `clai benchmark --cli` -- run the local benchmark suite (`make benchmark`)
+- `clai stop` -- stop a running instance
+- `clai debug` -- inspect TUI state
+
+```sh
+go test ./...
+```
+
+## Configuration
+
+- `OLLAMA_HOST` -- LLM base URL (default `http://localhost:8081`)
+- `OLLAMA_MODEL` -- model name (default `llama3.1-gpu:latest`)
+- `MODELS_DIR` -- GGUF directory (default `$HOME/models`)
+
+Env names keep an Ollama-style prefix. The runtime is a llama.cpp-compatible OpenAI chat API, not Ollama itself.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
